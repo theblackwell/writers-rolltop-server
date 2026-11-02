@@ -23,7 +23,7 @@ node --test "test/*.test.ts"
 
 ## Editor schema the adapter expects
 
-Tiptap with Document, Text, Paragraph, Heading (1–6), HardBreak, Bold, Italic and Link. Paragraphs and headings carry a stable `id` attribute (for example via the UniqueID extension). There's also a custom `rolltopAnchor` mark with an `id` attribute and `excludes: ""`. Editor JSON is never stored; only the canonical document is. Unknown editor block types are rejected, never dropped.
+Tiptap with Document, Text, Paragraph, Heading (1–6), HardBreak, HorizontalRule (scene breaks), Blockquote, BulletList, OrderedList, ListItem, Bold, Italic, Underline, Link and TextAlign (left/center/right on paragraphs and headings). Paragraphs, headings and horizontal rules carry a stable `id` attribute (for example via the UniqueID extension). There's also a custom `rolltopAnchor` mark with an `id` attribute and `excludes: ""`. Canonical blocks are flat, so the adapter groups consecutive quoted blocks into one blockquote and rebuilds nested lists. Nesting the canonical format can't express (a list inside a quote, several paragraphs in one list item) is repaired without losing text. Editor JSON is never stored; only the canonical document is. Unknown editor block types are rejected, never dropped.
 
 ## License
 

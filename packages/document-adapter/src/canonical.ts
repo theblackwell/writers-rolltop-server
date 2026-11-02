@@ -8,14 +8,21 @@
 export type Mark =
   | { type: "strong" }
   | { type: "emphasis" }
+  | { type: "underline" }
   | { type: "link"; href: string }
   | { type: "anchor"; id: string };
 
 export type Inline = { type: "text"; text: string; marks?: Mark[] } | { type: "hardBreak" };
 
+export type Align = "left" | "center" | "right";
+export type ListItem = { style: "bullet" | "ordered"; level: number };
+
 export type Block =
-  | { id: string; type: "paragraph"; content: Inline[] }
-  | { id: string; type: "heading"; level: number; content: Inline[] };
+  | { id: string; type: "paragraph"; content: Inline[]; align?: Align; quote?: true; list?: ListItem }
+  | { id: string; type: "heading"; level: number; content: Inline[]; align?: Align; quote?: true }
+  | { id: string; type: "sceneBreak" };
+
+export const MAX_LIST_LEVEL = 7;
 
 export type CanonicalDocument = {
   schema: "writers-rolltop/document";
@@ -69,10 +76,13 @@ export function parse(value: unknown): CanonicalDocument {
 function parseBlock(value: unknown, path: string): Block {
   const type = (value as { type?: unknown } | null)?.type;
   let obj: Record<string, unknown>;
-  if (type === "paragraph") {
-    obj = onlyKeys(value, path, ["id", "type", "content"]);
+  if (type === "sceneBreak") {
+    obj = onlyKeys(value, path, ["id", "type"]);
+    return { id: uuid(obj.id, `${path}.id`), type: "sceneBreak" };
+  } else if (type === "paragraph") {
+    obj = onlyKeys(value, path, ["id", "type", "content", "align", "quote", "list"]);
   } else if (type === "heading") {
-    obj = onlyKeys(value, path, ["id", "type", "level", "content"]);
+    obj = onlyKeys(value, path, ["id", "type", "level", "content", "align", "quote"]);
     if (typeof obj.level !== "number" || !Number.isInteger(obj.level) || obj.level < 1 || obj.level > 6) {
       throw invalid(`${path}.level must be an integer 1–6`);
     }
@@ -82,7 +92,26 @@ function parseBlock(value: unknown, path: string): Block {
   const id = uuid(obj.id, `${path}.id`);
   if (!Array.isArray(obj.content)) throw invalid(`${path}.content must be an array`);
   const content = obj.content.map((x, i) => parseInline(x, `${path}.content[${i}]`));
-  return type === "heading" ? { id, type, level: obj.level as number, content } : { id, type: "paragraph", content };
+  const props: { align?: Align; quote?: true; list?: ListItem } = {};
+  if (obj.align !== undefined) {
+    if (obj.align !== "left" && obj.align !== "center" && obj.align !== "right") throw invalid(`${path}.align must be "left", "center" or "right"`);
+    props.align = obj.align;
+  }
+  if (obj.quote !== undefined) {
+    if (obj.quote !== true) throw invalid(`${path}.quote must be true when present`);
+    props.quote = true;
+  }
+  if (obj.list !== undefined) {
+    const list = onlyKeys(obj.list, `${path}.list`, ["style", "level"]);
+    if (list.style !== "bullet" && list.style !== "ordered") throw invalid(`${path}.list.style must be "bullet" or "ordered"`);
+    if (typeof list.level !== "number" || !Number.isInteger(list.level) || list.level < 0 || list.level > MAX_LIST_LEVEL) {
+      throw invalid(`${path}.list.level must be an integer 0–${MAX_LIST_LEVEL}`);
+    }
+    props.list = { style: list.style, level: list.level };
+  }
+  return type === "heading"
+    ? { id, type, level: obj.level as number, content, ...props }
+    : { id, type: "paragraph", content, ...props };
 }
 
 function parseInline(value: unknown, path: string): Inline {
@@ -104,6 +133,7 @@ function parseMark(value: unknown, path: string): Mark {
   switch (type) {
     case "strong":
     case "emphasis":
+    case "underline":
       onlyKeys(value, path, ["type"]);
       return { type };
     case "link": {
@@ -123,7 +153,7 @@ function parseMark(value: unknown, path: string): Mark {
 // ---------------------------------------------------------------------------
 // Normalization (N1–N4). Never changes code points (N5).
 
-const RANK: Record<Mark["type"], number> = { strong: 0, emphasis: 1, link: 2, anchor: 3 };
+const RANK: Record<Mark["type"], number> = { strong: 0, emphasis: 1, underline: 2, link: 3, anchor: 4 };
 
 const byteLess = (a: string, b: string) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8")) < 0;
 
@@ -158,6 +188,7 @@ export function normalize(doc: CanonicalDocument): CanonicalDocument {
   return {
     ...doc,
     blocks: doc.blocks.map((block) => {
+      if (block.type === "sceneBreak") return block;
       const out: Inline[] = [];
       for (const inline of block.content) {
         if (inline.type === "hardBreak") { out.push({ type: "hardBreak" }); continue; }
@@ -179,9 +210,20 @@ export function validate(doc: CanonicalDocument): void {
   const problems: string[] = [];
   const blockIds = new Set<string>();
   const anchorsInEarlierBlocks = new Set<string>();
+  let previousListLevel: number | undefined;
   doc.blocks.forEach((block, bi) => {
     if (blockIds.has(block.id)) problems.push(`blocks[${bi}]: duplicate block id`);
     blockIds.add(block.id);
+    if (block.type === "sceneBreak") { previousListLevel = undefined; return; }
+    const list = block.type === "paragraph" ? block.list : undefined;
+    if (block.quote && list) problems.push(`blocks[${bi}]: a block cannot be both quoted and a list item`);
+    if (list) {
+      const allowed = previousListLevel === undefined ? 0 : previousListLevel + 1;
+      if (list.level > allowed) problems.push(`blocks[${bi}]: list level ${list.level} skips a level (at most ${allowed} here)`);
+      previousListLevel = list.level;
+    } else {
+      previousListLevel = undefined;
+    }
     const lastTextIndex = new Map<string, number>();
     let textIndex = -1;
     block.content.forEach((inline, ii) => {

@@ -1,0 +1,29 @@
+{
+  "schema": "writers-rolltop/document",
+  "version": 1,
+  "nodeId": "20000000-0000-4000-8000-000000000007",
+  "blocks": [
+    {
+      "id": "b0000000-0000-4000-8000-000000000120",
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ab",
+          "marks": [
+            {
+              "type": "strong"
+            },
+            {
+              "type": "underline"
+            },
+            {
+              "type": "link",
+              "href": "x"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

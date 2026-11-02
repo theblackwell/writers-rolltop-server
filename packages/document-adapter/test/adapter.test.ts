@@ -74,7 +74,36 @@ test("editor repairs: split paragraph gets a new id; broken anchor keeps its fir
   assert.deepEqual(doc.blocks[1].content, [{ type: "text", text: "Vell" }], "anchor dropped from second block; presentation mark ignored");
 });
 
+test("flat quotes and lists become ProseMirror nesting and come back flat", () => {
+  const doc = decode(read("valid/structure.json"));
+  const pm = toProseMirror(doc);
+  const types = pm.content!.map((n) => n.type);
+  assert.deepEqual(types, ["heading", "blockquote", "paragraph", "orderedList", "horizontalRule", "paragraph", "blockquote", "bulletList"]);
+  const ordered = pm.content![3];
+  assert.equal(ordered.content!.length, 2, "two top-level ordered items");
+  const nested = ordered.content![0].content![1];
+  assert.equal(nested.type, "orderedList", "level-1 item nests inside the first item");
+  assert.equal(nested.content![0].content![1].type, "bulletList", "level-2 bullet nests inside the level-1 item");
+  assert.equal(pm.content![1].content!.length, 2, "two consecutive quoted blocks form one blockquote");
+  assert.deepEqual(fromProseMirror(JSON.parse(JSON.stringify(pm)), doc.nodeId), doc);
+});
+
+test("editor nesting the canonical model can't express is repaired, text kept", () => {
+  const P = (id: string, text: string): PMNode => ({ type: "paragraph", attrs: { id }, content: [{ type: "text", text }] });
+  const pm: PMNode = {
+    type: "doc",
+    content: [{ type: "blockquote", content: [{ type: "bulletList", content: [{ type: "listItem", content: [
+      P("c0000000-0000-4000-8000-000000000011", "quoted item"),
+      P("c0000000-0000-4000-8000-000000000012", "second paragraph in item"),
+    ] }] }] }],
+  };
+  const doc = fromProseMirror(pm, "d0000000-0000-4000-8000-000000000001");
+  assert.deepEqual(doc.blocks.map((b) => (b.type === "paragraph" ? [b.quote ?? false, b.list?.level] : null)), [[false, 0], [false, 0]]);
+  assert.deepEqual(doc.blocks.map((b) => (b.type === "paragraph" ? b.content : null)),
+    [[{ type: "text", text: "quoted item" }], [{ type: "text", text: "second paragraph in item" }]]);
+});
+
 test("unknown editor block types are rejected, never silently dropped", () => {
-  const pm: PMNode = { type: "doc", content: [{ type: "bulletList", content: [] }] };
+  const pm: PMNode = { type: "doc", content: [{ type: "table", content: [] }] };
   assert.throws(() => fromProseMirror(pm, "d0000000-0000-4000-8000-000000000001"), /unsupported block node/);
 });
