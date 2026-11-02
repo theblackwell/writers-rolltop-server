@@ -18,7 +18,7 @@ Requires Node.js ≥ 23.6, which runs TypeScript directly by stripping types. Ve
 
 ```bash
 cd packages/document-adapter
-node --test test/
+node --test "test/*.test.ts"
 ```
 
 ## Editor schema the adapter expects
