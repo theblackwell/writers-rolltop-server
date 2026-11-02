@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 The Black Well Foundry
 // Canonical document format v1 (writers-rolltop-spec: docs/document-format-v1.md).
 // Dependency-free TypeScript mirror of the reference implementation's
 // parse → normalize → validate pipeline. Uses only erasable type syntax so it

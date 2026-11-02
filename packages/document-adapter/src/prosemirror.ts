@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 The Black Well Foundry
 // Canonical document ⇄ Tiptap / ProseMirror JSON.
 //
 // The editor schema this adapter expects (configure Tiptap with):

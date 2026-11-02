@@ -2,6 +2,7 @@
   "name": "@writers-rolltop/document-adapter",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Canonical Writers Rolltop document <-> Tiptap/ProseMirror JSON (M0 prototype, no dependencies).",
   "type": "module",
   "exports": {
