@@ -1,0 +1,6 @@
+{ "schema": "writers-rolltop/document", "version": 1, "nodeId": "20000000-0000-4000-8000-000000000005",
+  "blocks": [ { "id": "b0000000-0000-4000-8000-000000000031", "type": "paragraph",
+    "content": [
+      { "type": "text", "text": "Mara Vell", "marks": [ { "type": "strong" }, { "type": "emphasis" }, { "type": "anchor", "id": "a0000000-0000-4000-8000-00000000000a" }, { "type": "anchor", "id": "a0000000-0000-4000-8000-00000000000b" } ] },
+      { "type": "text", "text": " walked home." }
+    ] } ] }

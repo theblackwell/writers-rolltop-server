@@ -1,0 +1,13 @@
+{
+  "anchor-across-blocks.json": "DOCUMENT_INVALID",
+  "anchor-not-contiguous.json": "DOCUMENT_INVALID",
+  "control-character.json": "DOCUMENT_INVALID",
+  "duplicate-block-id.json": "DOCUMENT_INVALID",
+  "extra-field.json": "DOCUMENT_INVALID",
+  "heading-level-7.json": "DOCUMENT_INVALID",
+  "newer-version.json": "DOCUMENT_UNSUPPORTED_VERSION",
+  "two-links.json": "DOCUMENT_INVALID",
+  "unknown-block-type.json": "DOCUMENT_INVALID",
+  "unknown-mark.json": "DOCUMENT_INVALID",
+  "uppercase-uuid.json": "DOCUMENT_INVALID"
+}

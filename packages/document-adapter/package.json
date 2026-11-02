@@ -1,0 +1,15 @@
+{
+  "name": "@writers-rolltop/document-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canonical Writers Rolltop document <-> Tiptap/ProseMirror JSON (M0 prototype, no dependencies).",
+  "type": "module",
+  "exports": {
+    "./canonical": "./src/canonical.ts",
+    "./prosemirror": "./src/prosemirror.ts"
+  },
+  "engines": { "node": ">=23.6" },
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

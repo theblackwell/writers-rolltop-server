@@ -1,0 +1,1 @@
+Vendored from writers-rolltop-spec at 1e6bcc9 on 2026-11-02. Do not edit; run scripts/sync-spec-fixtures.sh.

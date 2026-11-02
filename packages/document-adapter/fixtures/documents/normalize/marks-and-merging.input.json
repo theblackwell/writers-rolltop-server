@@ -1,0 +1,9 @@
+{ "schema": "writers-rolltop/document", "version": 1, "nodeId": "20000000-0000-4000-8000-000000000005",
+  "blocks": [ { "id": "b0000000-0000-4000-8000-000000000031", "type": "paragraph",
+    "content": [
+      { "type": "text", "text": "" , "marks": [ { "type": "strong" } ] },
+      { "type": "text", "text": "Mara ", "marks": [ { "type": "anchor", "id": "a0000000-0000-4000-8000-00000000000b" }, { "type": "emphasis" }, { "type": "strong" }, { "type": "emphasis" }, { "type": "anchor", "id": "a0000000-0000-4000-8000-00000000000a" } ] },
+      { "type": "text", "text": "Vell", "marks": [ { "type": "strong" }, { "type": "anchor", "id": "a0000000-0000-4000-8000-00000000000a" }, { "type": "emphasis" }, { "type": "anchor", "id": "a0000000-0000-4000-8000-00000000000b" } ] },
+      { "type": "text", "text": " walked", "marks": [] },
+      { "type": "text", "text": " home." }
+    ] } ] }
