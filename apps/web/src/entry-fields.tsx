@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { StructuredForm, structuredSummary } from "./structured-fields.tsx";
+import { structuredTypes } from "../../../packages/studio/src/structured-values.ts";
 import { useState } from "react";
 import { api } from "./api.ts";
 import type { Entry } from "./entries.tsx";
@@ -15,6 +17,8 @@ export type Field = {
   label: string;
   fieldType: string;
   required: boolean;
+  multiple?: boolean;
+  options?: { id: string; label: string }[];
   updatedAt: string;
   deletedAt?: string;
 };
@@ -122,7 +126,7 @@ export function EntryFields({
             {f.required && " (suggested)"}
             <p style={{ whiteSpace: "pre-wrap" }}>
               {Object.hasOwn(entry.values ?? {}, f.id)
-                ? String(entry.values![f.id])
+                ? structuredSummary(f, entry.values![f.id])
                 : "Not set"}
             </p>
             {[
@@ -131,6 +135,7 @@ export function EntryFields({
               "integer",
               "decimal",
               "boolean",
+              ...structuredTypes,
             ].includes(f.fieldType) ? (
               <button
                 disabled={busy || !!fieldId}
@@ -147,21 +152,36 @@ export function EntryFields({
           </li>
         ))}
       </ul>
-      {field && (
-        <ScalarForm
-          key={field.id}
-          field={field}
-          value={entry.values?.[field.id]}
-          busy={busy}
-          onCancel={() => setFieldId("")}
-          onSave={(value) =>
-            save(`values/${field.id}`, {
-              value,
-              expectedFieldUpdatedAt: field.updatedAt,
-            })
-          }
-        />
-      )}
+      {field &&
+        (structuredTypes.includes(field.fieldType) ? (
+          <StructuredForm
+            key={field.id}
+            field={field}
+            value={entry.values?.[field.id]}
+            busy={busy}
+            onCancel={() => setFieldId("")}
+            onSave={(value) =>
+              save(`values/${field.id}`, {
+                value,
+                expectedFieldUpdatedAt: field.updatedAt,
+              })
+            }
+          />
+        ) : (
+          <ScalarForm
+            key={field.id}
+            field={field}
+            value={entry.values?.[field.id]}
+            busy={busy}
+            onCancel={() => setFieldId("")}
+            onSave={(value) =>
+              save(`values/${field.id}`, {
+                value,
+                expectedFieldUpdatedAt: field.updatedAt,
+              })
+            }
+          />
+        ))}
       <button disabled={busy} onClick={onClose}>
         Close Fields
       </button>

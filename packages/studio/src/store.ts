@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { structuredTypes, structuredValueError } from "./structured-values.ts";
 import { initializeTemplates } from "./templates.ts";
 import { entryInput, editEntry } from "./entries.ts";
 import { basename } from "node:path";
@@ -354,11 +355,18 @@ export class StudioStore {
           );
         const value = input.value;
         if (
-          !["shortText", "longText", "integer", "decimal", "boolean"].includes(
-            field.fieldType,
-          )
+          ![
+            "shortText",
+            "longText",
+            "integer",
+            "decimal",
+            "boolean",
+            ...structuredTypes,
+          ].includes(field.fieldType)
         )
           return fail("This field type is not supported yet.");
+        const structuredError = structuredValueError(field, value);
+        if (structuredError) return fail(structuredError);
         if (value !== null) {
           if (
             ["shortText", "longText"].includes(field.fieldType) &&

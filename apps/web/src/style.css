@@ -1049,3 +1049,21 @@ dialog textarea {
   width: auto;
   margin: 0;
 }
+
+.bible-table {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.bible-table table {
+  border-collapse: collapse;
+}
+.bible-table th,
+.bible-table td {
+  min-width: 160px;
+  padding: 0.4rem;
+  border: 1px solid #c9bda9;
+  vertical-align: top;
+}
+.bible-table textarea {
+  min-height: 4rem;
+}

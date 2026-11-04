@@ -17,14 +17,17 @@ const contentTypes: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
 };
-async function body(request: IncomingMessage): Promise<any> {
+async function body(
+  request: IncomingMessage,
+  limit = 4 * 1024 * 1024,
+): Promise<any> {
   if (!request.headers["content-type"]?.startsWith("application/json"))
     throw new StudioError(415, "JSON_REQUIRED", "Send JSON content.");
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const c of request) {
     size += c.length;
-    if (size > 4 * 1024 * 1024)
+    if (size > limit)
       throw new StudioError(413, "TOO_LARGE", "This request is too large.");
     chunks.push(c);
   }
@@ -248,7 +251,7 @@ export function studioServer(
           await store.editEntryField(
             parts[1],
             parts[3],
-            await body(req),
+            await body(req, parts[5] ? 64 * 1024 * 1024 : undefined),
             parts[5],
           ),
         );

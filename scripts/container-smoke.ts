@@ -158,6 +158,35 @@ try {
       expectedFieldUpdatedAt: roleField.updatedAt,
     },
   );
+  const eventTemplate = catalog.templates.find(
+    (t: any) => t.entryType === "event",
+  );
+  const whenField = catalog.fields.find(
+    (f: any) => f.templateId === eventTemplate.id && f.key === "when",
+  );
+  const eventEntry = await api(`/books/${book.id}/entries`, "POST", {
+    name: "Storm",
+    entryType: "event",
+  });
+  const assignedEvent = await api(
+    `/books/${book.id}/entries/${eventEntry.id}/template`,
+    "PUT",
+    {
+      templateId: eventTemplate.id,
+      expectedUpdatedAt: eventEntry.updatedAt,
+      expectedTemplateUpdatedAt: eventTemplate.updatedAt,
+    },
+  );
+  const storyDate = { label: "Third moon", calendar: "Lantern", ordinal: -2 };
+  await api(
+    `/books/${book.id}/entries/${eventEntry.id}/values/${whenField.id}`,
+    "PUT",
+    {
+      value: storyDate,
+      expectedUpdatedAt: assignedEvent.updatedAt,
+      expectedFieldUpdatedAt: whenField.updatedAt,
+    },
+  );
   const stale = await fetch(origin + `/api/documents/${scene.id}`, {
     method: "PUT",
     headers: {
@@ -205,6 +234,12 @@ try {
   assert.equal(persistedEntry.toBeNamed, true);
   assert.ok(!persistedEntry.deletedAt);
   assert.equal(persistedEntry.values[roleField.id], "Courier");
+  assert.deepEqual(
+    (await api(`/books/${book.id}/entries`)).find(
+      (e: any) => e.id === eventEntry.id,
+    ).values[whenField.id],
+    storyDate,
+  );
   const restored = await api(`/documents/${scene.id}`);
   assert.equal(restored.revision, 2);
   assert.deepEqual(restored.document, first.document);
@@ -283,6 +318,8 @@ try {
       if (recoveredEntry.values['${roleField.id}'] !== 'Courier') throw Error('Scalar value recovery mismatch');
       const doc = await store.document('${scene.id}');
       const { default: assert } = await import('node:assert/strict');
+      const recoveredEvent = (await store.entries('${book.id}')).find(e => e.id === '${eventEntry.id}');
+      assert.deepEqual(recoveredEvent.values['${whenField.id}'], ${JSON.stringify(storyDate)});
       assert.equal(doc.revision, 2);
       assert.deepEqual(doc.document, ${JSON.stringify(first.document)});
       if ((await store.revisions('${scene.id}')).length !== 2) throw Error('Revision loss');
@@ -294,7 +331,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar-value persistence/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured-value persistence/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

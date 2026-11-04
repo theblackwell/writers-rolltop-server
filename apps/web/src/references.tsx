@@ -85,8 +85,8 @@ export function References({
     <section>
       <p>
         Book-scoped bible entries. Edit names, aliases and summaries here. Use
-        Fields to assign a template and edit text, integers, decimals and
-        booleans. Shared worlds and other field types are coming in later
+        Fields to assign a template and edit text, numbers, choices, dates and
+        tables. Shared worlds, entry links and attachments are coming in later
         sections.
       </p>
       {error && <p role="alert">{error}</p>}

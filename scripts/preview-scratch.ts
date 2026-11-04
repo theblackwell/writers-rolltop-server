@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Development-only, volatile preview. Never imported by the production entry point.
 import { PGlite } from "@electric-sql/pglite";
+import { between } from "../packages/studio/src/order.ts";
 import { StudioStore } from "../packages/studio/src/store.ts";
 import type { Query } from "../packages/studio/src/store.ts";
 import { studioServer } from "../packages/studio/src/http.ts";
@@ -22,6 +23,58 @@ const store = new StudioStore(
 await store.migrate();
 const library = await store.createLibrary("The writing room");
 const book = await store.createBook(library.id, "The Orchard at Dusk");
+// Optional B2c demo definitions, confined to this volatile scratch preview.
+if (process.env.STUDIO_STRUCTURED_PREVIEW === "1") {
+  const catalog = await store.templates(library.id);
+  const template = catalog.templates.find((t) => t.entryType === "event")!;
+  let order = catalog.fields
+    .filter((f) => f.templateId === template.id)
+    .at(-1)?.orderKey;
+  for (const [key, label, fieldType] of [
+    ["weather", "Weather", "selection"],
+    ["recorded", "Recorded date", "realDate"],
+    ["measurements", "Measurements", "table"],
+  ]) {
+    order = between(order);
+    const now = new Date().toISOString(),
+      id = crypto.randomUUID();
+    const field = {
+      id,
+      templateId: template.id,
+      key,
+      label,
+      fieldType,
+      required: false,
+      orderKey: order,
+      createdAt: now,
+      updatedAt: now,
+      ...(fieldType === "selection"
+        ? {
+            multiple: true,
+            options: [
+              { id: crypto.randomUUID(), label: "Rain" },
+              { id: crypto.randomUUID(), label: "Wind" },
+            ],
+          }
+        : {}),
+    };
+    await store.db.query("INSERT INTO bible_fields VALUES($1,$2,$3,$4)", [
+      id,
+      library.id,
+      template.id,
+      field,
+    ]);
+  }
+  const entry = await store.createEntry(book.id, {
+    name: "Spring storm",
+    entryType: "event",
+  });
+  await store.editEntryField(book.id, entry.id, {
+    templateId: template.id,
+    expectedUpdatedAt: entry.updatedAt,
+    expectedTemplateUpdatedAt: template.updatedAt,
+  });
+}
 const chapter = await store.createNode(book.id, "The last light", "chapter");
 const scene = await store.createNode(
   book.id,

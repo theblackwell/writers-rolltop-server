@@ -121,8 +121,14 @@ Inspect recovered content through a separate scratch studio pointing only at the
 
 The owner requires both `linux/arm64` and `linux/amd64` (x86-64) containers. A multi-platform release build and runtime smoke check on each architecture remain final M3 acceptance gates. The current local Podman smoke was on ARM64; x86-64 support is required but has not yet been built or verified.
 
-## Bible field values (B2b)
+## Bible field values (B2b–B2c)
 
 Open Library → Bible Entries, then Fields beside an entry. Choose a compatible template and Assign Template, then edit/save individual fields. Clear Value removes just that value. Empty text, zero and false remain real saved values. Decimal input stays exact text (for example `12.50`); integers must be within ±(2^53−1). Missing required fields are allowed while drafting.
 
-Template changes are blocked while saved values or overrides exist. Other field types are retained and labelled unavailable until their sections ship. Built-in templates currently offer text/integer scalar fields; decimal/boolean controls support those definitions when present, while creating custom definitions is later work. If a stale edit is refused, the form remains available: preserve your draft and close/reopen Bible Entries to review current data. Field saves compare both the entry and field-definition timestamps. No database migration is needed for this section.
+Template changes are blocked while saved values or overrides exist. Entry-reference and attachment field values are retained and labelled unavailable until their sections ship. Built-in templates currently offer text/integer scalar fields; decimal/boolean controls support those definitions when present, while creating custom definitions is later work. If a stale edit is refused, the form remains available: preserve your draft and close/reopen Bible Entries to review current data. Field saves compare both the entry and field-definition timestamps. No database migration is needed for this section.
+
+Selection fields save option IDs (single choice or checkboxes). No choices saves an empty selection; Clear Value removes it. Real-world dates use YYYY-MM-DD and must exist in the Gregorian calendar. Story dates have a label, optional calendar and optional integer ordinal, including zero and negatives.
+
+Tables support 1–20 columns and up to 500 rows. Each heading/cell allows 1,000 Unicode code points. Use Add/Remove Row or Column and Save Value; Cancel leaves saved data unchanged. Column/row removal takes effect only when saved. Clear Value removes the whole field value. Other saved fields stay intact. Table requests can be up to 64 MiB; reverse proxies must permit this size for field-value routes if large tables are needed. Other API routes retain the 4 MiB bound.
+
+The native Event template exposes a story date. Selection, real-date and table controls work when their definitions exist; creating custom definitions is B2e. For disposable browser QA only, `STUDIO_STRUCTURED_PREVIEW=1 node scripts/preview-scratch.ts` adds demonstration definitions/entry to the volatile scratch library. It does not modify the production initializer or native built-ins.
