@@ -78,33 +78,38 @@ try {
   const book = await api(`/libraries/${library.id}/books`, "POST", {
     title: "Restart check",
   });
-  // B3a storage-only setup: use only this disposable project's database.
-  const worldId = crypto.randomUUID(),
-    seriesId = crypto.randomUUID();
-  console.log(
-    await compose(
-      "exec",
-      "-T",
-      "studio",
-      "node",
-      "--input-type=module",
-      "-e",
-      `
-    const { postgres } = await import('./packages/studio/src/postgres.ts');
-    const db = postgres(process.env.DATABASE_URL);
-    try {
-      const now = new Date().toISOString();
-      const world = { id: '${worldId}', title: 'Scratch world', orderKey: 'a', createdAt: now, updatedAt: now };
-      const series = { ...world, id: '${seriesId}', title: 'Scratch series', universeId: world.id };
-      await db.transaction(async q => {
-        await q('INSERT INTO universes(id,library_id,data) VALUES($1,$2,$3)', [world.id, '${library.id}', world]);
-        await q('INSERT INTO series(id,library_id,data) VALUES($1,$2,$3)', [series.id, '${library.id}', series]);
-        await q('UPDATE books SET data=data || $2::jsonb WHERE id=$1', ['${book.id}', { universeId: world.id, seriesId: series.id }]);
-      });
-    } finally { await db.close(); }
-  `,
-    ),
+  const world = await api(`/libraries/${library.id}/universes`, "POST", {
+    title: "Scratch world",
+  });
+  const serial = await api(`/libraries/${library.id}/series`, "POST", {
+    title: "Scratch series",
+    universeId: world.id,
+  });
+  const worldId = world.id,
+    seriesId = serial.id;
+  await api(`/books/${book.id}/membership`, "PUT", {
+    universeId: worldId,
+    seriesId,
+    expectedUpdatedAt: book.updatedAt,
+  });
+  await api(
+    `/libraries/${library.id}/universes/${worldId}`,
+    "PUT",
+    { title: "Renamed scratch world", expectedUpdatedAt: world.updatedAt },
   );
+  const unusedWorld = await api(`/libraries/${library.id}/universes`, "POST", {
+    title: "Unused world",
+  });
+  const trashedWorld = await api(
+    `/libraries/${library.id}/universes/${unusedWorld.id}`,
+    "PUT",
+    { deleted: true, expectedUpdatedAt: unusedWorld.updatedAt },
+  );
+  assert.ok(trashedWorld.deletedAt);
+  await api(`/libraries/${library.id}/universes/${unusedWorld.id}`, "PUT", {
+    deleted: false,
+    expectedUpdatedAt: trashedWorld.updatedAt,
+  });
   const chapter = await api(`/books/${book.id}/nodes`, "POST", {
     title: "Chapter 1",
     kind: "chapter",
@@ -315,12 +320,14 @@ try {
   assert.ok(!structure.nodes.find((n: any) => n.id === scene.id).deletedAt);
   assert.equal((await api(`/documents/${scene.id}/revisions`)).length, 2);
   const finalCatalog = await api(`/libraries/${library.id}/templates`);
+  const worldCatalog = await api(`/libraries/${library.id}/worlds`);
   await compose("restart");
   await health();
   assert.deepEqual(
     await api(`/libraries/${library.id}/templates`),
     finalCatalog,
   );
+  assert.deepEqual(await api(`/libraries/${library.id}/worlds`), worldCatalog);
   const persistedEntry = (await api(`/books/${book.id}/entries`)).find(
     (e: any) => e.id === entry.id,
   );

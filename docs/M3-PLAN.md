@@ -45,6 +45,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B3a1 — World/series storage: implemented 2026-11-04.** B3a split at storage/recovery boundary. Schema v5 adds library ownership and generated membership foreign keys, series/world matching and deletion restrictions. Recovery v3/schema5 captures library worlds/series and accepts v1/schema3 and v2/schema4. 59 tests, TypeScript/build and ARM64 PostgreSQL/Podman recovery smoke pass. Next: **B3a2 membership APIs and in-window controls**; B3b remains a separate section.
 
+- **B3a2 — World/series membership controls: implemented 2026-11-04.** Library → Worlds and Series creates/renames worlds/series, applies book memberships and offers guarded Trash/restore. Library locking and CAS preserve forms/opaque data; native-compatible world changes clear incompatible existing series. 64 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL restart/recovery pass. Schema v5/recovery v3 unchanged. Next: **B3b shared canon and book overrides** in a separate session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

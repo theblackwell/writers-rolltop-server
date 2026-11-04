@@ -33,6 +33,9 @@ export type Item = {
   parentId?: string;
   orderKey?: string;
   deletedAt?: string;
+  updatedAt?: string;
+  universeId?: string;
+  seriesId?: string;
   subtitle?: string;
   authorName?: string;
   description?: string;

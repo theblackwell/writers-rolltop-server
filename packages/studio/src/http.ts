@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { worlds, editWorld, bookMembership } from "./worlds.ts";
 import { editDefinition } from "./template-editor.ts";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -197,6 +198,48 @@ export function studioServer(
             "Use a valid item identifier.",
           );
       const method = req.method;
+      if (
+        parts[0] === "libraries" &&
+        parts.length === 3 &&
+        parts[2] === "worlds" &&
+        method === "GET"
+      )
+        return respond(res, 200, await worlds(store.db, parts[1]));
+      if (
+        parts[0] === "libraries" &&
+        ["universes", "series"].includes(parts[2]) &&
+        ((parts.length === 3 && method === "POST") ||
+          (parts.length === 4 && method === "PUT"))
+      ) {
+        if (parts[3] && !uuid.test(parts[3]))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid world or series.",
+          );
+        return respond(
+          res,
+          parts[3] ? 200 : 201,
+          await editWorld(
+            store.db,
+            parts[1],
+            parts[2] as "universes" | "series",
+            await body(req),
+            parts[3],
+          ),
+        );
+      }
+      if (
+        parts[0] === "books" &&
+        parts.length === 3 &&
+        parts[2] === "membership" &&
+        method === "PUT"
+      )
+        return respond(
+          res,
+          200,
+          await bookMembership(store.db, parts[1], await body(req)),
+        );
       if (
         parts[0] === "libraries" &&
         parts.length === 3 &&

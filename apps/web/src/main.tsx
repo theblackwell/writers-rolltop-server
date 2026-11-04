@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { Worlds } from "./worlds.tsx";
 import React, {
   useState,
   useEffect,
@@ -137,6 +138,7 @@ function App() {
   const [library, setLibrary] = useState<Item | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressVersion, setProgressVersion] = useState(0);
+  const [worldsOpen, setWorldsOpen] = useState(false);
   const [bibleOpen, setBibleOpen] = useState(false);
   const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -408,6 +410,9 @@ function App() {
               <button onClick={() => newItem("library")}>New Library…</button>
               <button disabled={!library} onClick={() => newItem("book")}>
                 New Book…
+              </button>
+              <button disabled={!library} onClick={() => setWorldsOpen(true)}>
+                Worlds and Series…
               </button>
               <button disabled={!book} onClick={() => setDetails(book)}>
                 Book Details and Goals…
@@ -750,6 +755,21 @@ function App() {
                 setView("manuscript");
                 setSearching(false);
               }
+            }}
+          />
+        </Dialog>
+      )}
+      {worldsOpen && library && (
+        <Dialog title="Worlds and Series" close={() => setWorldsOpen(false)}>
+          <Worlds
+            libraryId={library.id}
+            onBookSaved={(updated) => {
+              setBooks((items) =>
+                items.map((item) => (item.id === updated.id ? updated : item)),
+              );
+              setBook((current) =>
+                current?.id === updated.id ? updated : current,
+              );
             }}
           />
         </Dialog>
