@@ -1039,3 +1039,13 @@ dialog textarea {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.entry-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.entry-toggle input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}

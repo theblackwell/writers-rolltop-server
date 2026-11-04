@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import React, { useEffect, useState } from "react";
 import { api } from "./api.ts";
-type Entry = {
-  id: string;
-  name: string;
-  entryType: string;
-  summary?: string;
-  deletedAt?: string;
-};
+import { EntryList } from "./entries.tsx";
+import type { Entry } from "./entries.tsx";
 type Reference = {
   id: string;
   entryId: string;
@@ -80,8 +75,8 @@ export function References({
   return (
     <section>
       <p>
-        Book-scoped bible entries. Shared worlds, templates, and full entry
-        editing are coming in the bible section.
+        Book-scoped bible entries. Edit names, aliases and summaries here.
+        Shared worlds, templates and custom fields are coming in later sections.
       </p>
       {error && <p role="alert">{error}</p>}
       {!loaded && <p>Loading…</p>}
@@ -139,16 +134,15 @@ export function References({
         </form>
       </details>
       {!nodeId && (
-        <ul className="search-results">
-          {entries
-            .filter((e) => !e.deletedAt)
-            .map((e) => (
-              <li key={e.id}>
-                <strong>{e.name}</strong> ({e.entryType})
-                <p style={{ whiteSpace: "pre-wrap" }}>{e.summary}</p>
-              </li>
-            ))}
-        </ul>
+        <EntryList
+          bookId={bookId}
+          entries={entries}
+          busy={busy || !loaded}
+          action={action}
+          onSaved={(entry) =>
+            setEntries((es) => es.map((e) => (e.id === entry.id ? entry : e)))
+          }
+        />
       )}
       {nodeId && (
         <>

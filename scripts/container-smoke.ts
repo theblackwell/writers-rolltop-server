@@ -95,6 +95,38 @@ try {
     document: first.document,
     expectedRevision: first.revision,
   });
+  const entry = await api(`/books/${book.id}/entries`, "POST", {
+    name: "Corin",
+    entryType: "character",
+  });
+  const editedEntry = await api(
+    `/books/${book.id}/entries/${entry.id}`,
+    "PUT",
+    {
+      givenName: "Corin",
+      familyName: "Vale",
+      aliases: ["The courier"],
+      summary: "Carries the letter",
+      toBeNamed: true,
+      expectedUpdatedAt: entry.updatedAt,
+    },
+  );
+  await assert.rejects(
+    () =>
+      api(`/books/${book.id}/entries/${entry.id}`, "PUT", {
+        name: "Stale",
+        expectedUpdatedAt: entry.updatedAt,
+      }),
+    /409/,
+  );
+  const trashEntry = await api(`/books/${book.id}/entries/${entry.id}`, "PUT", {
+    deleted: true,
+    expectedUpdatedAt: editedEntry.updatedAt,
+  });
+  await api(`/books/${book.id}/entries/${entry.id}`, "PUT", {
+    deleted: false,
+    expectedUpdatedAt: trashEntry.updatedAt,
+  });
   const stale = await fetch(origin + `/api/documents/${scene.id}`, {
     method: "PUT",
     headers: {
@@ -133,6 +165,13 @@ try {
   assert.equal((await api(`/documents/${scene.id}/revisions`)).length, 2);
   await compose("restart");
   await health();
+  const persistedEntry = (await api(`/books/${book.id}/entries`)).find(
+    (e: any) => e.id === entry.id,
+  );
+  assert.equal(persistedEntry.name, "Corin Vale");
+  assert.deepEqual(persistedEntry.aliases, ["The courier"]);
+  assert.equal(persistedEntry.toBeNamed, true);
+  assert.ok(!persistedEntry.deletedAt);
   const restored = await api(`/documents/${scene.id}`);
   assert.equal(restored.revision, 2);
   assert.deepEqual(restored.document, first.document);
@@ -204,6 +243,8 @@ try {
     const db = postgres(url.href);
     try {
       const store = new StudioStore(db);
+      const recoveredEntry = (await store.entries('${book.id}')).find(e => e.id === '${entry.id}');
+      if (recoveredEntry?.name !== 'Corin Vale' || !recoveredEntry.toBeNamed) throw Error('Entry recovery mismatch');
       const doc = await store.document('${scene.id}');
       const { default: assert } = await import('node:assert/strict');
       assert.equal(doc.revision, 2);
@@ -217,7 +258,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, bible entry edit/conflict/Trash/restore persistence, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

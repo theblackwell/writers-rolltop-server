@@ -114,3 +114,7 @@ podman compose exec -T studio node --input-type=module -e '
 Use `docker` in place of `podman` for Docker Engine. The command reuses existing database credentials without printing them. To run outside Compose, set `RECOVERY_DATABASE_URL` to the separate scratch database and run `node packages/studio/src/restore-cli.ts /absolute/backup/path --empty-scratch`. The CLI migrates the target schema and never drops or overwrites existing content.
 
 Inspect recovered content through a separate scratch studio pointing only at the recovery database (with its own origin/port), or inspect SQL records. The book and manuscript may still be in Trash because the backup preserves pre-deletion state; use Restore there. Full-book recovery is deliberate: it preserves context and saved versions and does not merge over subsequent edits in the live book. Reconciliation with newer live content remains manual until safe portable archives are implemented. Keep full PostgreSQL disaster backups using the procedure above.
+
+## Release architectures (required before final delivery)
+
+The owner requires both `linux/arm64` and `linux/amd64` (x86-64) containers. A multi-platform release build and runtime smoke check on each architecture remain final M3 acceptance gates. The current local Podman smoke was on ARM64; x86-64 support is required but has not yet been built or verified.

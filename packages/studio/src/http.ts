@@ -208,6 +208,20 @@ export function studioServer(
           );
       }
       if (
+        parts[0] === "books" &&
+        parts[2] === "entries" &&
+        parts.length === 4 &&
+        method === "PUT"
+      ) {
+        if (!uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid entry.");
+        return respond(
+          res,
+          200,
+          await store.updateEntry(parts[1], parts[3], await body(req)),
+        );
+      }
+      if (
         parts[0] === "nodes" &&
         parts[2] === "references" &&
         (parts.length === 3 || parts.length === 4)

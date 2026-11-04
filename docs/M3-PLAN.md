@@ -32,6 +32,10 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 - **L3 — Formatting, goal-progress totals and layout preferences: implemented 2026-11-04.** All six heading levels, alignment, ordered lists/indent/outdent and link form; saved Unicode totals by book/node, goal percentage/remaining words and date; browser-local layout persists safely when storage is available. Browser visual QA and real PostgreSQL smoke remain open.
 - **L4a — Durable book recovery backups: implemented 2026-11-04.** Internal snapshot/write/read/restore primitives; whole-book records and all saved revisions, checksum, exclusive private files, fsync and read-back verification. Scratch restore/failure tests pass. No purge endpoint/UI yet.
 - **L4b — Backup-protected permanent deletion: implemented 2026-11-04.** Exact-title in-window confirmation with Trash-batch recheck; verified whole-book recovery file before transactional descendant/reference/pinned-note cleanup. Separate persistent Docker/Podman backup volume and empty-scratch restore CLI. 37 tests, TypeScript/build, real PostgreSQL/Podman failure/purge/restart/restore and desktop book confirmation/receipt browser QA pass. Docker Engine and full responsive/accessibility checks remain acceptance gates.
-- **B1 — Bible parity planning and first bounded implementation section.** Read delivery step 3, native/Spec models and define small sections before implementing full entry editing/shared scopes.
+- **B1 — Bible parity plan and entry details: implemented 2026-11-04.** Edit name/character name parts, aliases, summary, naming flag; filters and reversible entry Trash/restore with stale-write checks. 40 tests, TypeScript/build, browser QA and Podman/PostgreSQL persistence/recovery pass. See [M3-BIBLE-PLAN.md](M3-BIBLE-PLAN.md) for bounded remaining sections; next is **B2a template/field storage**, not full bible parity yet.
 
 Continue delivery steps 3–5 above in separately sized sections after library editing.
+
+## Final container delivery requirement
+
+Owner requirement (2026-11-04): ship both `linux/arm64` and `linux/amd64` (x86-64) images. Verify the multi-platform build and run the container smoke suite on each architecture before M3 sign-off. ARM-only local verification is insufficient.

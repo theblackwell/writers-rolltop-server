@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { entryInput, editEntry } from "./entries.ts";
 import { basename } from "node:path";
 import { captureBook, writeBookBackup } from "./backup.ts";
 import { wordCount } from "../../document-adapter/src/text.ts";
@@ -132,55 +133,68 @@ export class StudioStore {
     ).rows.map((r) => r.data);
   }
   async createEntry(bookId: string, input: any) {
-    if (
-      !input ||
-      typeof input !== "object" ||
-      Array.isArray(input) ||
-      Object.keys(input).some(
-        (k) => !["name", "entryType", "summary"].includes(k),
-      )
-    )
-      return fail("Provide entry name, type and summary.");
+    entryInput(input);
     const name = title(input.name);
-    if (
-      ![
-        "character",
-        "location",
-        "organization",
-        "object",
-        "event",
-        "plotline",
-        "worldRule",
-        "research",
-        "term",
-      ].includes(input.entryType)
-    )
-      return fail("Choose a bible entry type.");
-    if (
-      input.summary !== undefined &&
-      (typeof input.summary !== "string" || input.summary.length > 20000)
-    )
-      return fail("Use a summary of at most 20,000 characters.");
     return this.db.transaction(async (q) => {
       const ctx = await this.bookContext(q, bookId);
       if (ctx.book.deletedAt)
         return fail("Restore the book before adding entries.");
       const now = new Date().toISOString();
-      const entry = {
-        id: randomUUID(),
-        entryType: input.entryType,
-        name,
-        summary: input.summary ?? "",
-        aliases: [],
-        scope: { kind: "book", id: bookId },
-        values: {},
-        overrides: [],
-        attachments: [],
-        createdAt: now,
-        updatedAt: now,
-      };
+      const entry = editEntry(
+        {
+          id: randomUUID(),
+          entryType: input.entryType,
+          name,
+          summary: input.summary ?? "",
+          aliases: [],
+          scope: { kind: "book", id: bookId },
+          values: {},
+          overrides: [],
+          attachments: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+        input,
+      );
       await q("INSERT INTO bible_entries VALUES($1,$2,$3)", [
         entry.id,
+        bookId,
+        entry,
+      ]);
+      return entry;
+    });
+  }
+  async updateEntry(bookId: string, id: string, input: any) {
+    entryInput(input, true);
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, bookId);
+      if (ctx.book.deletedAt)
+        return fail("Restore the book before editing its bible.");
+      const old = required(
+        (
+          await q("SELECT data FROM bible_entries WHERE id=$1 AND book_id=$2", [
+            id,
+            bookId,
+          ])
+        ).rows[0],
+      ).data;
+      if (input.expectedUpdatedAt !== old.updatedAt)
+        throw new StudioError(
+          409,
+          "ENTRY_CONFLICT",
+          "This entry changed. Your form is kept. Close and reopen Bible Entries to review the latest version.",
+        );
+      if (old.deletedAt && input.deleted !== false)
+        return fail("Restore the entry before editing it.");
+      const entry = editEntry(old, input);
+      const now = new Date(
+        Math.max(Date.now(), Date.parse(old.updatedAt) + 1),
+      ).toISOString();
+      entry.updatedAt = now;
+      if (input.deleted === true) entry.deletedAt = now;
+      if (input.deleted === false) delete entry.deletedAt;
+      await q("UPDATE bible_entries SET data=$3 WHERE id=$1 AND book_id=$2", [
+        id,
         bookId,
         entry,
       ]);
