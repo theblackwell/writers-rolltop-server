@@ -168,7 +168,7 @@ test("template/field writes refuse foreign, stale, trashed and destructive chang
           f.book.id,
           entry.id,
           {
-            value: null,
+            value: entry.id,
             expectedUpdatedAt: entry.updatedAt,
             expectedFieldUpdatedAt: home.updatedAt,
           },
