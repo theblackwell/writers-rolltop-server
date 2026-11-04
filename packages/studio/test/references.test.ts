@@ -130,6 +130,8 @@ test("v2 upgrades preserve notes and manuscripts", async () => {
   try {
     const note = await f.store.saveNote(f.book.id, { text: "Keep note" });
     const doc = await f.store.document(f.scene.id);
+    await f.store.db.query("DROP TABLE bible_fields");
+    await f.store.db.query("DROP TABLE bible_templates");
     await f.store.db.query("DROP TABLE manuscript_references");
     await f.store.db.query("DROP TABLE bible_entries");
     await f.store.db.query("UPDATE studio_schema SET version=2");
@@ -138,7 +140,7 @@ test("v2 upgrades preserve notes and manuscripts", async () => {
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      3,
+      4,
     );
     assert.deepEqual(await f.store.notes(f.book.id), [note]);
     assert.deepEqual(await f.store.document(f.scene.id), doc);

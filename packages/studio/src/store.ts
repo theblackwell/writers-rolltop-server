@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { initializeTemplates } from "./templates.ts";
 import { entryInput, editEntry } from "./entries.ts";
 import { basename } from "node:path";
 import { captureBook, writeBookBackup } from "./backup.ts";
@@ -85,15 +86,16 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 3)
+      if (rows[0]?.version > 4)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3].includes(rows[0].version))
+        if (![1, 2, 3, 4].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
+        if (rows[0].version < 4) await this.migrateTemplates(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -106,6 +108,7 @@ export class StudioStore {
         INSERT INTO studio_schema(version) VALUES(1)`);
       await this.migrateNotes(q);
       await this.migrateReferences(q);
+      await this.migrateTemplates(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -119,6 +122,56 @@ export class StudioStore {
       CREATE TABLE manuscript_references (id uuid PRIMARY KEY, node_id uuid NOT NULL REFERENCES manuscript_nodes(id), entry_id uuid NOT NULL REFERENCES bible_entries(id), data jsonb NOT NULL);
       CREATE INDEX references_by_node ON manuscript_references(node_id);
       UPDATE studio_schema SET version=3`);
+  }
+  private async migrateTemplates(q: Query) {
+    await q(`CREATE TABLE bible_templates (
+      id uuid PRIMARY KEY, library_id uuid NOT NULL REFERENCES libraries(id), data jsonb NOT NULL,
+      UNIQUE(id,library_id),
+      CHECK(data ?& ARRAY['id','name','entryType','builtIn','orderKey','createdAt','updatedAt']),
+      CHECK(jsonb_typeof(data->'builtIn')='boolean'),
+      CHECK(data->>'id'=id::text),
+      CHECK(data->>'entryType' IN ('character','location','organization','object','event','plotline','worldRule','research','term')));
+      CREATE INDEX templates_by_library ON bible_templates(library_id);
+      CREATE UNIQUE INDEX live_builtin_template ON bible_templates(library_id,(data->>'entryType'))
+        WHERE data->>'builtIn'='true' AND NOT (data ? 'deletedAt');
+      CREATE TABLE bible_fields (
+        id uuid PRIMARY KEY, library_id uuid NOT NULL, template_id uuid NOT NULL, data jsonb NOT NULL,
+        FOREIGN KEY(template_id,library_id) REFERENCES bible_templates(id,library_id),
+        CHECK(data ?& ARRAY['id','templateId','key','label','fieldType','required','orderKey','createdAt','updatedAt']),
+        CHECK(jsonb_typeof(data->'required')='boolean'),
+        CHECK((data->>'fieldType'='selection') = (data ? 'options')),
+        CHECK(data->>'id'=id::text AND data->>'templateId'=template_id::text),
+        CHECK(data->>'key' ~ '^[a-z][a-zA-Z0-9_]{0,63}$'),
+        CHECK(data->>'fieldType' IN ('shortText','longText','integer','decimal','boolean','selection','realDate','fictionalDate','entryReference','entryReferences','attachment','table')));
+      CREATE INDEX fields_by_library ON bible_fields(library_id);
+      CREATE UNIQUE INDEX fields_by_key ON bible_fields(template_id,(data->>'key'));
+      UPDATE studio_schema SET version=4`);
+    for (const library of (await q("SELECT id FROM libraries ORDER BY id"))
+      .rows)
+      await initializeTemplates(q, library.id);
+  }
+  async templates(libraryId: string) {
+    required(
+      (await this.db.query("SELECT id FROM libraries WHERE id=$1", [libraryId]))
+        .rows[0],
+    );
+    return this.db.transaction(async (q) => {
+      // A consistent pair, also serialized with future template writes/initialization.
+      await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [libraryId]);
+      const templates = (
+        await q(
+          "SELECT data FROM bible_templates WHERE library_id=$1 ORDER BY (data->>'orderKey') COLLATE \"C\", id",
+          [libraryId],
+        )
+      ).rows.map((r) => r.data);
+      const fields = (
+        await q(
+          "SELECT data FROM bible_fields WHERE library_id=$1 ORDER BY template_id,(data->>'orderKey') COLLATE \"C\", id",
+          [libraryId],
+        )
+      ).rows.map((r) => r.data);
+      return { templates, fields };
+    });
   }
   async entries(bookId: string) {
     required(
@@ -433,7 +486,10 @@ export class StudioStore {
   }
   async createLibrary(name: string) {
     const item = record(name);
-    await this.db.query("INSERT INTO libraries VALUES($1,$2)", [item.id, item]);
+    await this.db.transaction(async (q) => {
+      await q("INSERT INTO libraries VALUES($1,$2)", [item.id, item]);
+      await initializeTemplates(q, item.id);
+    });
     return item;
   }
   async library(id: string) {

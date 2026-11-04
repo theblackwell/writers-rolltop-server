@@ -72,6 +72,9 @@ try {
   const library = await api("/libraries", "POST", {
     title: "Container smoke scratch",
   });
+  const catalog = await api(`/libraries/${library.id}/templates`);
+  assert.equal(catalog.templates.length, 9);
+  assert.equal(catalog.fields.length, 20);
   const book = await api(`/libraries/${library.id}/books`, "POST", {
     title: "Restart check",
   });
@@ -165,6 +168,7 @@ try {
   assert.equal((await api(`/documents/${scene.id}/revisions`)).length, 2);
   await compose("restart");
   await health();
+  assert.deepEqual(await api(`/libraries/${library.id}/templates`), catalog);
   const persistedEntry = (await api(`/books/${book.id}/entries`)).find(
     (e: any) => e.id === entry.id,
   );
@@ -243,6 +247,8 @@ try {
     const db = postgres(url.href);
     try {
       const store = new StudioStore(db);
+      const recoveredCatalog = await store.templates('${library.id}');
+      if (recoveredCatalog.templates.length !== 9 || recoveredCatalog.fields.length !== 20) throw Error('Template recovery mismatch');
       const recoveredEntry = (await store.entries('${book.id}')).find(e => e.id === '${entry.id}');
       if (recoveredEntry?.name !== 'Corin Vale' || !recoveredEntry.toBeNamed) throw Error('Entry recovery mismatch');
       const doc = await store.document('${scene.id}');
@@ -258,7 +264,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, bible entry edit/conflict/Trash/restore persistence, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore persistence, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

@@ -194,6 +194,14 @@ export function studioServer(
           );
       const method = req.method;
       if (
+        parts[0] === "libraries" &&
+        parts.length === 3 &&
+        parts[2] === "templates" &&
+        method === "GET"
+      )
+        return respond(res, 200, await store.templates(parts[1]));
+
+      if (
         parts[0] === "books" &&
         parts[2] === "entries" &&
         parts.length === 3

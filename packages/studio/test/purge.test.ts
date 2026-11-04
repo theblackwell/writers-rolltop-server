@@ -163,7 +163,8 @@ test("SQL failure rolls back purge while retaining verified backup; book purge i
     await f.store.purge("book", book.id, confirm(book));
     assert.equal((await f.store.book(other.id)).book.title, "Other");
     for (const t of backupTables.filter(
-      (t) => t !== "libraries" && t !== "books",
+      (t) =>
+        !["libraries", "books", "bible_templates", "bible_fields"].includes(t),
     ))
       assert.equal(
         (await f.store.db.query(`SELECT * FROM ${t}`)).rows.length,
