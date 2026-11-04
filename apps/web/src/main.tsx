@@ -307,17 +307,24 @@ function App() {
       if (!(await leave()))
         return "The current scene could not be saved. Close this dialog to review it.";
       const resource = target.type === "book" ? "books" : "nodes";
-      await api(
+      const result = await api(
         `/${resource}/${target.item.id}${target.action === "rename" ? "" : "/" + target.action}`,
         target.action === "rename" ? "PUT" : "POST",
         payload,
       );
       setManagement(null);
+      if (target.action === "purge")
+        setError(
+          `Deleted permanently. Recovery backup: ${result.backup}. Keep this filename for your administrator.`,
+        );
       try {
         await reloadWorkspace();
       } catch (e) {
         setError(
-          "The change was saved, but the workspace could not reload. " +
+          (target.action === "purge"
+            ? `Deleted permanently. Recovery backup: ${result.backup}. `
+            : "The change was saved. ") +
+            "The workspace could not reload. " +
             errorText(e),
         );
       }
@@ -560,6 +567,15 @@ function App() {
                   >
                     Restore
                   </button>
+                  <button
+                    disabled={mutating}
+                    onClick={() =>
+                      void manage({ item: b, type: "book", action: "purge" })
+                    }
+                    aria-label={`Delete book ${b.title} permanently`}
+                  >
+                    Delete Permanently…
+                  </button>
                 </div>
               ))}
             </section>
@@ -658,6 +674,15 @@ function App() {
                     >
                       Restore
                     </button>
+                    <button
+                      disabled={mutating}
+                      onClick={() =>
+                        void manage({ item: n, type: "node", action: "purge" })
+                      }
+                      aria-label={`Delete ${itemLabel(n)} permanently`}
+                    >
+                      Delete Permanently…
+                    </button>
                   </div>
                 ))}
               </details>
@@ -748,7 +773,7 @@ function App() {
       )}
       {management && (
         <Dialog
-          title={`${management.action === "rename" ? "Rename" : management.action === "trash" ? "Move to Trash" : "Move"} ${management.item.title}`}
+          title={`${management.action === "purge" ? "Delete Permanently" : management.action === "rename" ? "Rename" : management.action === "trash" ? "Move to Trash" : "Move"} ${management.item.title}`}
           close={() => {
             if (!mutating) setManagement(null);
           }}

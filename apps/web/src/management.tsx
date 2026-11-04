@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import type { Item } from "./api.ts";
 import { children, liveNodes, itemLabel } from "./manuscript.ts";
 export type ManagementAction =
-  "rename" | "move" | "trash" | "restore" | "up" | "down";
+  "rename" | "move" | "trash" | "restore" | "purge" | "up" | "down";
 export type Target = {
   item: Item;
   type: "book" | "node";
@@ -136,6 +136,7 @@ export function ManagementForm({
   onApply: (payload: unknown) => Promise<string | undefined>;
   onCancel: () => void;
 }) {
+  const [confirmation, setConfirmation] = useState("");
   const [name, setName] = useState(target.item.title);
   const [parent, setParent] = useState(target.item.parentId ?? "");
   const [before, setBefore] = useState("");
@@ -154,22 +155,29 @@ export function ManagementForm({
     (n) => n.id !== target.item.id,
   );
   const label =
-    target.action === "rename"
-      ? "Rename"
-      : target.action === "trash"
-        ? "Move to Trash"
-        : "Move";
+    target.action === "purge"
+      ? "Delete Permanently"
+      : target.action === "rename"
+        ? "Rename"
+        : target.action === "trash"
+          ? "Move to Trash"
+          : "Move";
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
         const payload =
-          target.action === "rename"
-            ? { title: name }
-            : target.action === "move"
-              ? { parentId: parent || null, beforeId: before || null }
-              : {};
+          target.action === "purge"
+            ? {
+                confirmTitle: confirmation,
+                expectedDeletedAt: target.item.deletedAt,
+              }
+            : target.action === "rename"
+              ? { title: name }
+              : target.action === "move"
+                ? { parentId: parent || null, beforeId: before || null }
+                : {};
         try {
           const message = await onApply(payload);
           if (message) setError(message);
@@ -224,6 +232,26 @@ export function ManagementForm({
           </label>
         </>
       )}
+      {target.action === "purge" && (
+        <>
+          <p>
+            Permanently delete “{target.item.title}” and everything inside it,
+            including text, saved versions, references and pinned notes? This
+            cannot be undone in Trash. A verified recovery backup must succeed
+            first. Recovery requires a separate installation.
+          </p>
+          <label>
+            Type the exact title to confirm
+            <input
+              autoFocus
+              required
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+        </>
+      )}
       {target.action === "trash" && (
         <p>
           Move “{target.item.title}”
@@ -245,7 +273,11 @@ export function ManagementForm({
         </button>
         <button
           className="primary"
-          disabled={busy || (target.action === "rename" && !name.trim())}
+          disabled={
+            busy ||
+            (target.action === "purge" && confirmation !== target.item.title) ||
+            (target.action === "rename" && !name.trim())
+          }
         >
           {busy ? "Working…" : label}
         </button>

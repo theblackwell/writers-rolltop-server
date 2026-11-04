@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { basename } from "node:path";
+import { captureBook, writeBookBackup } from "./backup.ts";
 import { wordCount } from "../../document-adapter/src/text.ts";
 import { between } from "./order.ts";
 import { randomUUID } from "node:crypto";
@@ -68,8 +70,10 @@ const record = (name: string, extra: object = {}): RecordData => {
 
 export class StudioStore {
   db: Database;
-  constructor(db: Database) {
+  backupDirectory?: string;
+  constructor(db: Database, backupDirectory?: string) {
     this.db = db;
+    this.backupDirectory = backupDirectory;
   }
   async migrate() {
     await this.db.transaction(async (q) => {
@@ -858,6 +862,86 @@ export class StudioStore {
         await this.putNode(q, moved);
       }
       return { id };
+    });
+  }
+  async purge(type: "book" | "node", id: string, input: any) {
+    return this.db.transaction(async (q) => {
+      const ctx =
+        type === "book"
+          ? await this.bookContext(q, id)
+          : await this.nodeContext(q, id);
+      const target =
+        type === "book"
+          ? ctx.book
+          : required(ctx.nodes.find((n) => n.id === id));
+      if (!target.deletedAt)
+        return fail("Move this item to Trash before deleting it permanently.");
+      if (
+        !input ||
+        input.confirmTitle !== target.title ||
+        input.expectedDeletedAt !== target.deletedAt
+      )
+        throw new StudioError(
+          409,
+          "STALE_DELETE",
+          "This item changed. Close the dialog and review Trash again.",
+        );
+      if (!this.backupDirectory)
+        throw new StudioError(
+          503,
+          "BACKUP_UNAVAILABLE",
+          "Permanent deletion needs configured recovery backup storage. Nothing was deleted.",
+        );
+      let path: string;
+      try {
+        path = await writeBookBackup(
+          this.backupDirectory,
+          await captureBook(q, ctx.book.id),
+        );
+      } catch {
+        throw new StudioError(
+          503,
+          "BACKUP_FAILED",
+          "The recovery backup could not be verified. Nothing was deleted. Check backup storage and try again.",
+        );
+      }
+      const doomed = new Set(
+        type === "book" ? ctx.nodes.map((n) => n.id) : [id],
+      );
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const n of ctx.nodes)
+          if (n.parentId && doomed.has(n.parentId) && !doomed.has(n.id)) {
+            doomed.add(n.id);
+            changed = true;
+          }
+      }
+      const ids = [...doomed];
+      await q(
+        "DELETE FROM manuscript_references WHERE node_id=ANY($1::uuid[])",
+        [ids],
+      );
+      if (type === "book") {
+        await q(
+          "DELETE FROM manuscript_references WHERE entry_id IN (SELECT id FROM bible_entries WHERE book_id=$1)",
+          [ctx.book.id],
+        );
+        await q("DELETE FROM notes WHERE book_id=$1", [ctx.book.id]);
+        await q("DELETE FROM bible_entries WHERE book_id=$1", [ctx.book.id]);
+      } else {
+        await q(
+          "DELETE FROM notes WHERE book_id=$1 AND data->>'nodeId'=ANY($2::text[])",
+          [ctx.book.id, ids],
+        );
+      }
+      await q("DELETE FROM document_revisions WHERE node_id=ANY($1::uuid[])", [
+        ids,
+      ]);
+      await q("DELETE FROM documents WHERE node_id=ANY($1::uuid[])", [ids]);
+      await q("DELETE FROM manuscript_nodes WHERE id=ANY($1::uuid[])", [ids]);
+      if (type === "book") await q("DELETE FROM books WHERE id=$1", [id]);
+      return { backup: basename(path), deletedNodes: ids.length };
     });
   }
   async trashNode(id: string) {

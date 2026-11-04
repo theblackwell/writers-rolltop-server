@@ -136,11 +136,88 @@ try {
   const restored = await api(`/documents/${scene.id}`);
   assert.equal(restored.revision, 2);
   assert.deepEqual(restored.document, first.document);
+  await api(`/nodes/${destination.id}/trash`, "POST", {});
+  const trashed = (await api(`/books/${book.id}`)).nodes.find(
+    (n: any) => n.id === destination.id,
+  );
+  const confirmation = {
+    confirmTitle: trashed.title,
+    expectedDeletedAt: trashed.deletedAt,
+  };
+  await compose(
+    "exec",
+    "-T",
+    "studio",
+    "node",
+    "-e",
+    "require('node:fs').chmodSync('/studio/backups',0o500)",
+  );
+  try {
+    await assert.rejects(
+      () => api(`/nodes/${destination.id}/purge`, "POST", confirmation),
+      /503/,
+    );
+    assert.equal((await api(`/documents/${scene.id}`)).revision, 2);
+  } finally {
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "-e",
+      "require('node:fs').chmodSync('/studio/backups',0o700)",
+    );
+  }
+  const receipt = await api(
+    `/nodes/${destination.id}/purge`,
+    "POST",
+    confirmation,
+  );
+  await assert.rejects(() => api(`/documents/${scene.id}`), /404/);
+  await compose("restart", "studio");
+  await health();
+  await compose(
+    "exec",
+    "-T",
+    "postgres",
+    "createdb",
+    "-U",
+    "rolltop",
+    "recovery_scratch",
+  );
+  // Reuse the container's existing DB credentials without exposing them in output.
+  console.log(
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "--input-type=module",
+      "-e",
+      `
+    const url = new URL(process.env.DATABASE_URL); url.pathname = '/recovery_scratch';
+    process.env.RECOVERY_DATABASE_URL = url.href;
+    process.argv = ['node','restore-cli.ts', '/studio/backups/${receipt.backup}', '--empty-scratch'];
+    await import('./packages/studio/src/restore-cli.ts');
+    const { postgres } = await import('./packages/studio/src/postgres.ts');
+    const { StudioStore } = await import('./packages/studio/src/store.ts');
+    const db = postgres(url.href);
+    try {
+      const store = new StudioStore(db);
+      const doc = await store.document('${scene.id}');
+      const { default: assert } = await import('node:assert/strict');
+      assert.equal(doc.revision, 2);
+      assert.deepEqual(doc.document, ${JSON.stringify(first.document)});
+      if ((await store.revisions('${scene.id}')).length !== 2) throw Error('Revision loss');
+    } finally { await db.close(); }
+  `,
+    ),
+  );
   const page = await fetch(origin);
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

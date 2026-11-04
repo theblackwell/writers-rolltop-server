@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, unlink } from "node:fs/promises";
+import { open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { Query } from "./store.ts";
 
@@ -87,7 +87,8 @@ export async function readBookBackup(path: string): Promise<BookBackup> {
 
 /** Resolves only after file + directory fsync and read-back verification. */
 export async function writeBookBackup(directory: string, backup: BookBackup) {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  // Require pre-provisioned storage: syncing a new nested directory alone does
+  // not make its parent directory entries durable. Missing mounts fail closed.
   const path = join(directory, `${randomUUID()}.book-recovery.json`);
   const payload = JSON.stringify(backup);
   const file = await open(path, "wx", 0o600);
@@ -116,6 +117,7 @@ export async function writeBookBackup(directory: string, backup: BookBackup) {
 
 /** Only for an empty, migrated scratch database, inside a transaction. */
 export async function restoreBookBackup(q: Query, backup: BookBackup) {
+  await q(`LOCK TABLE ${backupTables.join(",")} IN EXCLUSIVE MODE`);
   for (const table of backupTables) {
     if ((await q(`SELECT 1 FROM ${table} LIMIT 1`)).rows.length)
       throw new Error("Recovery requires an empty scratch database.");

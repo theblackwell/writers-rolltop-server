@@ -86,9 +86,31 @@ It builds an image, creates an isolated Compose project/volume on port 14317, te
 
 To work against a separate PostgreSQL development database, set `DATABASE_URL`, `STUDIO_PASSWORD_HASH`, and `STUDIO_ORIGIN=http://localhost:5173`, then run `npm start` and `npm run dev` in separate terminals. The Vite server proxies `/api` to loopback port 4317. Never point development/testing at the owner's libraries or production database.
 
-Manuscript Actions (•••) are visible beside each binder item. Use Move To for another chapter/part and an insertion position. Trash preserves saved versions; Restore is in the binder Trash or Projects → Book Trash. Items trashed separately before a chapter/book remain trashed when that container is restored. Permanent deletion is not implemented.
+Manuscript Actions (•••) are visible beside each binder item. Use Move To for another chapter/part and an insertion position. Trash preserves saved versions; Restore is in the binder Trash or Projects → Book Trash. Items trashed separately before a chapter/book remain trashed when that container is restored. Permanent deletion is available only in Trash, after verified backup and exact-title confirmation.
 
+### Permanent deletion and book recovery
 
-### Internal deletion-recovery foundation (L4a)
+In Projects → Book Trash or Manuscript → Trash, choose **Delete Permanently…**. Type the exact title. The server rechecks that the item is still in the same Trash batch, locks its book, writes and verifies a whole-book recovery file, then deletes in one database transaction. A backup failure leaves content untouched; a database failure rolls deletion back and retains the recovery file. Closing or cancelling before submission does nothing. Once submitted, wait for the result; closing a browser cannot cancel a committed server operation.
 
-Permanent deletion is still unavailable. `packages/studio/src/backup.ts` supplies an internal whole-book recovery snapshot, private checksummed files with file/directory fsync and read-back verification, and transactional restore into empty migrated scratch tables. It includes Trash and every saved revision and excludes login sessions. This JSON format is not a portable `.rolltop` archive. The next section must configure durable backup storage outside PostgreSQL, expose a tested operator restore workflow, and wire backup success to deletion. Continue using the full PostgreSQL backup procedure above for deployed installations.
+Deleting a manuscript item deletes all descendants (including independently trashed ones), current text, saved versions, passage references and notes pinned to those nodes. Book notes and bible entries remain. Deleting a book also removes its notes and book-scoped bible entries. The library and other books remain. These rules cover the current schema v3; future bible/shared-scope/attachment tables must extend both backup and cleanup before they can ship.
+
+Compose mounts a separate persistent `recovery-backups` volume at `/studio/backups`, owned by the unprivileged app user. `STUDIO_BACKUP_DIRECTORY` points there. Native development must pre-create a private (0700) absolute writable directory and configure its path; without it permanent deletion fails closed. Keep this directory private. Files are created exclusively with mode 0600, synced with their directory and verified by SHA-256/read-back. Do not serve this directory as web assets. Files are never pruned automatically. Copy them off the host regularly, protect them as manuscript content, and monitor free space. `compose down` retains both volumes; `down -v` destroys both. These are same-host recovery copies, not disaster protection.
+
+A successful deletion shows a UUID `.book-recovery.json` filename. Retain it. Files contain the entire affected book before deletion, including Trash, unknown fields, notes, entries, references and every saved revision, plus its parent library record. They exclude login sessions and other books. This is an internal recovery format, **not** a portable `.rolltop` archive.
+
+Restore into a **new empty scratch database**, never over a live installation. Stop any studio connected to that scratch database first. The CLI locks content tables and refuses a nonempty target; inserts are transactional. For the default Compose setup, replace `REPLACE_WITH_RECEIPT` below with the returned filename:
+
+```bash
+podman compose exec -T postgres createdb -U rolltop rolltop_recovery
+podman compose exec -T studio node --input-type=module -e '
+  const target = new URL(process.env.DATABASE_URL);
+  target.pathname = "/rolltop_recovery";
+  process.env.RECOVERY_DATABASE_URL = target.href;
+  process.argv = ["node", "restore-cli.ts", "/studio/backups/REPLACE_WITH_RECEIPT", "--empty-scratch"];
+  await import("./packages/studio/src/restore-cli.ts");
+'
+```
+
+Use `docker` in place of `podman` for Docker Engine. The command reuses existing database credentials without printing them. To run outside Compose, set `RECOVERY_DATABASE_URL` to the separate scratch database and run `node packages/studio/src/restore-cli.ts /absolute/backup/path --empty-scratch`. The CLI migrates the target schema and never drops or overwrites existing content.
+
+Inspect recovered content through a separate scratch studio pointing only at the recovery database (with its own origin/port), or inspect SQL records. The book and manuscript may still be in Trash because the backup preserves pre-deletion state; use Restore there. Full-book recovery is deliberate: it preserves context and saved versions and does not merge over subsequent edits in the live book. Reconciliation with newer live content remains manual until safe portable archives are implemented. Keep full PostgreSQL disaster backups using the procedure above.

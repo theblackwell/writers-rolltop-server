@@ -1,6 +1,8 @@
-# M3 development checkpoint — 2026-11-03
+# M3 development checkpoint — 2026-11-04
 
-**Status: manuscript foundation and rename/move/Trash management implemented. M3 is not complete or signed off.**
+**Status: manuscript foundation and library editing L1–L4 implemented, including backup-protected permanent deletion. M3 is not complete or signed off.**
+
+Latest verification: 37 tests, TypeScript/build, Podman/PostgreSQL purge-failure/restart/restore and desktop book-deletion QA pass; see the L4b checkpoint below. The original foundation verification table and older dated checkpoints are retained as history.
 Owner authorized Codex to work in Server in parallel with Claude's M2 Apple work.
 No Apple or Spec files were changed for this slice. The owner authorized a Server-only
 checkpoint commit after verification. No push was requested.
@@ -33,7 +35,7 @@ Production setup and backup/restore commands: [SETUP.md](SETUP.md).
 
 ## Next work / acceptance gates
 
-1. Remaining manuscript management: metadata/goals/search/notes, reference linking, complete formatting controls and backup-protected permanent deletion. Rename/move/order, parts/front/back matter UI and tombstones/restore are implemented.
+1. Library editing L1–L4 is implemented. Finish broader browser QA for metadata/search/notes/references/formatting/goals, responsive/accessibility checks and search-parity follow-ups described in the section checkpoints.
 2. Bible and continuity parity with Spec/M1: scopes, all field kinds/templates/overrides, relationships, facts/questions, knowledge, timeline/state changes and warning dismissal.
 3. Attachments and safe `.rolltop` archives: checksums/path/size limits, staging, preview, required optional-field preservation and cross-edition round trips. **No import/export is offered yet; never substitute a lossy text conversion.**
 4. Durable offline application/recovery, additional browser concurrency/failure checks, 100k-word browser performance, responsive/accessibility pass, Docker Engine smoke, restore a PostgreSQL backup into a scratch installation, deployment/security review, screenshots and owner review.
@@ -67,7 +69,6 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Validation: **28/28 tests pass**, TypeScript and production build pass; diff whitespace check clean. Tests cover marked text, CJK, literal SQL wildcard characters, title hits, empty/long query rejection, book isolation, Trash/restore, unchanged documents/revisions and authenticated HTTP routing. Full suite required loopback permission for the disposable HTTP server. Existing Vite bundle-size advisory remains.
 - Limits: browser visual QA and real PostgreSQL smoke not repeated. This initial matcher differs from Apple's prefix/relevance search; chapter/part titles, ranking, notes and bible search remain follow-up work. Next session: **L2b quick notes**. End-of-section Server commit under standing permission; no push. No Apple/Spec or owner data touched.
 
-
 ## L2b — Quick notes — 2026-11-04
 
 - Library → Quick Notes opens an in-window form in all layouts. Add/edit plain text (1–20,000 characters), pin to the whole book or a manuscript node, re-pin, move to Trash and restore. Follows Apple's trimming and same-book pin semantics; notes retain pins when their manuscript item is trashed. No permanent deletion.
@@ -75,7 +76,6 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Append-only SQL migration v2 adds a notes table with canonical spec-shaped JSONB records and book FK. Fresh databases and v1 upgrades tested; manuscripts remain unchanged. No Apple or Spec changes.
 - Validation: **30/30 tests pass**, TypeScript and production build pass, whitespace check clean. Coverage includes persistence, ordering, re-pin, invalid/foreign pins and inputs, extra fields, stale writes, Trash/restore, upgrade/repeat migration and authenticated HTTP routing/origin/conflict checks. Existing bundle-size advisory remains.
 - Browser visual QA and real PostgreSQL/container smoke were not repeated. Notes search and portable archives remain later work. Next: **L2c references alongside valid bible-entry storage**. End-of-section Server commit under standing permission; not pushed. Owner libraries/databases untouched.
-
 
 ## L2c — Passage references — 2026-11-04
 
@@ -86,7 +86,6 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Validation: **32/32 tests pass**, TypeScript and production build pass, whitespace check clean. Includes HTTP routing/origin/conflict tests, invalid and foreign targets, saved-anchor/revision checks, duplicate rejection, stale updates, Trash/restore, missing anchors, unknown fields and migration preservation. Actual Tiptap test verifies overlapping new anchors preserve old anchors, text and strong formatting. Existing bundle-size advisory remains.
 - Browser visual QA and real PostgreSQL/container smoke not repeated. Full bible editing/shared visibility and portable archives remain open. Next session: **L3**, size into smaller sections if needed. End-of-section Server commit under standing permission; not pushed. No owner libraries/databases touched.
 
-
 ## L3 — Formatting, goal totals and layout preferences — 2026-11-04
 
 - Added in-window formatting controls for headings 1–6, left/center/right alignment, numbered lists, indent/outdent (indent bounded to canonical levels 0–7) and add/edit/remove links. The link form accepts http/https/mailto addresses; existing canonical anchor marks survive formatting. No unsupported font/size/colour fields introduced.
@@ -96,7 +95,6 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Verification: **33/33 tests pass**, TypeScript and production build pass, whitespace check clean. Tests cover hierarchy aggregation, marked text, Unicode/numbers/emoji, front matter, other-book isolation, Trash/restore, unchanged documents, authenticated progress HTTP and actual Tiptap heading/alignment/link/ordered-list commands preserving text and anchors. Existing Vite bundle-size advisory remains.
 - Browser visual QA and real PostgreSQL/container smoke not repeated; responsive/accessibility review remains an M3 acceptance gate. Next: **L4 backup-protected permanent deletion**. End-of-section Server commit under standing permission; not pushed. No Apple/Spec or owner data changes.
 
-
 ## L4a — Durable recovery backup foundation — 2026-11-04
 
 - Split L4 into backup foundation (this session) and L4b deletion/storage/UI integration to keep one coherent section per session. Permanent deletion remains unavailable; no partial purge operation was exposed.
@@ -104,3 +102,14 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Writer creates exclusive UUID-named 0600 files under a 0700-created directory, syncs file and directory, verifies SHA-256 and reads back the payload before resolving. Storage errors propagate. Recovery inserts in FK order, sorting parents before children; requires empty migrated scratch content tables and a caller-owned transaction. This is an internal recovery primitive, not an archive import feature or a deployed restore workflow. External PostgreSQL disaster backups remain required.
 - Verification: 34/34 tests pass (HTTP test uses authorized loopback); TypeScript and production build pass. Round trip uses two isolated PGlite databases/temp files and compares all stored rows, including multiple revisions, unknown fields, tombstones, pinned notes, bible entries and references. Corruption, invalid backup destination and nonempty restore target rejected. No real PostgreSQL/container or browser check this session.
 - Next session: L4b in the plan. Configure persistent storage and operator recovery tooling; integrate backup-before-delete with cleanup, safe confirmation and failure tests. No schema/Spec/Apple changes or owner data touched. Standing-authorized section commit; no push.
+
+## L4b — Backup-protected permanent deletion — 2026-11-04
+
+- Trash-only book/manuscript purge API and in-window exact-title confirmation. The server rechecks title and deletedAt under the book lock, captures a whole-book backup, waits for private-file fsync/checksum/read-back success, then deletes transactionally. Disabled/missing/unwritable storage fails closed. Database failure rolls back deletion but retains the verified recovery file. Success reports its filename.
+- All manuscript descendants (including independent Trash groups), documents, revisions, references and pinned notes are removed, matching native semantics. Book purge additionally removes book notes and entries; library/other books remain. Schema stays v3; future bible/shared-scope/attachment work must extend capture and cleanup together.
+- Compose adds a persistent recovery-backups volume, initialized with private app-user ownership in the OCI image; app remains unprivileged/read-only outside its writable backup mount/tmpfs. Native startup accepts STUDIO_BACKUP_DIRECTORY; absent configuration disables purge. The writer requires pre-provisioned storage rather than creating missing directories, so a missing mount fails closed and new parent-directory entries cannot escape the durability check. No automatic backup pruning or HTTP backup download.
+- Operator CLI verifies the file and restores transactionally into empty migrated scratch tables under exclusive table locks. Setup documents separate-database recovery, retained tombstones, no live merge, volume retention and off-host disaster backups. Scratch preview optionally accepts a temporary backup directory.
+- Verification: **37/37 tests pass**, TypeScript/production build pass, whitespace clean. New tests cover Trash requirement, missing/unwritable backup storage and unchanged rows, stale confirmation, subtree/pinned-note/reference cleanup, sibling/entry/book isolation, full backup restore, SQL-failure rollback with retained verified backup, authenticated/origin-checked HTTP purge and receipts. Existing Vite bundle-size advisory remains.
+- **Real PostgreSQL 17/Podman smoke passes**: OCI/Compose startup, login/save/CAS/management, unwritable storage refuses purge with document unchanged, verified purge, backup-volume persistence over studio restart, CLI restore into a new recovery_scratch database, canonical text and both saved revisions verified. Disposable project and both volumes removed. One smoke assertion was corrected to compare JSON objects semantically because PostgreSQL JSONB reorders keys.
+- **Desktop browser QA passes** on in-memory scratch data: book Trash → permanent-delete dialog; wrong title keeps submit disabled; matching title enables it; submit removes book and shows recovery filename. Screenshot: docs/screenshots/m3-purge.png. Scratch preview stopped afterward. Full responsive/accessibility review and separate Docker Engine smoke remain open M3 gates.
+- No Apple/Spec or owner data changes. Section commit under standing permission; no push. L4 complete for current schema. Next session: B1, size bible/continuity parity into small sections; do not begin it in this session.

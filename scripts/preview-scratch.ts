@@ -12,10 +12,13 @@ const query =
     !params && sql.includes(";")
       ? (await db.exec(sql)).at(-1)
       : db.query(sql, params);
-const store = new StudioStore({
-  query: query(pg),
-  transaction: (fn) => pg.transaction((tx) => fn(query(tx))),
-});
+const store = new StudioStore(
+  {
+    query: query(pg),
+    transaction: (fn) => pg.transaction((tx) => fn(query(tx))),
+  },
+  process.env.STUDIO_BACKUP_DIRECTORY,
+);
 await store.migrate();
 const library = await store.createLibrary("The writing room");
 const book = await store.createBook(library.id, "The Orchard at Dusk");

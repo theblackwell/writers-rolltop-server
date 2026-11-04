@@ -15,6 +15,7 @@ COPY packages/document-adapter/package.json packages/document-adapter/package.js
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /studio/packages ./packages
 COPY --from=build /studio/dist ./dist
+RUN mkdir -p /studio/backups && chown node:node /studio/backups && chmod 700 /studio/backups
 USER node
 EXPOSE 4317
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:4317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

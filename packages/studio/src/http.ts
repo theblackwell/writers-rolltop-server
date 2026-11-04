@@ -330,6 +330,21 @@ export function studioServer(
       if (
         (parts[0] === "books" || parts[0] === "nodes") &&
         parts.length === 3 &&
+        parts[2] === "purge" &&
+        method === "POST"
+      )
+        return respond(
+          res,
+          200,
+          await store.purge(
+            parts[0] === "books" ? "book" : "node",
+            parts[1],
+            await body(req),
+          ),
+        );
+      if (
+        (parts[0] === "books" || parts[0] === "nodes") &&
+        parts.length === 3 &&
         method === "POST" &&
         ["trash", "restore"].includes(parts[2])
       ) {

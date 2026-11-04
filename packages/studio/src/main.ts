@@ -14,7 +14,7 @@ if (!DATABASE_URL || !STUDIO_PASSWORD_HASH)
     "Set DATABASE_URL and STUDIO_PASSWORD_HASH; see docs/SETUP.md.",
   );
 const db = postgres(DATABASE_URL);
-const store = new StudioStore(db);
+const store = new StudioStore(db, process.env.STUDIO_BACKUP_DIRECTORY);
 // Validate configuration before connecting/migrating.
 const server = studioServer(store, {
   origin: STUDIO_ORIGIN,

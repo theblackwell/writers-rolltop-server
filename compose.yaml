@@ -6,7 +6,10 @@ services:
     environment:
       DATABASE_URL: postgresql://rolltop:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/rolltop
       STUDIO_PASSWORD_HASH: ${STUDIO_PASSWORD_HASH:?Set STUDIO_PASSWORD_HASH in .env}
+      STUDIO_BACKUP_DIRECTORY: /studio/backups
       STUDIO_ORIGIN: ${STUDIO_ORIGIN:-http://localhost:4317}
+    volumes:
+      - recovery-backups:/studio/backups
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,3 +35,4 @@ services:
     restart: unless-stopped
 volumes:
   postgres-data:
+  recovery-backups:
