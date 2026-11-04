@@ -26,7 +26,9 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 ## Sections (one per session, owner rule 2026-11-04)
 
 - **L1 — Book metadata and goal settings: implemented 2026-11-04.** Title, subtitle, author, description, language, word goal and target date; validated partial updates preserve unknown fields. Goal settings shown in manuscript navigation. Browser visual QA and live manuscript goal-progress totals remain follow-up work.
-- **L2 — Search, notes and references: next.** Inspect existing Spec and Apple semantics before implementation; preserve canonical reference marks. Split further if needed.
+- **L2a — Saved manuscript search: implemented 2026-11-04.** In-window search of scene/front/back matter titles and canonical prose, excerpts and navigation; literal case-insensitive matching, reading order, 50-item limit, Trash excluded. Saves current editor before opening search. Browser visual QA, chapter/part titles and Apple-style prefix/relevance ranking remain follow-up work.
+- **L2b — Quick notes: next.** Spec-compatible plain-text notes pinned to book/manuscript nodes; persistence, editing, re-pin and reversible Trash. Inspect Apple NotesRepository semantics.
+- **L2c — References.** Preserve canonical anchor marks; creation requires valid story-bible entry targets and saved anchors. Coordinate with delivery step 3 rather than inventing placeholder entries. Existing adapter anchor conformance remains passing.
 - **L3 — Remaining formatting, goal-progress totals and layout preferences.**
 - **L4 — Backup-protected permanent deletion.**
 

@@ -215,6 +215,17 @@ export function studioServer(
           201,
           await store.createBook(parts[1], (await body(req)).title),
         );
+      if (
+        parts[0] === "books" &&
+        parts.length === 3 &&
+        parts[2] === "search" &&
+        method === "GET"
+      )
+        return respond(
+          res,
+          200,
+          await store.search(parts[1], url.searchParams.get("q")),
+        );
       if (parts[0] === "books" && parts.length === 2 && method === "GET")
         return respond(res, 200, await store.book(parts[1]));
       if (

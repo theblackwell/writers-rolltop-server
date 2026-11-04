@@ -1029,3 +1029,13 @@ dialog textarea {
   color: #302923;
   font: inherit;
 }
+
+.search-results {
+  max-height: 45vh;
+  overflow-y: auto;
+  padding-left: 1.5rem;
+}
+.search-results p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

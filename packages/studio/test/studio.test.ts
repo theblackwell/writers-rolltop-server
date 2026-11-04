@@ -118,6 +118,10 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
     assert.equal((await request("/health")).status, 200);
     assert.equal((await request("/libraries")).status, 401);
     assert.equal(
+      (await request(`/books/${f.book.id}/search?q=Scene`)).status,
+      401,
+    );
+    assert.equal(
       (await request("/login", "POST", { password }, "https://evil.example"))
         .status,
       403,
@@ -133,6 +137,12 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
     assert.match(setCookie, /SameSite=Strict/);
     cookie = setCookie.split(";")[0];
     assert.equal((await request("/libraries")).status, 200);
+    const hits = await (
+      await request(`/books/${f.book.id}/search?q=Scene%201`)
+    ).json();
+    assert.equal(hits.results[0].nodeId, f.scene.id);
+    assert.equal((await request(`/books/${f.book.id}/search?q=`)).status, 400);
+
     assert.equal(
       (
         await request(

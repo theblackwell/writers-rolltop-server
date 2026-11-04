@@ -161,6 +161,73 @@ export class StudioStore {
     ).rows.map((r) => r.data);
     return { book: book.data, libraryId: book.library_id, nodes };
   }
+  /** Literal, case-insensitive search of saved manuscript prose in this book. */
+  async search(bookId: string, input: unknown) {
+    if (typeof input !== "string" || !input.trim() || input.length > 200)
+      return fail("Enter between 1 and 200 characters to search.");
+    const query = input.trim().toLowerCase();
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, bookId);
+      const documents = (
+        await q(
+          "SELECT d.node_id,d.document FROM documents d JOIN manuscript_nodes n ON n.id=d.node_id WHERE n.book_id=$1",
+          [bookId],
+        )
+      ).rows;
+      const byId = new Map(
+        documents.map((r) => [r.node_id, r.document as CanonicalDocument]),
+      );
+      const results: { nodeId: string; title: string; snippet: string }[] = [];
+      let truncated = false;
+      const visit = (parentId?: string) => {
+        const peers = ctx.nodes
+          .filter((n) => n.parentId === parentId)
+          .sort((a, b) =>
+            a.orderKey! < b.orderKey!
+              ? -1
+              : a.orderKey! > b.orderKey!
+                ? 1
+                : a.id.localeCompare(b.id),
+          );
+        for (const node of peers) {
+          if (!this.isLive(ctx, node.id)) continue;
+          const doc = byId.get(node.id);
+          if (doc) {
+            const text = doc.blocks
+              .map((b) =>
+                b.type === "sceneBreak"
+                  ? "\n"
+                  : b.content
+                      .map((i) => (i.type === "text" ? i.text : "\n"))
+                      .join(""),
+              )
+              .join("\n");
+            const index = text.toLowerCase().indexOf(query);
+            if (index >= 0 || node.title.toLowerCase().includes(query)) {
+              if (results.length === 50) {
+                truncated = true;
+                return;
+              }
+              const start = Math.max(0, index - 60);
+              const end = Math.min(text.length, index + query.length + 100);
+              results.push({
+                nodeId: node.id,
+                title: node.title,
+                snippet:
+                  (start ? "…" : "") +
+                  text.slice(start, end) +
+                  (end < text.length ? "…" : ""),
+              });
+            }
+          }
+          visit(node.id);
+          if (truncated) return;
+        }
+      };
+      visit();
+      return { results, truncated };
+    });
+  }
   async createNode(
     bookId: string,
     name: string,

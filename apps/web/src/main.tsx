@@ -21,6 +21,7 @@ import type { Item } from "./api.ts";
 import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
 import type { Target } from "./management.tsx";
 import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
+import { ManuscriptSearch } from "./search.tsx";
 import { BookDetails } from "./book-details.tsx";
 import "./style.css";
 
@@ -130,6 +131,7 @@ function App() {
   const [error, setError] = useState("");
   const [libraries, setLibraries] = useState<Item[]>([]);
   const [library, setLibrary] = useState<Item | null>(null);
+  const [searching, setSearching] = useState(false);
   const [details, setDetails] = useState<Item | null>(null);
   const [books, setBooks] = useState<Item[]>([]);
   const [book, setBook] = useState<Item | null>(null);
@@ -386,6 +388,14 @@ function App() {
               </button>
               <button disabled={!book} onClick={() => setDetails(book)}>
                 Book Details and Goals…
+              </button>
+              <button
+                disabled={!book}
+                onClick={async () => {
+                  if (await leave()) setSearching(true);
+                }}
+              >
+                Search Manuscript…
               </button>
               <hr />
               {libraries.map((l) => (
@@ -654,6 +664,22 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {searching && book && (
+        <Dialog title="Search Manuscript" close={() => setSearching(false)}>
+          <ManuscriptSearch
+            book={book}
+            onOpen={async (id) => {
+              if (!(await leave())) return;
+              const node = nodes.find((n) => n.id === id);
+              if (node) {
+                setScene(node);
+                setView("manuscript");
+                setSearching(false);
+              }
+            }}
+          />
+        </Dialog>
+      )}
       {details && (
         <Dialog title="Book Details and Goals" close={() => setDetails(null)}>
           <BookDetails

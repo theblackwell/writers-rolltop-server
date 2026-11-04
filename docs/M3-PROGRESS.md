@@ -58,3 +58,11 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Verification: TypeScript and production build pass; **27/27 tests pass**, including persistence, invalid goals/dates, optional-field clearing, unknown-field preservation, unchanged manuscript and refusal in Trash. HTTP test needed loopback permission outside the sandbox. Existing Vite bundle-size advisory remains.
 - Browser visual QA and real PostgreSQL smoke were not repeated for this section. Goal-progress totals remain to implement; this section covers editable goal settings.
 - Next session: L2, search, notes and references (see plan). Apple/Spec and owner libraries untouched. End-of-section commit authorized by standing owner instruction; no push.
+
+## L2a — Saved manuscript search — 2026-11-04
+
+- Split L2 into L2a search, L2b notes and L2c references to keep sessions small. References require story-bible entry storage, which is not implemented yet; no placeholder targets or format changes introduced.
+- Library → Search Manuscript is reachable in every layout for an open book. Flushes the editor first and refuses to proceed if the save fails. Searches saved scene/front/back matter titles and canonical text, including marked runs, with plain-text excerpts and buttons opening the matching item. No prose/anchor/revision mutations.
+- Authenticated `GET /api/books/:id/search?q=...`: bounded 1–200 character literal case-insensitive query, reading-order results capped at 50 with a truncation indicator; book isolation and ancestor/book Trash filtering. Uses existing schema v1, transaction and book lock.
+- Validation: **28/28 tests pass**, TypeScript and production build pass; diff whitespace check clean. Tests cover marked text, CJK, literal SQL wildcard characters, title hits, empty/long query rejection, book isolation, Trash/restore, unchanged documents/revisions and authenticated HTTP routing. Full suite required loopback permission for the disposable HTTP server. Existing Vite bundle-size advisory remains.
+- Limits: browser visual QA and real PostgreSQL smoke not repeated. This initial matcher differs from Apple's prefix/relevance search; chapter/part titles, ranking, notes and bible search remain follow-up work. Next session: **L2b quick notes**. End-of-section Server commit under standing permission; no push. No Apple/Spec or owner data touched.
