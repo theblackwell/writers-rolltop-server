@@ -835,3 +835,173 @@ dialog p {
 .layout-focus .writing-tools:not([open]) + .paper {
   border-radius: 4px;
 }
+/* Manuscript management: visible controls for keyboard, pointer and touch. */
+.open-book {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  background: transparent;
+}
+.book-card {
+  position: relative;
+}
+.book-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 14px 12px;
+}
+.item-actions {
+  position: relative;
+  flex-shrink: 0;
+}
+.item-actions > summary {
+  list-style: none;
+  border-radius: 4px;
+  padding: 6px 9px;
+  color: #786344;
+  cursor: pointer;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+.item-actions > summary:hover,
+.item-actions[open] > summary {
+  background: #d6c8ad;
+}
+.item-actions > div {
+  position: absolute;
+  right: 0;
+  top: 30px;
+  width: 165px;
+  z-index: 12;
+  padding: 5px;
+  background: #fffaf0;
+  border: 1px solid #c5b696;
+  border-radius: 5px;
+  box-shadow: 0 5px 18px #30251e25;
+}
+.item-actions button {
+  display: block;
+  width: 100%;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  font-size: 0.75rem;
+  padding: 9px;
+}
+.item-actions button:hover {
+  background: #e9dfca;
+}
+.binder-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 0;
+  border-radius: 4px;
+}
+.binder-row.current {
+  background: #d7c9af;
+}
+.binder-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 10px 6px;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+.binder-select > span {
+  color: #9d8967;
+}
+.binder-heading {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 9px 5px;
+  overflow-wrap: anywhere;
+}
+.kind-part > .binder-row {
+  border-top: 1px solid #cec1aa;
+  margin-top: 16px;
+}
+.binder-children {
+  margin-left: 10px;
+}
+.binder-children:empty {
+  display: none;
+}
+.binder-actions {
+  align-items: center;
+  justify-content: space-between;
+}
+.binder-actions .action-menu {
+  font-size: 0.75rem;
+}
+.binder-actions .action-menu > div {
+  left: 0;
+  right: auto;
+  top: 28px;
+  width: 190px;
+}
+.binder-actions summary {
+  cursor: pointer;
+}
+.node-trash {
+  margin-top: 24px;
+  border-top: 1px solid #cdbfa7;
+  padding-top: 14px;
+}
+.node-trash > summary {
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: #786344;
+}
+.trash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 0.75rem;
+}
+.trash-row > span {
+  overflow-wrap: anywhere;
+}
+.trash-row > button {
+  font-size: 0.7rem;
+  padding: 5px 7px;
+}
+.book-trash {
+  margin-top: 40px;
+  max-width: 600px;
+  border-top: 1px solid #d4c9b6;
+  padding-top: 22px;
+}
+.form-error {
+  color: #a23e24 !important;
+}
+dialog select {
+  width: 100%;
+  margin: 8px 0 18px;
+}
+.book-card {
+  overflow: visible;
+}
+.open-book {
+  overflow: hidden;
+  border-radius: 5px 5px 0 0;
+}
+.book-card:hover .open-book {
+  background: #f8f0e0;
+}
+.item-actions > summary:focus-visible {
+  outline: 3px solid #b0843c;
+  outline-offset: 2px;
+}

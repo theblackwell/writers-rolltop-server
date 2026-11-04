@@ -18,6 +18,9 @@ import type { CanonicalDocument } from "../../../packages/document-adapter/src/c
 import { extensions } from "./editor.ts";
 import { api, ApiError } from "./api.ts";
 import type { Item } from "./api.ts";
+import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
+import type { Target } from "./management.tsx";
+import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
 import "./style.css";
 
 type Layout = "desk" | "writing" | "focus";
@@ -57,7 +60,14 @@ function Dialog({
     dialog.current?.showModal();
   }, []);
   return (
-    <dialog ref={dialog} onCancel={close} aria-label={title}>
+    <dialog
+      ref={dialog}
+      onCancel={(e) => {
+        e.preventDefault();
+        close();
+      }}
+      aria-label={title}
+    >
       <header>
         <h2>{title}</h2>
         <button onClick={close} aria-label="Close dialog">
@@ -129,12 +139,22 @@ function App() {
   });
   const [view, setView] = useState<"projects" | "manuscript">("projects");
   const [dialog, setDialog] = useState<
-    "library" | "book" | "chapter" | "scene" | null
+    | "library"
+    | "book"
+    | "part"
+    | "chapter"
+    | "scene"
+    | "frontMatter"
+    | "backMatter"
+    | null
   >(null);
   const [name, setName] = useState("");
   const [parent, setParent] = useState("");
   const [creating, setCreating] = useState(false);
   const pane = useRef<PaneHandle>(null);
+  const [management, setManagement] = useState<Target | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const mutationLock = useRef(false);
   useEffect(() => {
     api("/session")
       .then(() => setAuth(true))
@@ -182,14 +202,7 @@ function App() {
       const data = await api("/books/" + item.id);
       setBook(data.book);
       setNodes(data.nodes);
-      const chapters = data.nodes.filter((n: Item) => n.kind === "chapter");
-      setScene(
-        chapters.flatMap((c: Item) =>
-          data.nodes.filter(
-            (n: Item) => n.parentId === c.id && n.kind === "scene",
-          ),
-        )[0] ?? null,
-      );
+      setScene(firstDocument(data.nodes));
       setView("manuscript");
     } catch (e) {
       setError(errorText(e));
@@ -198,8 +211,11 @@ function App() {
   function newItem(kind: typeof dialog) {
     setName("");
     setParent(
-      scene?.parentId ?? nodes.find((n) => n.kind === "chapter")?.id ?? "",
+      scene?.parentId ??
+        liveNodes(nodes).find((n) => n.kind === "chapter")?.id ??
+        "",
     );
+    if (kind === "chapter") setParent("");
     setDialog(kind);
   }
   async function create(e: React.FormEvent) {
@@ -221,10 +237,12 @@ function App() {
         const result = await api(`/books/${book.id}/nodes`, "POST", {
           title: name,
           kind: dialog,
-          ...(dialog === "scene" ? { parentId: parent } : {}),
+          ...((dialog === "scene" || dialog === "chapter") && parent
+            ? { parentId: parent }
+            : {}),
         });
         setNodes([...nodes, result]);
-        if (dialog === "scene") {
+        if (["scene", "frontMatter", "backMatter"].includes(dialog ?? "")) {
           setScene(result);
           setView("manuscript");
         }
@@ -235,6 +253,85 @@ function App() {
     } finally {
       setCreating(false);
     }
+  }
+  async function reloadWorkspace() {
+    if (!library) return;
+    const refreshed = await api(`/libraries/${library.id}`);
+    setBooks(refreshed.books);
+    if (book) {
+      const current = refreshed.books.find((b: Item) => b.id === book.id);
+      if (!current || current.deletedAt) {
+        setBook(null);
+        setNodes([]);
+        setScene(null);
+        setView("projects");
+        return;
+      }
+      const state = await api(`/books/${book.id}`);
+      setBook(state.book);
+      setNodes(state.nodes);
+      const live = liveNodes(state.nodes);
+      setScene(
+        live.find((n) => n.id === scene?.id) ?? firstDocument(state.nodes),
+      );
+    }
+  }
+  async function applyManagement(
+    target: Target,
+    payload: unknown,
+  ): Promise<string | undefined> {
+    if (mutationLock.current) return "Another change is still being saved.";
+    mutationLock.current = true;
+    setMutating(true);
+    try {
+      if (!(await leave()))
+        return "The current scene could not be saved. Close this dialog to review it.";
+      const resource = target.type === "book" ? "books" : "nodes";
+      await api(
+        `/${resource}/${target.item.id}${target.action === "rename" ? "" : "/" + target.action}`,
+        target.action === "rename" ? "PUT" : "POST",
+        payload,
+      );
+      setManagement(null);
+      try {
+        await reloadWorkspace();
+      } catch (e) {
+        setError(
+          "The change was saved, but the workspace could not reload. " +
+            errorText(e),
+        );
+      }
+    } catch (e) {
+      return errorText(e);
+    } finally {
+      mutationLock.current = false;
+      setMutating(false);
+    }
+  }
+  async function manage(target: Target) {
+    if (mutating) return;
+    if (target.action === "up" || target.action === "down") {
+      const peers = children(liveNodes(nodes), target.item.parentId ?? null);
+      const index = peers.findIndex((n) => n.id === target.item.id);
+      const beforeId =
+        target.action === "up"
+          ? peers[index - 1]?.id
+          : (peers[index + 2]?.id ?? null);
+      if (
+        index < 0 ||
+        (target.action === "up" && index === 0) ||
+        (target.action === "down" && index === peers.length - 1)
+      )
+        return;
+      const message = await applyManagement(
+        { ...target, action: "move" },
+        { parentId: target.item.parentId ?? null, beforeId },
+      );
+      if (message) setError(message);
+    } else if (target.action === "restore") {
+      const message = await applyManagement(target, {});
+      if (message) setError(message);
+    } else setManagement(target);
   }
   if (auth === null)
     return (
@@ -258,7 +355,11 @@ function App() {
         )}
       </>
     );
-  const chapters = nodes.filter((n) => n.kind === "chapter");
+  const activeNodes = liveNodes(nodes);
+  const chapters = activeNodes.filter((n) => n.kind === "chapter");
+  const liveBooks = books.filter((b) => !b.deletedAt);
+  const trashedBooks = books.filter((b) => b.deletedAt);
+  const trashedNodes = nodes.filter((n) => n.deletedAt);
   return (
     <div className={`app layout-${layout}`}>
       <header className="app-header">
@@ -364,24 +465,34 @@ function App() {
             </button>
           </div>
           <div className="book-grid">
-            {books.map((b, index) => (
-              <button
-                className="book-card"
-                key={b.id}
-                onClick={() => void openBook(b)}
-              >
-                <div className={`cover cover-${index % 3}`}>
-                  <span>WRITERS ROLLTOP</span>
-                  <h2>{b.title}</h2>
-                  <i aria-hidden="true">✧</i>
+            {liveBooks.map((b, index) => (
+              <article className="book-card" key={b.id}>
+                <button
+                  className="open-book"
+                  onClick={() => void openBook(b)}
+                  disabled={mutating}
+                >
+                  <div className={`cover cover-${index % 3}`}>
+                    <span>WRITERS ROLLTOP</span>
+                    <h2>{b.title}</h2>
+                    <i aria-hidden="true">✧</i>
+                  </div>
+                  <footer>
+                    <strong>{b.title}</strong>
+                    <span>Open manuscript →</span>
+                  </footer>
+                </button>
+                <div className="book-card-actions">
+                  <ItemActions
+                    item={b}
+                    type="book"
+                    onAction={(t) => void manage(t)}
+                    disabled={mutating}
+                  />
                 </div>
-                <footer>
-                  <strong>{b.title}</strong>
-                  <span>Open manuscript →</span>
-                </footer>
-              </button>
+              </article>
             ))}
-            {library && !books.length && (
+            {library && !liveBooks.length && (
               <div className="empty">
                 <span aria-hidden="true">✧</span>
                 <h2>Every book starts with a blank page.</h2>
@@ -389,6 +500,25 @@ function App() {
               </div>
             )}
           </div>
+          {!!trashedBooks.length && (
+            <section className="book-trash">
+              <h2>Book Trash</h2>
+              {trashedBooks.map((b) => (
+                <div className="trash-row" key={b.id}>
+                  <span>{b.title}</span>
+                  <button
+                    disabled={mutating}
+                    onClick={() =>
+                      void manage({ item: b, type: "book", action: "restore" })
+                    }
+                    aria-label={`Restore book ${b.title}`}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
         </main>
       ) : (
         <div className="writing-workspace">
@@ -396,45 +526,88 @@ function App() {
             <p className="eyebrow">MANUSCRIPT</p>
             <h2>{book?.title}</h2>
             <div className="binder-actions">
-              <button onClick={() => newItem("chapter")}>＋ Chapter</button>
-              <button
-                disabled={!chapters.length}
-                onClick={() => newItem("scene")}
-              >
-                ＋ Scene
-              </button>
-            </div>
-            <div className="tree">
-              {chapters.map((chapter, index) => (
-                <section key={chapter.id}>
-                  <h3>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    {chapter.title}
-                  </h3>
-                  {nodes
-                    .filter(
-                      (n) => n.parentId === chapter.id && n.kind === "scene",
-                    )
-                    .map((n) => (
-                      <button
-                        className={n.id === scene?.id ? "current" : ""}
-                        key={n.id}
-                        onClick={async () => {
-                          if (await leave()) setScene(n);
-                        }}
-                      >
-                        <span aria-hidden="true">▤</span>
-                        {n.title}
-                      </button>
-                    ))}
-                </section>
-              ))}
-              {!chapters.length && (
-                <p className="hint">
-                  Add a chapter, then a scene. Your manuscript grows from here.
-                </p>
+              <details className="action-menu">
+                <summary>＋ Add</summary>
+                <div>
+                  {(
+                    [
+                      "part",
+                      "chapter",
+                      "scene",
+                      "frontMatter",
+                      "backMatter",
+                    ] as const
+                  ).map((kind) => (
+                    <button
+                      key={kind}
+                      disabled={
+                        mutating || (kind === "scene" && !chapters.length)
+                      }
+                      aria-label={`New ${kind === "frontMatter" ? "Front Matter" : kind === "backMatter" ? "Back Matter" : kind[0].toUpperCase() + kind.slice(1)}`}
+                      onClick={(e) => {
+                        e.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                        newItem(kind);
+                      }}
+                    >
+                      New{" "}
+                      {kind === "frontMatter"
+                        ? "Front Matter"
+                        : kind === "backMatter"
+                          ? "Back Matter"
+                          : kind[0].toUpperCase() + kind.slice(1)}
+                      …
+                    </button>
+                  ))}
+                </div>
+              </details>
+              {book && (
+                <ItemActions
+                  item={book}
+                  type="book"
+                  onAction={(t) => void manage(t)}
+                  disabled={mutating}
+                />
               )}
             </div>
+            <BinderTree
+              nodes={nodes}
+              selected={scene?.id}
+              onSelect={async (n) => {
+                if (await leave()) setScene(n);
+              }}
+              onAction={(t) => void manage(t)}
+              disabled={mutating}
+            />
+            {!activeNodes.length && (
+              <p className="hint">
+                Add a chapter, then a scene. Your manuscript grows from here.
+              </p>
+            )}
+            {!!trashedNodes.length && (
+              <details className="node-trash">
+                <summary>Trash ({trashedNodes.length})</summary>
+                {trashedNodes.map((n) => (
+                  <div className="trash-row" key={n.id}>
+                    <span>{itemLabel(n)}</span>
+                    <button
+                      disabled={mutating}
+                      onClick={() =>
+                        void manage({
+                          item: n,
+                          type: "node",
+                          action: "restore",
+                        })
+                      }
+                      aria-label={`Restore ${itemLabel(n)}`}
+                    >
+                      Restore
+                    </button>
+                  </div>
+                ))}
+              </details>
+            )}
           </aside>
           <main className="manuscript-area">
             {scene ? (
@@ -467,9 +640,24 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {management && (
+        <Dialog
+          title={`${management.action === "rename" ? "Rename" : management.action === "trash" ? "Move to Trash" : "Move"} ${management.item.title}`}
+          close={() => {
+            if (!mutating) setManagement(null);
+          }}
+        >
+          <ManagementForm
+            target={management}
+            nodes={nodes}
+            onCancel={() => setManagement(null)}
+            onApply={(payload) => applyManagement(management, payload)}
+          />
+        </Dialog>
+      )}
       {dialog && (
         <Dialog
-          title={`New ${dialog[0].toUpperCase() + dialog.slice(1)}`}
+          title={`New ${dialog === "frontMatter" ? "Front Matter" : dialog === "backMatter" ? "Back Matter" : dialog[0].toUpperCase() + dialog.slice(1)}`}
           close={() => setDialog(null)}
         >
           <form onSubmit={create}>
@@ -483,15 +671,19 @@ function App() {
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
-            {dialog === "scene" && (
+            {(dialog === "scene" || dialog === "chapter") && (
               <label>
-                Chapter
+                {dialog === "scene" ? "Chapter" : "Part (optional)"}
                 <select
-                  required
+                  required={dialog === "scene"}
                   value={parent}
                   onChange={(e) => setParent(e.target.value)}
                 >
-                  {chapters.map((c) => (
+                  {dialog === "chapter" && <option value="">Book root</option>}
+                  {(dialog === "scene"
+                    ? chapters
+                    : activeNodes.filter((n) => n.kind === "part")
+                  ).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title}
                     </option>

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { between } from "./order.ts";
 import { randomUUID } from "node:crypto";
 import { decode } from "../../document-adapter/src/canonical.ts";
 import type { CanonicalDocument } from "../../document-adapter/src/canonical.ts";
@@ -15,6 +16,10 @@ export type RecordData = {
   id: string;
   title: string;
   orderKey?: string;
+  parentId?: string;
+  kind?: string;
+  bookId?: string;
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
   [key: string]: unknown;
@@ -59,7 +64,6 @@ const record = (name: string, extra: object = {}): RecordData => {
     ...extra,
   };
 };
-const order = (n: number) => (n * 1024).toString(36).padStart(10, "0") + "1";
 
 export class StudioStore {
   db: Database;
@@ -113,7 +117,7 @@ export class StudioStore {
     ).data;
     const books = (
       await this.db.query(
-        "SELECT data FROM books WHERE library_id=$1 ORDER BY data->>'orderKey', id",
+        "SELECT data FROM books WHERE library_id=$1 ORDER BY (data->>'orderKey') COLLATE \"C\", id",
         [id],
       )
     ).rows.map((r) => r.data);
@@ -128,12 +132,15 @@ export class StudioStore {
           ])
         ).rows[0],
       );
-      const n = (
-        await q("SELECT count(*)::int AS n FROM books WHERE library_id=$1", [
-          libraryId,
-        ])
-      ).rows[0].n;
-      const book = record(name, { orderKey: order(n + 1) });
+      const peers = (
+        await q(
+          "SELECT data FROM books WHERE library_id=$1 ORDER BY (data->>'orderKey') COLLATE \"C\", id",
+          [libraryId],
+        )
+      ).rows;
+      const book = record(name, {
+        orderKey: between(peers.at(-1)?.data.orderKey, undefined),
+      });
       await q("INSERT INTO books VALUES($1,$2,$3)", [book.id, libraryId, book]);
       return book;
     });
@@ -148,7 +155,7 @@ export class StudioStore {
     );
     const nodes = (
       await this.db.query(
-        "SELECT data FROM manuscript_nodes WHERE book_id=$1 ORDER BY data->>'orderKey', id",
+        "SELECT data FROM manuscript_nodes WHERE book_id=$1 ORDER BY (data->>'orderKey') COLLATE \"C\", id",
         [id],
       )
     ).rows.map((r) => r.data);
@@ -165,42 +172,47 @@ export class StudioStore {
     )
       return fail("Choose a manuscript item type.");
     return this.db.transaction(async (q) => {
-      required(
-        (await q("SELECT id FROM books WHERE id=$1 FOR UPDATE", [bookId]))
+      const book = required(
+        (await q("SELECT data FROM books WHERE id=$1 FOR UPDATE", [bookId]))
           .rows[0],
-      );
+      ).data;
+      if (book.deletedAt)
+        return fail("Restore the book before adding manuscript items.");
       const parent = parentId
         ? required(
             (
-              await q("SELECT book_id,kind FROM manuscript_nodes WHERE id=$1", [
-                parentId,
-              ])
+              await q(
+                "SELECT book_id,kind,data FROM manuscript_nodes WHERE id=$1",
+                [parentId],
+              )
             ).rows[0],
           )
         : null;
+      if (parent?.data.deletedAt)
+        return fail("Restore the parent before adding manuscript items.");
       if (parent && parent.book_id !== bookId)
         return fail("The parent must be in the same book.");
       if (
         kind === "scene"
           ? parent?.kind !== "chapter"
           : kind === "chapter"
-            ? parent !== null && parent.kind !== "part"
+            ? parent != null && parent.kind !== "part"
             : parent !== null
       )
         return fail(
           "Scenes belong to chapters; chapters belong to parts or the book.",
         );
-      const n = (
+      const peers = (
         await q(
-          "SELECT count(*)::int AS n FROM manuscript_nodes WHERE book_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid",
+          "SELECT data FROM manuscript_nodes WHERE book_id=$1 AND parent_id IS NOT DISTINCT FROM $2::uuid ORDER BY (data->>'orderKey') COLLATE \"C\", id",
           [bookId, parentId ?? null],
         )
-      ).rows[0].n;
+      ).rows;
       const node = record(name, {
         bookId,
         kind,
         ...(parentId ? { parentId } : {}),
-        orderKey: order(n + 1),
+        orderKey: between(peers.at(-1)?.data.orderKey, undefined),
       });
       await q("INSERT INTO manuscript_nodes VALUES($1,$2,$3,$4,$5)", [
         node.id,
@@ -223,6 +235,262 @@ export class StudioStore {
         ]);
       }
       return node;
+    });
+  }
+  private async bookContext(q: Query, bookId: string) {
+    const book = required(
+      (
+        await q("SELECT data,library_id FROM books WHERE id=$1 FOR UPDATE", [
+          bookId,
+        ])
+      ).rows[0],
+    );
+    const rows = (
+      await q("SELECT data FROM manuscript_nodes WHERE book_id=$1", [bookId])
+    ).rows;
+    return {
+      book: book.data as RecordData,
+      libraryId: book.library_id as string,
+      nodes: rows.map((r) => r.data as RecordData),
+    };
+  }
+  private async nodeContext(q: Query, nodeId: string) {
+    const row = required(
+      (await q("SELECT book_id FROM manuscript_nodes WHERE id=$1", [nodeId]))
+        .rows[0],
+    );
+    return this.bookContext(q, row.book_id);
+  }
+  private isLive(
+    ctx: { book: RecordData; nodes: RecordData[] },
+    nodeId: string,
+  ): boolean {
+    if (ctx.book.deletedAt) return false;
+    const seen = new Set<string>();
+    let node = ctx.nodes.find((n) => n.id === nodeId);
+    while (node) {
+      if (node.deletedAt || seen.has(node.id)) return false;
+      seen.add(node.id);
+      if (!node.parentId) return true;
+      node = ctx.nodes.find((n) => n.id === node!.parentId);
+    }
+    return false;
+  }
+  private async putNode(q: Query, node: RecordData) {
+    await q("UPDATE manuscript_nodes SET parent_id=$2,data=$3 WHERE id=$1", [
+      node.id,
+      node.parentId ?? null,
+      node,
+    ]);
+  }
+  private deletionTime(ctx: { book: RecordData; nodes: RecordData[] }) {
+    const used = new Set(
+      [ctx.book, ...ctx.nodes].map((n) => n.deletedAt).filter(Boolean),
+    );
+    let now = new Date().toISOString();
+    // Each trash action in a book has a unique timestamp, even in the same ms.
+    while (used.has(now)) now = new Date(Date.parse(now) + 1).toISOString();
+    return now;
+  }
+  async renameBook(id: string, name: string) {
+    const newTitle = title(name);
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, id);
+      if (ctx.book.deletedAt)
+        return fail("Restore the book before renaming it.");
+      const book = {
+        ...ctx.book,
+        title: newTitle,
+        updatedAt: new Date().toISOString(),
+      };
+      await q("UPDATE books SET data=$2 WHERE id=$1", [id, book]);
+      return book;
+    });
+  }
+  async renameNode(id: string, name: string) {
+    const newTitle = title(name);
+    return this.db.transaction(async (q) => {
+      const ctx = await this.nodeContext(q, id);
+      if (!this.isLive(ctx, id))
+        return fail("Restore the item before renaming it.");
+      const node = {
+        ...ctx.nodes.find((n) => n.id === id)!,
+        title: newTitle,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.putNode(q, node);
+      return node;
+    });
+  }
+  /** beforeId is the destination sibling to insert before; null means at end. */
+  async moveNode(id: string, parentId: string | null, beforeId: string | null) {
+    return this.db.transaction(async (q) => {
+      const ctx = await this.nodeContext(q, id);
+      if (!this.isLive(ctx, id))
+        return fail("Restore the item before moving it.");
+      const node = ctx.nodes.find((n) => n.id === id)!;
+      const parent = parentId ? ctx.nodes.find((n) => n.id === parentId) : null;
+      if (parentId && (!parent || !this.isLive(ctx, parentId)))
+        return fail("Choose a live parent in the same book.");
+      if (
+        node.kind === "scene"
+          ? parent?.kind !== "chapter"
+          : node.kind === "chapter"
+            ? parent != null && parent.kind !== "part"
+            : parent !== null
+      )
+        return fail(
+          "Scenes belong to chapters; chapters belong to parts or the book.",
+        );
+      if (parentId === id || beforeId === id)
+        return fail("An item cannot be placed inside or before itself.");
+      const peers = ctx.nodes
+        .filter(
+          (n) =>
+            n.id !== id &&
+            (n.parentId ?? null) === parentId &&
+            this.isLive(ctx, n.id),
+        )
+        .sort((a, b) =>
+          a.orderKey! < b.orderKey!
+            ? -1
+            : a.orderKey! > b.orderKey!
+              ? 1
+              : a.id < b.id
+                ? -1
+                : 1,
+        );
+      const index = beforeId
+        ? peers.findIndex((n) => n.id === beforeId)
+        : peers.length;
+      if (index < 0)
+        return fail("The position must be a live sibling in the destination.");
+      const lower = peers[index - 1]?.orderKey;
+      const upper = peers[index]?.orderKey;
+      const now = new Date().toISOString();
+      if (lower !== undefined && lower === upper) {
+        // Imported libraries may contain tied keys. Repair this sibling sequence
+        // only when a tie prevents insertion; all IDs and documents stay intact.
+        peers.splice(index, 0, node);
+        let previous: string | undefined;
+        for (const peer of peers) {
+          const key = between(previous, undefined);
+          await this.putNode(q, {
+            ...peer,
+            ...(peer.id === id ? { parentId: parentId ?? undefined } : {}),
+            orderKey: key,
+            updatedAt: now,
+          });
+          previous = key;
+        }
+      } else {
+        const moved = {
+          ...node,
+          parentId: parentId ?? undefined,
+          orderKey: between(lower, upper),
+          updatedAt: now,
+        };
+        await this.putNode(q, moved);
+      }
+      return { id };
+    });
+  }
+  async trashNode(id: string) {
+    return this.db.transaction(async (q) => {
+      const ctx = await this.nodeContext(q, id);
+      if (!this.isLive(ctx, id)) return fail("That item is already in Trash.");
+      const when = this.deletionTime(ctx);
+      const subtree = new Set([id]);
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const n of ctx.nodes)
+          if (
+            n.parentId &&
+            subtree.has(n.parentId as string) &&
+            !subtree.has(n.id)
+          ) {
+            subtree.add(n.id);
+            changed = true;
+          }
+      }
+      for (const n of ctx.nodes)
+        if (subtree.has(n.id) && !n.deletedAt)
+          await this.putNode(q, { ...n, deletedAt: when, updatedAt: when });
+      return { id };
+    });
+  }
+  async restoreNode(id: string) {
+    return this.db.transaction(async (q) => {
+      const ctx = await this.nodeContext(q, id);
+      const node = ctx.nodes.find((n) => n.id === id)!;
+      if (!node.deletedAt) return fail("That item is not in Trash.");
+      const batch = node.deletedAt;
+      const restore = new Set([id]);
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const n of ctx.nodes)
+          if (
+            n.parentId &&
+            restore.has(n.parentId as string) &&
+            n.deletedAt === batch &&
+            !restore.has(n.id)
+          ) {
+            restore.add(n.id);
+            changed = true;
+          }
+      }
+      let parent = node.parentId;
+      const seen = new Set<string>();
+      while (parent && !seen.has(parent as string)) {
+        seen.add(parent as string);
+        restore.add(parent as string);
+        parent = ctx.nodes.find((n) => n.id === parent)?.parentId;
+      }
+      const now = new Date().toISOString();
+      for (const n of ctx.nodes)
+        if (restore.has(n.id) && n.deletedAt) {
+          const updated = { ...n, updatedAt: now };
+          delete updated.deletedAt;
+          await this.putNode(q, updated);
+        }
+      if (ctx.book.deletedAt) {
+        const book = { ...ctx.book, updatedAt: now };
+        delete book.deletedAt;
+        await q("UPDATE books SET data=$2 WHERE id=$1", [ctx.book.id, book]);
+      }
+      return { id };
+    });
+  }
+  async trashBook(id: string) {
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, id);
+      if (ctx.book.deletedAt) return fail("That book is already in Trash.");
+      const when = this.deletionTime(ctx);
+      await q("UPDATE books SET data=$2 WHERE id=$1", [
+        id,
+        { ...ctx.book, deletedAt: when, updatedAt: when },
+      ]);
+      for (const n of ctx.nodes)
+        if (!n.deletedAt)
+          await this.putNode(q, { ...n, deletedAt: when, updatedAt: when });
+      return { id };
+    });
+  }
+  async restoreBook(id: string) {
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, id);
+      if (!ctx.book.deletedAt) return fail("That book is not in Trash.");
+      const now = new Date().toISOString();
+      const book = { ...ctx.book, updatedAt: now };
+      delete book.deletedAt;
+      await q("UPDATE books SET data=$2 WHERE id=$1", [id, book]);
+      for (const n of ctx.nodes)
+        if (n.deletedAt === ctx.book.deletedAt) {
+          const updated = { ...n, updatedAt: now };
+          delete updated.deletedAt;
+          await this.putNode(q, updated);
+        }
+      return { id };
     });
   }
   async document(nodeId: string) {
@@ -250,6 +518,13 @@ export class StudioStore {
     )
       return fail("A saved revision is required.");
     return this.db.transaction(async (q) => {
+      const context = await this.nodeContext(q, nodeId);
+      if (!this.isLive(context, nodeId))
+        throw new StudioError(
+          409,
+          "ITEM_IN_TRASH",
+          "This scene or its book is in Trash. Your draft is kept; restore it before saving.",
+        );
       const current = required(
         (
           await q(

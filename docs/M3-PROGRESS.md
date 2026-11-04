@@ -1,6 +1,6 @@
 # M3 development checkpoint — 2026-11-03
 
-**Status: manuscript foundation implemented. M3 is not complete or signed off.**
+**Status: manuscript foundation and rename/move/Trash management implemented. M3 is not complete or signed off.**
 Owner authorized Codex to work in Server in parallel with Claude's M2 Apple work.
 No Apple or Spec files were changed for this slice. The owner authorized a Server-only
 checkpoint commit after verification. No push was requested.
@@ -9,7 +9,7 @@ checkpoint commit after verification. No push was requested.
 
 - React/TypeScript/Vite workspace with simplified walnut/parchment presentation, Projects and Manuscript, Desk/Writing/Focus. All current actions are in the browser window. Focus hides the formatting strip under Writing tools.
 - Single-owner login using an environment-provided scrypt hash. Session tokens are random, hashed in PostgreSQL, HttpOnly/SameSite Strict, Secure for HTTPS. Same-origin checks on writes, request size limit, generic server errors and login throttling. HTTPS is required for non-loopback browser origins.
-- Versioned/transactional PostgreSQL schema; libraries, books, chapters and scenes, with hierarchy validation and stable canonical UUIDs/order keys. Repository supports parts and front/back matter, but those creation flows aren't exposed yet.
+- Versioned/transactional PostgreSQL schema; libraries, books, chapters and scenes, with hierarchy validation and stable canonical UUIDs/order keys. The binder now exposes parts, chapters, scenes and front/back matter.
 - Actual Tiptap editor restricted to canonical v1 constructs; the existing adapter is reused. Current toolbar has basic marks, paragraph/headings, lists/quotes/scene breaks, save and history. Full formatting controls remain later work.
 - Autosave uses expected revision and append-only saved versions. Stale saves are refused, with browser-draft download and server-version comparison. Restoring a saved version creates another revision.
 - Browser recovery drafts use separate keys per editor instance, so one tab cannot clear another's draft. Invalid/newer drafts are retained. Browser storage can be unavailable/full: the interface then warns and keeps the in-memory draft. The UI offers the newest recovered copy first; other copies remain stored. This is not yet full offline application support or M4 synchronization.
@@ -17,15 +17,15 @@ checkpoint commit after verification. No push was requested.
 
 ## Verification
 
-| Check | Result |
-|---|---|
-| `npm run check` | Pass |
-| `npm test` | **19 pass**: original 9 adapter tests, actual Tiptap fixture round trips, SQL hierarchy/CAS/history, authenticated API/origin/expiry/logout, transaction failure rollback, newer schema refusal, 100,000-word Unicode save/load, isolated browser drafts |
-| `npm run build` | Pass; current JS bundle about 668 kB / 211 kB gzip. Vite reports its >500 kB advisory; code splitting is future performance work. |
-| Podman OCI/Compose smoke | **Pass**, real PostgreSQL 17: image build, startup, login, create/save scene, stale-save refusal, restart persistence, built page/assets; disposable project and volume removed afterwards |
-| Browser on scratch data | Login, first scene selection, editing/save, scene switching/reload, history preview/restore, Desk/Writing/Focus, two-tab conflict retains draft and shows server comparison |
-| Visual review | Desktop manuscript at 1280 px, narrow Focus view; screenshots in `docs/screenshots/`. Phone/tablet and full keyboard/screen-reader review remain open. |
-| Docker Engine | Not run separately. Docker Compose provider was used against the Podman engine. |
+| Check                    | Result                                                                                                                                                                                                                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`          | Pass                                                                                                                                                                                                                                                                              |
+| `npm test`               | **26 pass**: original adapter/Tiptap fixtures, SQL hierarchy/CAS/history, authenticated API/origin/expiry/logout, rollback, newer schemas, 100k-word save/load, isolated drafts, fractional ordering, rename/move/Trash preservation, restored ancestors and binder reading order |
+| `npm run build`          | Pass; current JS bundle about 675 kB / 213 kB gzip. Vite reports its >500 kB advisory; code splitting is future performance work.                                                                                                                                                 |
+| Podman OCI/Compose smoke | **Pass**, real PostgreSQL 17: image build, startup, login, create/save scene, stale-save refusal, rename/move/chapter and book Trash/restore, restart persistence, built page/assets; disposable project and volume removed afterwards                                            |
+| Browser on scratch data  | Login, first scene selection, editing/save, scene switching/reload, history preview/restore, Desk/Writing/Focus, two-tab conflict retains draft and shows server comparison                                                                                                       |
+| Visual review            | Desktop manuscript at 1280 px, narrow Focus view; screenshots in `docs/screenshots/`. Phone/tablet and full keyboard/screen-reader review remain open.                                                                                                                            |
+| Docker Engine            | Not run separately. Docker Compose provider was used against the Podman engine.                                                                                                                                                                                                   |
 
 Scratch preview: `node scripts/preview-scratch.ts`, http://localhost:4318,
 password `scratch-preview-password`. Its in-memory sample disappears on exit.
@@ -33,9 +33,20 @@ Production setup and backup/restore commands: [SETUP.md](SETUP.md).
 
 ## Next work / acceptance gates
 
-1. Manuscript management: rename/move/order, parts/front/back matter UI, tombstones/restore, metadata/goals/search/notes, reference linking and complete formatting controls.
+1. Remaining manuscript management: metadata/goals/search/notes, reference linking, complete formatting controls and backup-protected permanent deletion. Rename/move/order, parts/front/back matter UI and tombstones/restore are implemented.
 2. Bible and continuity parity with Spec/M1: scopes, all field kinds/templates/overrides, relationships, facts/questions, knowledge, timeline/state changes and warning dismissal.
 3. Attachments and safe `.rolltop` archives: checksums/path/size limits, staging, preview, required optional-field preservation and cross-edition round trips. **No import/export is offered yet; never substitute a lossy text conversion.**
 4. Durable offline application/recovery, additional browser concurrency/failure checks, 100k-word browser performance, responsive/accessibility pass, Docker Engine smoke, restore a PostgreSQL backup into a scratch installation, deployment/security review, screenshots and owner review.
 
 M4 device sync and M5 publishing exports remain separate. Don't claim M3 complete from this checkpoint.
+
+## Manuscript-management checkpoint (recovered after crash, 2026-11-03)
+
+- On recovery, the uncommitted API and 24 passing tests were intact; the UI was still unfinished. Completed the UI and added binder/API checks: **26 tests pass**, TypeScript and production build pass.
+- Books and every manuscript kind have visible Actions controls for rename and Trash. Manuscript items also have Move Up/Down and Move To with destination/position selectors. Scenes move between chapters; chapters move between root/parts. The binder follows hierarchy order, not a flat sort of every node.
+- A move normally rewrites one fractional order key. Equal imported keys are repaired only when they prevent insertion. Existing keys remain valid; no archive/schema-format changes. New items append after moves without key collisions.
+- Trash sets tombstones and preserves all documents/revisions. Each trash action uses a unique timestamp within its book; restore brings back its group and necessary ancestors, while children trashed separately stay trashed. Book Trash is on Projects; manuscript Trash is in the binder. No permanent-delete control is offered yet.
+- Structural mutations and scene saves take the same book lock; stale saves after a trash operation are rejected with the draft retained. Record edits preserve unknown optional data. No database migration was required (SQL schema remains v1).
+- Browser QA on disposable sample data: book/scene rename, move scene to another chapter, chapter Trash/restore, create a part, move chapter into part, book Trash/restore, reload hierarchy, Move Up, text unchanged (84 words). Screenshot: `docs/screenshots/m3-management.png`.
+- Real Podman/PostgreSQL smoke extended and passed: rename, move, Trash/restore, revision count unchanged, and saved text survives container restart. Scratch containers/volume removed after verification.
+- Owner authorized a Server-only checkpoint commit for these follow-up changes on top of `26f6e40`. No push requested. Apple/Spec and owner libraries remain untouched.

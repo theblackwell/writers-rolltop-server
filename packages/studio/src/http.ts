@@ -240,6 +240,59 @@ export function studioServer(
           ),
         );
       }
+      if (parts[0] === "books" && parts.length === 2 && method === "PUT")
+        return respond(
+          res,
+          200,
+          await store.renameBook(parts[1], (await body(req)).title),
+        );
+      if (
+        (parts[0] === "books" || parts[0] === "nodes") &&
+        parts.length === 3 &&
+        method === "POST" &&
+        ["trash", "restore"].includes(parts[2])
+      ) {
+        // All mutation requests require JSON, including otherwise empty commands.
+        await body(req);
+        const result =
+          parts[0] === "books"
+            ? parts[2] === "trash"
+              ? await store.trashBook(parts[1])
+              : await store.restoreBook(parts[1])
+            : parts[2] === "trash"
+              ? await store.trashNode(parts[1])
+              : await store.restoreNode(parts[1]);
+        return respond(res, 200, result);
+      }
+      if (parts[0] === "nodes" && parts.length === 2 && method === "PUT")
+        return respond(
+          res,
+          200,
+          await store.renameNode(parts[1], (await body(req)).title),
+        );
+      if (
+        parts[0] === "nodes" &&
+        parts.length === 3 &&
+        parts[2] === "move" &&
+        method === "POST"
+      ) {
+        const input = await body(req);
+        for (const value of [input.parentId, input.beforeId])
+          if (
+            value !== null &&
+            (typeof value !== "string" || !uuid.test(value))
+          )
+            throw new StudioError(
+              400,
+              "INVALID_ID",
+              "Choose a valid parent and position, or null for the book/end.",
+            );
+        return respond(
+          res,
+          200,
+          await store.moveNode(parts[1], input.parentId, input.beforeId),
+        );
+      }
       if (parts[0] === "documents" && parts.length === 2) {
         if (method === "GET")
           return respond(res, 200, await store.document(parts[1]));

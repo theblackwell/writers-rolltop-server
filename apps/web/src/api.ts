@@ -32,4 +32,5 @@ export type Item = {
   bookId?: string;
   parentId?: string;
   orderKey?: string;
+  deletedAt?: string;
 };

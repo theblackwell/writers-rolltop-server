@@ -5,8 +5,8 @@ Codex edits Server only; Apple belongs to Claude. No format changes are needed f
 
 ## Delivery sequence
 
-1. **Manuscript foundation (in progress):** React/TypeScript and Tiptap using the existing adapter; same-origin Node API; PostgreSQL migrations, single-owner login, libraries/books/binder, revision-checked autosave, version history/recovery, Desk/Writing/Focus, Docker/Podman Compose, setup guide. Every product action lives in the window. Simplified walnut/parchment styling follows Mac terminology.
-2. **Library editing:** metadata/goals, parts/chapters/scenes, ordering/moving, tombstones/restore and backup-protected purge, search, notes, references, persistent layout preferences.
+1. **Manuscript foundation (implemented; full M3 acceptance pending):** React/TypeScript and Tiptap using the existing adapter; same-origin Node API; PostgreSQL migrations, single-owner login, libraries/books/binder, revision-checked autosave, version history/recovery, Desk/Writing/Focus, Docker/Podman Compose, setup guide. Every product action lives in the window. Simplified walnut/parchment styling follows Mac terminology.
+2. **Library editing (rename/move/Trash implemented; remaining items next):** metadata/goals, parts/chapters/scenes, ordering/moving, tombstones/restore and backup-protected purge, search, notes, references, persistent layout preferences.
 3. **Bible/continuity parity:** all entry types/fields/templates, shared scopes/book overrides, relationships, facts/questions, timeline/state changes, who-knows-what and intentional warning dismissals. Mirror Spec semantics and Apple behavior; coordinate additive format changes.
 4. **Portable libraries:** hostile-archive checks, import preview/new-library default, checksums, attachments, optional-field preservation, Mac↔web fixture round trips. Never ship partial/lossy import or export.
 5. **M3 acceptance:** setup on Docker/PostgreSQL, authentication/security review, backup/restore test, browser/accessibility/responsive checks, 100k-word performance, complete compatibility fixtures and owner review. M4 device sync stays separate. Publishing manuscript exports are M5.

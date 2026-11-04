@@ -1,6 +1,6 @@
 # Self-hosted studio: Docker and Podman
 
-**M3 manuscript foundation, under development.** The current build supports a password-protected studio, libraries, books, chapters/scenes, canonical rich-text editing, revision-checked saves, browser drafts and version restoration. Bible/continuity, attachments and `.rolltop` import/export are still planned; this is not M3 feature parity or a release. Do not use it as the only copy of an important manuscript.
+**M3 manuscript foundation, under development.** The current build supports a password-protected studio, libraries, books, parts/chapters/scenes and front/back matter, rename/move/reorder, reversible Trash/restore, canonical rich-text editing, revision-checked saves, browser drafts and version restoration. Bible/continuity, attachments and `.rolltop` import/export are still planned; this is not M3 feature parity or a release. Do not use it as the only copy of an important manuscript.
 
 ## Container prerequisites
 
@@ -85,3 +85,5 @@ CONTAINER_RUNTIME=podman node scripts/container-smoke.ts
 It builds an image, creates an isolated Compose project/volume on port 14317, tests authentication, scene creation, saving, conflicts, restart persistence and built web assets, then removes **only its own** disposable containers/volume. Set `SMOKE_PORT` to choose another test port. It requires Node and installed dependencies on the host. It does not start or modify your normal Compose installation.
 
 To work against a separate PostgreSQL development database, set `DATABASE_URL`, `STUDIO_PASSWORD_HASH`, and `STUDIO_ORIGIN=http://localhost:5173`, then run `npm start` and `npm run dev` in separate terminals. The Vite server proxies `/api` to loopback port 4317. Never point development/testing at the owner's libraries or production database.
+
+Manuscript Actions (•••) are visible beside each binder item. Use Move To for another chapter/part and an insertion position. Trash preserves saved versions; Restore is in the binder Trash or Projects → Book Trash. Items trashed separately before a chapter/book remain trashed when that container is restored. Permanent deletion is not implemented.

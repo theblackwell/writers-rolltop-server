@@ -1,34 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { fixture } from "./support.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PGlite } from "@electric-sql/pglite";
-import { StudioStore, StudioError } from "../src/store.ts";
-import type { Database, Query } from "../src/store.ts";
+import { StudioError } from "../src/store.ts";
 import { passwordHash } from "../src/auth.ts";
 import { studioServer } from "../src/http.ts";
-async function fixture() {
-  const pg = new PGlite();
-  const q =
-    (conn: any): Query =>
-    async (sql, params) => {
-      if (!params && sql.includes(";")) {
-        const result = await conn.exec(sql);
-        return result.at(-1) ?? { rows: [] };
-      }
-      return conn.query(sql, params);
-    };
-  const db: Database = {
-    query: q(pg),
-    transaction: (fn) => pg.transaction((tx) => fn(q(tx))),
-  };
-  const store = new StudioStore(db);
-  await store.migrate();
-  const library = await store.createLibrary("Scratch library");
-  const book = await store.createBook(library.id, "A book");
-  const chapter = await store.createNode(book.id, "Chapter 1", "chapter");
-  const scene = await store.createNode(book.id, "Scene 1", "scene", chapter.id);
-  return { pg, store, library, book, chapter, scene };
-}
+
 test("migrations are repeatable; hierarchy, ordering and canonical documents persist", async () => {
   const f = await fixture();
   try {
@@ -180,6 +157,77 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
         })
       ).status,
       409,
+    );
+    assert.equal(
+      (
+        await request(`/books/${f.book.id}`, "PUT", {
+          title: "Renamed over HTTP",
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await request(`/nodes/${f.scene.id}`, "PUT", { title: "Scene renamed" }))
+        .status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(`/nodes/${f.scene.id}/move`, "POST", {
+          parentId: f.chapter.id,
+          beforeId: null,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(`/nodes/${f.scene.id}/move`, "POST", {
+          parentId: 123,
+          beforeId: null,
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await request(
+          `/nodes/${f.scene.id}/trash`,
+          "POST",
+          {},
+          "https://evil.example",
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (await request(`/nodes/${f.chapter.id}/trash`, "POST", {})).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(`/documents/${f.scene.id}`, "PUT", {
+          document: doc.document,
+          expectedRevision: doc.revision,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (await request(`/nodes/${f.chapter.id}/restore`, "POST", {})).status,
+      200,
+    );
+    assert.equal(
+      (await request(`/books/${f.book.id}/trash`, "POST", {})).status,
+      200,
+    );
+    assert.equal(
+      (await request(`/books/${f.book.id}/restore`, "POST", {})).status,
+      200,
+    );
+    assert.equal(
+      (await (await request(`/books/${f.book.id}`)).json()).book.title,
+      "Renamed over HTTP",
     );
     assert.equal((await request("/logout", "POST", {})).status, 200);
     assert.equal((await request("/session")).status, 401);

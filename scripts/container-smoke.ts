@@ -105,6 +105,32 @@ try {
     body: JSON.stringify({ document: first.document, expectedRevision: 1 }),
   });
   if (stale.status !== 409) throw new Error("A stale save was not refused.");
+  await api(`/books/${book.id}`, "PUT", { title: "Renamed container book" });
+  await api(`/nodes/${scene.id}`, "PUT", { title: "Renamed scene" });
+  const destination = await api(`/books/${book.id}/nodes`, "POST", {
+    title: "Chapter 2",
+    kind: "chapter",
+  });
+  await api(`/nodes/${scene.id}/move`, "POST", {
+    parentId: destination.id,
+    beforeId: null,
+  });
+  await api(`/nodes/${destination.id}/trash`, "POST", {});
+  assert.ok(
+    (await api(`/books/${book.id}`)).nodes.find((n: any) => n.id === scene.id)
+      .deletedAt,
+  );
+  await api(`/nodes/${destination.id}/restore`, "POST", {});
+  await api(`/books/${book.id}/trash`, "POST", {});
+  await api(`/books/${book.id}/restore`, "POST", {});
+  const structure = await api(`/books/${book.id}`);
+  assert.equal(structure.book.title, "Renamed container book");
+  assert.equal(
+    structure.nodes.find((n: any) => n.id === scene.id).parentId,
+    destination.id,
+  );
+  assert.ok(!structure.nodes.find((n: any) => n.id === scene.id).deletedAt);
+  assert.equal((await api(`/documents/${scene.id}/revisions`)).length, 2);
   await compose("restart");
   await health();
   const restored = await api(`/documents/${scene.id}`);
@@ -114,7 +140,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, PostgreSQL persistence across restart, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, and web assets.",
   );
 } finally {
   try {
