@@ -98,6 +98,7 @@ export function EntryList({
       {fieldEntry && (
         <EntryFields
           entry={fieldEntry}
+          entries={entries}
           bookId={bookId}
           catalog={catalog}
           busy={busy}

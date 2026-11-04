@@ -174,7 +174,7 @@ test("template/field writes refuse foreign, stale, trashed and destructive chang
           },
           home.id,
         ),
-      /not supported/,
+      /live entries/,
     );
     await assert.rejects(
       () =>

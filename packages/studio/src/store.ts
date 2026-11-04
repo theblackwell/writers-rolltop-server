@@ -362,9 +362,37 @@ export class StudioStore {
             "decimal",
             "boolean",
             ...structuredTypes,
+            "entryReference",
+            "entryReferences",
           ].includes(field.fieldType)
         )
           return fail("This field type is not supported yet.");
+        if (
+          value !== null &&
+          ["entryReference", "entryReferences"].includes(field.fieldType)
+        ) {
+          const ids = field.fieldType === "entryReference" ? [value] : value;
+          if (
+            !Array.isArray(ids) ||
+            ids.some((v) => typeof v !== "string") ||
+            new Set(ids).size !== ids.length
+          )
+            return fail("Choose unique entries in this book.");
+          const targets = (
+            await q("SELECT data FROM bible_entries WHERE book_id=$1", [bookId])
+          ).rows.map((r) => r.data);
+          for (const id of ids) {
+            const target = targets.find((t) => t.id === id && !t.deletedAt);
+            if (
+              !target ||
+              (field.targetEntryTypes &&
+                !field.targetEntryTypes.includes(target.entryType))
+            )
+              return fail(
+                "Choose live entries of the allowed types in this book.",
+              );
+          }
+        }
         const structuredError = structuredValueError(field, value);
         if (structuredError) return fail(structuredError);
         if (value !== null) {
@@ -1110,6 +1138,39 @@ export class StudioStore {
           "BACKUP_UNAVAILABLE",
           "Permanent deletion needs configured recovery backup storage. Nothing was deleted.",
         );
+      if (type === "book") {
+        const doomedEntries = new Set(
+          (
+            await q("SELECT id FROM bible_entries WHERE book_id=$1", [id])
+          ).rows.map((r) => r.id),
+        );
+        const fields = (
+          await q(
+            "SELECT data FROM bible_fields WHERE data->>'fieldType' IN ('entryReference','entryReferences')",
+          )
+        ).rows.map((r) => r.data);
+        for (const row of (
+          await q("SELECT data FROM bible_entries WHERE book_id<>$1", [id])
+        ).rows) {
+          for (const values of [
+            row.data.values,
+            ...(row.data.overrides ?? []).map((o: any) => o.values),
+          ])
+            for (const field of fields) {
+              const value = values?.[field.id];
+              if (
+                (field.fieldType === "entryReference" &&
+                  doomedEntries.has(value)) ||
+                (field.fieldType === "entryReferences" &&
+                  Array.isArray(value) &&
+                  value.some((v) => doomedEntries.has(v)))
+              )
+                return fail(
+                  "This book has incoming links from another book. Resolve them before permanent deletion.",
+                );
+            }
+        }
+      }
       let path: string;
       try {
         path = await writeBookBackup(

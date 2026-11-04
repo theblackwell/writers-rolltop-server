@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {
+  ReferenceField,
+  referenceTypes,
+  referenceSummary,
+} from "./reference-field.tsx";
 import { StructuredForm, structuredSummary } from "./structured-fields.tsx";
 import { structuredTypes } from "../../../packages/studio/src/structured-values.ts";
 import { useState } from "react";
@@ -17,6 +22,7 @@ export type Field = {
   label: string;
   fieldType: string;
   required: boolean;
+  targetEntryTypes?: string[];
   multiple?: boolean;
   options?: { id: string; label: string }[];
   updatedAt: string;
@@ -25,6 +31,7 @@ export type Field = {
 export type Catalog = { templates: Template[]; fields: Field[] };
 export function EntryFields({
   entry,
+  entries,
   bookId,
   catalog,
   busy,
@@ -33,6 +40,7 @@ export function EntryFields({
   onClose,
 }: {
   entry: Entry;
+  entries: Entry[];
   bookId: string;
   catalog: Catalog;
   busy: boolean;
@@ -126,7 +134,9 @@ export function EntryFields({
             {f.required && " (suggested)"}
             <p style={{ whiteSpace: "pre-wrap" }}>
               {Object.hasOwn(entry.values ?? {}, f.id)
-                ? structuredSummary(f, entry.values![f.id])
+                ? referenceTypes.includes(f.fieldType)
+                  ? referenceSummary(entry.values![f.id], entries)
+                  : structuredSummary(f, entry.values![f.id])
                 : "Not set"}
             </p>
             {[
@@ -136,6 +146,7 @@ export function EntryFields({
               "decimal",
               "boolean",
               ...structuredTypes,
+              ...referenceTypes,
             ].includes(f.fieldType) ? (
               <button
                 disabled={busy || !!fieldId}
@@ -153,7 +164,22 @@ export function EntryFields({
         ))}
       </ul>
       {field &&
-        (structuredTypes.includes(field.fieldType) ? (
+        (referenceTypes.includes(field.fieldType) ? (
+          <ReferenceField
+            key={field.id}
+            field={field}
+            value={entry.values?.[field.id]}
+            entries={entries}
+            busy={busy}
+            onCancel={() => setFieldId("")}
+            onSave={(value) =>
+              save(`values/${field.id}`, {
+                value,
+                expectedFieldUpdatedAt: field.updatedAt,
+              })
+            }
+          />
+        ) : structuredTypes.includes(field.fieldType) ? (
           <StructuredForm
             key={field.id}
             field={field}
