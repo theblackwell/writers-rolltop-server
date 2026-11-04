@@ -25,11 +25,11 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 ## Sections (one per session, owner rule 2026-11-04)
 
-- **L1 — Book metadata and goal settings: implemented 2026-11-04.** Title, subtitle, author, description, language, word goal and target date; validated partial updates preserve unknown fields. Goal settings shown in manuscript navigation. Browser visual QA and live manuscript goal-progress totals remain follow-up work.
+- **L1 — Book metadata and goal settings: implemented 2026-11-04.** Title, subtitle, author, description, language, word goal and target date; validated partial updates preserve unknown fields. Goal settings shown in manuscript navigation. Saved goal-progress totals implemented in L3; browser visual QA remains follow-up work.
 - **L2a — Saved manuscript search: implemented 2026-11-04.** In-window search of scene/front/back matter titles and canonical prose, excerpts and navigation; literal case-insensitive matching, reading order, 50-item limit, Trash excluded. Saves current editor before opening search. Browser visual QA, chapter/part titles and Apple-style prefix/relevance ranking remain follow-up work.
 - **L2b — Quick notes: implemented 2026-11-04.** Plain-text notes pinned to book/manuscript nodes; editing, re-pin, reversible Trash and stale-write protection. Schema v2 adds notes without changing the archive format. Browser visual QA and real PostgreSQL smoke remain follow-up checks.
 - **L2c — References: implemented 2026-11-04.** Book-scoped bible entry creation (name/type/summary), saved passage anchors, reference linking/navigation and reversible reference Trash. Schema v3 adds entries/references; validates same-book live targets, saved revision/anchor and stale updates. Full bible editing/shared scopes remain delivery step 3. Browser visual QA and real PostgreSQL smoke remain follow-up checks.
-- **L3 — Remaining formatting, goal-progress totals and layout preferences.**
+- **L3 — Formatting, goal-progress totals and layout preferences: implemented 2026-11-04.** All six heading levels, alignment, ordered lists/indent/outdent and link form; saved Unicode totals by book/node, goal percentage/remaining words and date; browser-local layout persists safely when storage is available. Browser visual QA and real PostgreSQL smoke remain open.
 - **L4 — Backup-protected permanent deletion.**
 
 Continue delivery steps 3–5 above in separately sized sections after library editing.

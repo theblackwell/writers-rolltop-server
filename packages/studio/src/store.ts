@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { wordCount } from "../../document-adapter/src/text.ts";
 import { between } from "./order.ts";
 import { randomUUID } from "node:crypto";
 import { decode } from "../../document-adapter/src/canonical.ts";
@@ -467,6 +468,35 @@ export class StudioStore {
       )
     ).rows.map((r) => r.data);
     return { book: book.data, libraryId: book.library_id, nodes };
+  }
+  async progress(bookId: string) {
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, bookId);
+      const counts: Record<string, number> = Object.fromEntries(
+        ctx.nodes.filter((n) => this.isLive(ctx, n.id)).map((n) => [n.id, 0]),
+      );
+      const nodes = new Map(ctx.nodes.map((n) => [n.id, n]));
+      const documents = (
+        await q(
+          "SELECT d.node_id,d.document FROM documents d JOIN manuscript_nodes n ON n.id=d.node_id WHERE n.book_id=$1",
+          [bookId],
+        )
+      ).rows;
+      let words = 0;
+      for (const row of documents) {
+        if (!this.isLive(ctx, row.node_id)) continue;
+        const count = wordCount(row.document);
+        words += count;
+        let node = nodes.get(row.node_id);
+        const seen = new Set<string>();
+        while (node && !seen.has(node.id)) {
+          seen.add(node.id);
+          counts[node.id] += count;
+          node = node.parentId ? nodes.get(node.parentId) : undefined;
+        }
+      }
+      return { words, nodeWords: counts };
+    });
   }
   /** Literal, case-insensitive search of saved manuscript prose in this book. */
   async search(bookId: string, input: unknown) {

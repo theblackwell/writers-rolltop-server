@@ -226,6 +226,13 @@ export function studioServer(
             await store.saveReference(parts[1], await body(req), parts[3]),
           );
       }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "progress" &&
+        parts.length === 3 &&
+        method === "GET"
+      )
+        return respond(res, 200, await store.progress(parts[1]));
       if (parts[0] === "libraries" && parts.length === 1) {
         if (method === "GET") return respond(res, 200, await store.libraries());
         if (method === "POST")

@@ -117,6 +117,7 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
   try {
     assert.equal((await request("/health")).status, 200);
     assert.equal((await request("/libraries")).status, 401);
+    assert.equal((await request(`/books/${f.book.id}/progress`)).status, 401);
     assert.equal(
       (await request(`/books/${f.book.id}/search?q=Scene`)).status,
       401,
@@ -251,6 +252,9 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
       (await request(`${referencePath}/invalid`, "PUT", {})).status,
       400,
     );
+    const totals = await request(`/books/${f.book.id}/progress`);
+    assert.equal(totals.status, 200);
+    assert.equal((await totals.json()).words, 2);
     const hits = await (
       await request(`/books/${f.book.id}/search?q=Scene%201`)
     ).json();

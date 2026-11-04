@@ -21,6 +21,8 @@ import type { Item } from "./api.ts";
 import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
 import type { Target } from "./management.tsx";
 import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
+import { BookProgress } from "./progress.tsx";
+import { wordCount } from "../../../packages/document-adapter/src/text.ts";
 import { References } from "./references.tsx";
 import { QuickNotes } from "./notes.tsx";
 import { ManuscriptSearch } from "./search.tsx";
@@ -133,6 +135,8 @@ function App() {
   const [error, setError] = useState("");
   const [libraries, setLibraries] = useState<Item[]>([]);
   const [library, setLibrary] = useState<Item | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressVersion, setProgressVersion] = useState(0);
   const [bibleOpen, setBibleOpen] = useState(false);
   const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -142,8 +146,12 @@ function App() {
   const [nodes, setNodes] = useState<Item[]>([]);
   const [scene, setScene] = useState<Item | null>(null);
   const [layout, setLayout] = useState<Layout>(() => {
-    const saved = localStorage.getItem("rolltop-layout");
-    return saved === "writing" || saved === "focus" ? saved : "desk";
+    try {
+      const saved = localStorage.getItem("rolltop-layout");
+      return saved === "writing" || saved === "focus" ? saved : "desk";
+    } catch {
+      return "desk";
+    }
   });
   const [view, setView] = useState<"projects" | "manuscript">("projects");
   const [dialog, setDialog] = useState<
@@ -176,7 +184,11 @@ function App() {
     if (auth) void loadLibraries();
   }, [auth]);
   useEffect(() => {
-    localStorage.setItem("rolltop-layout", layout);
+    try {
+      localStorage.setItem("rolltop-layout", layout);
+    } catch {
+      /* Keep layout usable when browser storage is unavailable. */
+    }
   }, [layout]);
   async function loadLibraries() {
     try {
@@ -406,6 +418,14 @@ function App() {
               </button>
               <button disabled={!book} onClick={() => setBibleOpen(true)}>
                 Bible Entries…
+              </button>
+              <button
+                disabled={!book}
+                onClick={async () => {
+                  if (await leave()) setProgressOpen(true);
+                }}
+              >
+                Word Goals and Progress…
               </button>
               <hr />
               {libraries.map((l) => (
@@ -648,6 +668,7 @@ function App() {
               <EditorPane
                 key={scene.id}
                 ref={pane}
+                onSaved={() => setProgressVersion((v) => v + 1)}
                 layout={layout}
                 node={scene}
                 chapter={
@@ -674,6 +695,14 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {progressOpen && book && (
+        <Dialog
+          title="Word Goals and Progress"
+          close={() => setProgressOpen(false)}
+        >
+          <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
+        </Dialog>
+      )}
       {bibleOpen && book && (
         <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
           <References bookId={book.id} />
@@ -785,8 +814,10 @@ function App() {
 
 const EditorPane = forwardRef<
   PaneHandle,
-  { node: Item; chapter: string; layout: Layout }
->(function EditorPane({ node, chapter, layout }, ref) {
+  { node: Item; chapter: string; layout: Layout; onSaved: () => void }
+>(function EditorPane({ node, chapter, layout, onSaved }, ref) {
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkError, setLinkError] = useState("");
   const [referencesOpen, setReferencesOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState("Loading…");
@@ -912,6 +943,7 @@ const EditorPane = forwardRef<
             expectedRevision: revision.current,
           });
           revision.current = result.revision;
+          onSaved();
           if (version === change.current) {
             dirty.current = false;
             try {
@@ -991,10 +1023,62 @@ const EditorPane = forwardRef<
       setReferencesOpen(true);
     }
   }
-  const words =
-    editor?.getText().trim().split(/\s+/u).filter(Boolean).length ?? 0;
+  const words = pending.current ? wordCount(pending.current) : 0;
+  const selectionDepth = editor?.state.selection.$from;
+  let listDepth = 0;
+  if (selectionDepth)
+    for (let depth = 1; depth <= selectionDepth.depth; depth++)
+      if (selectionDepth.node(depth).type.name === "listItem") listDepth++;
+
   return (
     <div className="editor-pane">
+      {linkOpen && (
+        <Dialog title="Passage Link" close={() => setLinkOpen(false)}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const href = String(
+                new FormData(event.currentTarget).get("href"),
+              ).trim();
+              if (!/^(https?:\/\/|mailto:)/i.test(href)) {
+                setLinkError("Use an http, https, or mailto link.");
+                return;
+              }
+              try {
+                new URL(href);
+              } catch {
+                setLinkError("Enter a valid link.");
+                return;
+              }
+              editor?.chain().extendMarkRange("link").setLink({ href }).run();
+              setLinkOpen(false);
+            }}
+          >
+            <label>
+              Address
+              <input
+                name="href"
+                type="text"
+                required
+                maxLength={4000}
+                defaultValue={editor?.getAttributes("link").href ?? ""}
+                autoFocus
+              />
+            </label>
+            {linkError && <p role="alert">{linkError}</p>}
+            <button>Save Link</button>
+            <button
+              type="button"
+              onClick={() => {
+                editor?.chain().extendMarkRange("link").unsetLink().run();
+                setLinkOpen(false);
+              }}
+            >
+              Remove Link
+            </button>
+          </form>
+        </Dialog>
+      )}
       {referencesOpen && (
         <Dialog
           title="Passage References"
@@ -1156,11 +1240,9 @@ const EditorPane = forwardRef<
           <select
             aria-label="Paragraph style"
             value={
-              editor?.isActive("heading", { level: 1 })
-                ? "h1"
-                : editor?.isActive("heading", { level: 2 })
-                  ? "h2"
-                  : "body"
+              editor?.isActive("heading")
+                ? `h${editor.getAttributes("heading").level}`
+                : "body"
             }
             onChange={(e) =>
               e.target.value === "body"
@@ -1168,13 +1250,21 @@ const EditorPane = forwardRef<
                 : editor
                     ?.chain()
                     .focus()
-                    .toggleHeading({ level: e.target.value === "h1" ? 1 : 2 })
+                    .setHeading({
+                      level: Number(e.target.value.slice(1)) as
+                        1 | 2 | 3 | 4 | 5 | 6,
+                    })
                     .run()
             }
           >
             <option value="body">Body text</option>
             <option value="h1">Heading 1</option>
             <option value="h2">Heading 2</option>
+            {[3, 4, 5, 6].map((level) => (
+              <option key={level} value={`h${level}`}>
+                Heading {level}
+              </option>
+            ))}
           </select>
           <button
             disabled={!loaded}
@@ -1196,6 +1286,53 @@ const EditorPane = forwardRef<
             onClick={() => editor?.chain().focus().setHorizontalRule().run()}
           >
             ⁂
+          </button>
+          <button
+            disabled={!loaded}
+            aria-label="Numbered list"
+            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          >
+            Numbered List
+          </button>
+          <button
+            disabled={!loaded || listDepth >= 8}
+            aria-label="Indent list item"
+            onClick={() =>
+              listDepth < 8 &&
+              editor?.chain().focus().sinkListItem("listItem").run()
+            }
+          >
+            Indent
+          </button>
+          <button
+            disabled={!loaded}
+            aria-label="Outdent list item"
+            onClick={() =>
+              editor?.chain().focus().liftListItem("listItem").run()
+            }
+          >
+            Outdent
+          </button>
+          {(["left", "center", "right"] as const).map((align) => (
+            <button
+              key={align}
+              disabled={!loaded}
+              aria-label={`Align ${align}`}
+              aria-pressed={editor?.isActive({ textAlign: align }) ?? false}
+              onClick={() => editor?.chain().focus().setTextAlign(align).run()}
+            >
+              {align[0].toUpperCase() + align.slice(1)}
+            </button>
+          ))}
+          <button
+            disabled={!loaded}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setLinkError("");
+              setLinkOpen(true);
+            }}
+          >
+            Link…
           </button>
           <span className="toolbar-spacer" />
           <button disabled={!loaded} onClick={() => void flush()}>

@@ -103,6 +103,39 @@ test("the actual Tiptap schema preserves every canonical fixture, including anch
       assert.ok(
         text.at(-1)?.marks?.some((m) => m.type === "anchor" && m.id === first),
       );
+      editor.commands.setTextSelection({ from: 1, to: 6 });
+      editor.commands.setHeading({ level: 6 });
+      editor.commands.setTextAlign("center");
+      editor.commands.setLink({ href: "https://example.com/research" });
+      const formatted = fromProseMirror(editor.getJSON(), nodeId);
+      const heading = formatted.blocks[0];
+      assert.equal(heading.type, "heading");
+      if (heading.type !== "heading") throw new Error("Expected heading");
+      assert.equal(heading.level, 6);
+      assert.equal(heading.align, "center");
+      const run = heading.content[0];
+      if (run.type !== "text") throw new Error("Expected text");
+      assert.ok(
+        run.marks?.some(
+          (m) => m.type === "link" && m.href === "https://example.com/research",
+        ),
+      );
+      assert.ok(run.marks?.some((m) => m.type === "anchor" && m.id === first));
+      editor.commands.unsetLink();
+      editor.commands.setParagraph();
+      editor.commands.toggleOrderedList();
+      const numbered = fromProseMirror(editor.getJSON(), nodeId).blocks[0];
+      assert.equal(numbered.type, "paragraph");
+      if (numbered.type !== "paragraph")
+        throw new Error("Expected list paragraph");
+      assert.equal(numbered.list?.style, "ordered");
+      assert.equal(
+        numbered.content
+          .filter((r) => r.type === "text")
+          .map((r) => r.text)
+          .join(""),
+        "Corin carries a letter",
+      );
     } finally {
       editor.destroy();
     }
