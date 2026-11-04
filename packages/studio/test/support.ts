@@ -25,3 +25,13 @@ export async function fixture() {
   const scene = await store.createNode(book.id, "Scene 1", "scene", chapter.id);
   return { pg, store, library, book, chapter, scene };
 }
+
+export async function removeWorldSchema(store: StudioStore) {
+  await store.db.query(`DROP TRIGGER book_series_world ON books;
+    DROP FUNCTION check_book_series_world();
+    ALTER TABLE books DROP COLUMN universe_id;
+    ALTER TABLE books DROP COLUMN series_id;
+    DROP TABLE series;
+    DROP TABLE universes;
+    DROP FUNCTION keep_series_world()`);
+}

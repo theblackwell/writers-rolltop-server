@@ -10,6 +10,8 @@ export const backupTables = [
   "libraries",
   "bible_templates",
   "bible_fields",
+  "universes",
+  "series",
   "books",
   "manuscript_nodes",
   "documents",
@@ -20,8 +22,8 @@ export const backupTables = [
 ] as const;
 export type BookBackup = {
   format: "writers-rolltop/book-recovery";
-  version: 1 | 2;
-  schemaVersion: 3 | 4;
+  version: 1 | 2 | 3;
+  schemaVersion: 3 | 4 | 5;
   createdAt: string;
   bookId: string;
   tables: Record<string, any[]>;
@@ -41,7 +43,12 @@ export async function captureBook(
   tables.libraries = (
     await q("SELECT * FROM libraries WHERE id=$1 FOR UPDATE", [book.library_id])
   ).rows;
-  for (const table of ["bible_templates", "bible_fields"])
+  for (const table of [
+    "bible_templates",
+    "bible_fields",
+    "universes",
+    "series",
+  ])
     tables[table] = (
       await q(`SELECT * FROM ${table} WHERE library_id=$1`, [book.library_id])
     ).rows;
@@ -66,8 +73,8 @@ export async function captureBook(
     ).rows;
   return {
     format: "writers-rolltop/book-recovery",
-    version: 2,
-    schemaVersion: 4,
+    version: 3,
+    schemaVersion: 5,
     createdAt: new Date().toISOString(),
     bookId,
     tables,
@@ -88,15 +95,21 @@ export async function readBookBackup(path: string): Promise<BookBackup> {
 
 function validateBackup(data: BookBackup) {
   const legacy = data?.version === 1 && data?.schemaVersion === 3;
-  const current = data?.version === 2 && data?.schemaVersion === 4;
+  const prior = data?.version === 2 && data?.schemaVersion === 4;
+  const current = data?.version === 3 && data?.schemaVersion === 5;
   const tables = legacy
     ? backupTables.filter(
-        (t) => !["bible_templates", "bible_fields"].includes(t),
+        (t) =>
+          !["bible_templates", "bible_fields", "universes", "series"].includes(
+            t,
+          ),
       )
-    : backupTables;
+    : prior
+      ? backupTables.filter((t) => !["universes", "series"].includes(t))
+      : backupTables;
   if (
     data?.format !== "writers-rolltop/book-recovery" ||
-    (!legacy && !current) ||
+    (!legacy && !prior && !current) ||
     tables.some((t) => !Array.isArray(data.tables?.[t]))
   )
     throw new Error("Unsupported recovery backup.");
@@ -154,7 +167,13 @@ export async function restoreBookBackup(q: Query, backup: BookBackup) {
     for (const row of table === "manuscript_nodes"
       ? nodes
       : (backup.tables[table] ?? [])) {
-      const columns = Object.keys(row);
+      const columns = Object.keys(row).filter(
+        (c) =>
+          !(
+            (table === "books" && ["universe_id", "series_id"].includes(c)) ||
+            (table === "series" && c === "universe_id")
+          ),
+      );
       // Column names originate in a backup file: quote and escape identifiers.
       const names = columns.map((c) => '"' + c.replaceAll('"', '""') + '"');
       await q(

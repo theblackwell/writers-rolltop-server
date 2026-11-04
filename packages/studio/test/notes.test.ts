@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixture } from "./support.ts";
+import { fixture, removeWorldSchema } from "./support.ts";
 test("notes persist, validate same-book pins, preserve extras, detect stale edits and restore", async () => {
   const f = await fixture();
   try {
@@ -83,6 +83,7 @@ test("v1 upgrades transactionally to notes schema and keeps manuscripts", async 
   const f = await fixture();
   try {
     const before = await f.store.document(f.scene.id);
+    await removeWorldSchema(f.store);
     await f.store.db.query("DROP TABLE bible_fields");
     await f.store.db.query("DROP TABLE bible_templates");
     await f.store.db.query("DROP TABLE manuscript_references");
@@ -94,7 +95,7 @@ test("v1 upgrades transactionally to notes schema and keeps manuscripts", async 
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      4,
+      5,
     );
     assert.deepEqual(await f.store.document(f.scene.id), before);
     assert.deepEqual(await f.store.notes(f.book.id), []);

@@ -78,6 +78,33 @@ try {
   const book = await api(`/libraries/${library.id}/books`, "POST", {
     title: "Restart check",
   });
+  // B3a storage-only setup: use only this disposable project's database.
+  const worldId = crypto.randomUUID(),
+    seriesId = crypto.randomUUID();
+  console.log(
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "--input-type=module",
+      "-e",
+      `
+    const { postgres } = await import('./packages/studio/src/postgres.ts');
+    const db = postgres(process.env.DATABASE_URL);
+    try {
+      const now = new Date().toISOString();
+      const world = { id: '${worldId}', title: 'Scratch world', orderKey: 'a', createdAt: now, updatedAt: now };
+      const series = { ...world, id: '${seriesId}', title: 'Scratch series', universeId: world.id };
+      await db.transaction(async q => {
+        await q('INSERT INTO universes(id,library_id,data) VALUES($1,$2,$3)', [world.id, '${library.id}', world]);
+        await q('INSERT INTO series(id,library_id,data) VALUES($1,$2,$3)', [series.id, '${library.id}', series]);
+        await q('UPDATE books SET data=data || $2::jsonb WHERE id=$1', ['${book.id}', { universeId: world.id, seriesId: series.id }]);
+      });
+    } finally { await db.close(); }
+  `,
+    ),
+  );
   const chapter = await api(`/books/${book.id}/nodes`, "POST", {
     title: "Chapter 1",
     kind: "chapter",
@@ -380,6 +407,10 @@ try {
     const db = postgres(url.href);
     try {
       const store = new StudioStore(db);
+      const restoredBook = (await store.book('${book.id}')).book;
+      if (restoredBook.universeId !== '${worldId}' || restoredBook.seriesId !== '${seriesId}') throw Error('World membership recovery mismatch');
+      if ((await db.query('SELECT id FROM universes WHERE id=$1', ['${worldId}'])).rows.length !== 1) throw Error('World recovery mismatch');
+      if ((await db.query('SELECT universe_id FROM series WHERE id=$1', ['${seriesId}'])).rows[0]?.universe_id !== '${worldId}') throw Error('Series recovery mismatch');
       const recoveredCatalog = await store.templates('${library.id}');
       if (recoveredCatalog.templates.length !== ${finalCatalog.templates.length} || recoveredCatalog.fields.length !== ${finalCatalog.fields.length}) throw Error('Template recovery mismatch');
       const recoveredEntry = (await store.entries('${book.id}')).find(e => e.id === '${entry.id}');

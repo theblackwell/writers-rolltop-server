@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { fixture } from "./support.ts";
+import { fixture, removeWorldSchema } from "./support.ts";
 test("references require saved anchors and live same-book entries; Trash preserves anchors and extras", async () => {
   const f = await fixture();
   try {
@@ -130,6 +130,7 @@ test("v2 upgrades preserve notes and manuscripts", async () => {
   try {
     const note = await f.store.saveNote(f.book.id, { text: "Keep note" });
     const doc = await f.store.document(f.scene.id);
+    await removeWorldSchema(f.store);
     await f.store.db.query("DROP TABLE bible_fields");
     await f.store.db.query("DROP TABLE bible_templates");
     await f.store.db.query("DROP TABLE manuscript_references");
@@ -140,7 +141,7 @@ test("v2 upgrades preserve notes and manuscripts", async () => {
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      4,
+      5,
     );
     assert.deepEqual(await f.store.notes(f.book.id), [note]);
     assert.deepEqual(await f.store.document(f.scene.id), doc);

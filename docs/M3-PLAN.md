@@ -43,6 +43,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 - **B2d — Entry-reference values: implemented 2026-11-04.** Single/multi same-book entry links with allowed target types, live validation, Trash retention, explicit clearing and book-purge protection for unexpected inbound links from other books.
 - **B2e — Custom templates and fields: implemented 2026-11-04.** In-window creation, labels, field definitions, selection options, allowed target types and ordering; immutable types/keys, stable IDs, CAS and saved-value compatibility guards. 56 tests, TypeScript/build, browser QA and Podman/PostgreSQL persistence/recovery pass for combined B2d/B2e. Owner explicitly requested both remaining B2 sections in this session; B2 is complete. Next is **B3a world/series model**. Attachment-value editing remains portable-library work.
 
+- **B3a1 — World/series storage: implemented 2026-11-04.** B3a split at storage/recovery boundary. Schema v5 adds library ownership and generated membership foreign keys, series/world matching and deletion restrictions. Recovery v3/schema5 captures library worlds/series and accepts v1/schema3 and v2/schema4. 59 tests, TypeScript/build and ARM64 PostgreSQL/Podman recovery smoke pass. Next: **B3a2 membership APIs and in-window controls**; B3b remains a separate section.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

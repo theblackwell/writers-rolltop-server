@@ -5,7 +5,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fixture } from "./support.ts";
+import { fixture, removeWorldSchema } from "./support.ts";
 import { StudioStore } from "../src/store.ts";
 import { initializeTemplates } from "../src/templates.ts";
 import {
@@ -138,6 +138,7 @@ test("v3 upgrade preserves entries/revisions and rolls back seeding failure befo
       entryType: "term",
     });
     const before = await f.store.document(f.scene.id);
+    await removeWorldSchema(f.store);
     await f.store.db.query("DROP TABLE bible_fields");
     await f.store.db.query("DROP TABLE bible_templates");
     await f.store.db.query("UPDATE studio_schema SET version=3");
@@ -168,7 +169,7 @@ test("v3 upgrade preserves entries/revisions and rolls back seeding failure befo
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      4,
+      5,
     );
     assert.equal((await f.store.templates(f.library.id)).fields.length, 20);
     assert.deepEqual(await f.store.entries(f.book.id), [entry]);
@@ -186,8 +187,8 @@ test("new recovery includes library templates; legacy v1 files restore into v4 w
     const backup = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    assert.equal(backup.version, 2);
-    assert.equal(backup.schemaVersion, 4);
+    assert.equal(backup.version, 3);
+    assert.equal(backup.schemaVersion, 5);
     assert.equal(backup.tables.bible_fields.length, 20);
     const legacy = structuredClone(backup);
     legacy.version = 1;

@@ -87,16 +87,17 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 4)
+      if (rows[0]?.version > 5)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3, 4].includes(rows[0].version))
+        if (![1, 2, 3, 4, 5].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
         if (rows[0].version < 4) await this.migrateTemplates(q);
+        if (rows[0].version < 5) await this.migrateWorlds(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -110,6 +111,7 @@ export class StudioStore {
       await this.migrateNotes(q);
       await this.migrateReferences(q);
       await this.migrateTemplates(q);
+      await this.migrateWorlds(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -150,6 +152,51 @@ export class StudioStore {
     for (const library of (await q("SELECT id FROM libraries ORDER BY id"))
       .rows)
       await initializeTemplates(q, library.id);
+  }
+  private async migrateWorlds(q: Query) {
+    await q(`CREATE TABLE universes (
+      id uuid PRIMARY KEY, library_id uuid NOT NULL REFERENCES libraries(id), data jsonb NOT NULL,
+      UNIQUE(id,library_id),
+      CHECK(data ?& ARRAY['id','title','orderKey','createdAt','updatedAt']),
+      CHECK(data->>'id'=id::text));
+      CREATE TABLE series (
+      id uuid PRIMARY KEY, library_id uuid NOT NULL REFERENCES libraries(id), data jsonb NOT NULL,
+      universe_id uuid GENERATED ALWAYS AS ((data->>'universeId')::uuid) STORED,
+      UNIQUE(id,library_id),
+      FOREIGN KEY(universe_id,library_id) REFERENCES universes(id,library_id),
+      CHECK(data ?& ARRAY['id','title','orderKey','createdAt','updatedAt']),
+      CHECK(data->>'id'=id::text));
+      ALTER TABLE books ADD COLUMN universe_id uuid GENERATED ALWAYS AS ((data->>'universeId')::uuid) STORED;
+      ALTER TABLE books ADD COLUMN series_id uuid GENERATED ALWAYS AS ((data->>'seriesId')::uuid) STORED;
+      ALTER TABLE books ADD FOREIGN KEY(universe_id,library_id) REFERENCES universes(id,library_id);
+      ALTER TABLE books ADD FOREIGN KEY(series_id,library_id) REFERENCES series(id,library_id);
+      CREATE INDEX universes_by_library ON universes(library_id);
+      CREATE INDEX series_by_library ON series(library_id);
+      CREATE INDEX books_by_universe ON books(universe_id);
+      CREATE INDEX books_by_series ON books(series_id);
+      CREATE FUNCTION check_book_series_world() RETURNS trigger LANGUAGE plpgsql AS $$
+      DECLARE world uuid;
+      BEGIN
+        IF NEW.data->>'seriesId' IS NOT NULL THEN
+          SELECT universe_id INTO world FROM series WHERE id=(NEW.data->>'seriesId')::uuid FOR SHARE;
+          IF world IS NOT NULL AND world IS DISTINCT FROM (NEW.data->>'universeId')::uuid THEN
+            RAISE EXCEPTION 'Book world must match its series world';
+          END IF;
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER book_series_world BEFORE INSERT OR UPDATE ON books
+        FOR EACH ROW EXECUTE FUNCTION check_book_series_world();
+      CREATE FUNCTION keep_series_world() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF OLD.data->>'universeId' IS DISTINCT FROM NEW.data->>'universeId' THEN
+          RAISE EXCEPTION 'Series world is immutable; create a new series to move books';
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER series_world BEFORE UPDATE ON series
+        FOR EACH ROW EXECUTE FUNCTION keep_series_world();
+      UPDATE studio_schema SET version=5`);
   }
   async templates(libraryId: string) {
     required(
@@ -699,7 +746,11 @@ export class StudioStore {
       const book = record(name, {
         orderKey: between(peers.at(-1)?.data.orderKey, undefined),
       });
-      await q("INSERT INTO books VALUES($1,$2,$3)", [book.id, libraryId, book]);
+      await q("INSERT INTO books(id,library_id,data) VALUES($1,$2,$3)", [
+        book.id,
+        libraryId,
+        book,
+      ]);
       return book;
     });
   }
