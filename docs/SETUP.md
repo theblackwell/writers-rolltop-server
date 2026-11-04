@@ -87,3 +87,8 @@ It builds an image, creates an isolated Compose project/volume on port 14317, te
 To work against a separate PostgreSQL development database, set `DATABASE_URL`, `STUDIO_PASSWORD_HASH`, and `STUDIO_ORIGIN=http://localhost:5173`, then run `npm start` and `npm run dev` in separate terminals. The Vite server proxies `/api` to loopback port 4317. Never point development/testing at the owner's libraries or production database.
 
 Manuscript Actions (•••) are visible beside each binder item. Use Move To for another chapter/part and an insertion position. Trash preserves saved versions; Restore is in the binder Trash or Projects → Book Trash. Items trashed separately before a chapter/book remain trashed when that container is restored. Permanent deletion is not implemented.
+
+
+### Internal deletion-recovery foundation (L4a)
+
+Permanent deletion is still unavailable. `packages/studio/src/backup.ts` supplies an internal whole-book recovery snapshot, private checksummed files with file/directory fsync and read-back verification, and transactional restore into empty migrated scratch tables. It includes Trash and every saved revision and excludes login sessions. This JSON format is not a portable `.rolltop` archive. The next section must configure durable backup storage outside PostgreSQL, expose a tested operator restore workflow, and wire backup success to deletion. Continue using the full PostgreSQL backup procedure above for deployed installations.
