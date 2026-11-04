@@ -79,14 +79,15 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 2)
+      if (rows[0]?.version > 3)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2].includes(rows[0].version))
+        if (![1, 2, 3].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
+        if (rows[0].version < 3) await this.migrateReferences(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -98,12 +99,232 @@ export class StudioStore {
         CREATE TABLE studio_sessions (token_hash text PRIMARY KEY, expires_at timestamptz NOT NULL);
         INSERT INTO studio_schema(version) VALUES(1)`);
       await this.migrateNotes(q);
+      await this.migrateReferences(q);
     });
   }
   private async migrateNotes(q: Query) {
     await q(`CREATE TABLE notes (id uuid PRIMARY KEY, book_id uuid NOT NULL REFERENCES books(id), data jsonb NOT NULL);
       CREATE INDEX notes_by_book ON notes(book_id);
       UPDATE studio_schema SET version=2`);
+  }
+  private async migrateReferences(q: Query) {
+    await q(`CREATE TABLE bible_entries (id uuid PRIMARY KEY, book_id uuid NOT NULL REFERENCES books(id), data jsonb NOT NULL);
+      CREATE INDEX entries_by_book ON bible_entries(book_id);
+      CREATE TABLE manuscript_references (id uuid PRIMARY KEY, node_id uuid NOT NULL REFERENCES manuscript_nodes(id), entry_id uuid NOT NULL REFERENCES bible_entries(id), data jsonb NOT NULL);
+      CREATE INDEX references_by_node ON manuscript_references(node_id);
+      UPDATE studio_schema SET version=3`);
+  }
+  async entries(bookId: string) {
+    required(
+      (await this.db.query("SELECT id FROM books WHERE id=$1", [bookId]))
+        .rows[0],
+    );
+    return (
+      await this.db.query(
+        "SELECT data FROM bible_entries WHERE book_id=$1 ORDER BY data->>'name', id",
+        [bookId],
+      )
+    ).rows.map((r) => r.data);
+  }
+  async createEntry(bookId: string, input: any) {
+    if (
+      !input ||
+      typeof input !== "object" ||
+      Array.isArray(input) ||
+      Object.keys(input).some(
+        (k) => !["name", "entryType", "summary"].includes(k),
+      )
+    )
+      return fail("Provide entry name, type and summary.");
+    const name = title(input.name);
+    if (
+      ![
+        "character",
+        "location",
+        "organization",
+        "object",
+        "event",
+        "plotline",
+        "worldRule",
+        "research",
+        "term",
+      ].includes(input.entryType)
+    )
+      return fail("Choose a bible entry type.");
+    if (
+      input.summary !== undefined &&
+      (typeof input.summary !== "string" || input.summary.length > 20000)
+    )
+      return fail("Use a summary of at most 20,000 characters.");
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, bookId);
+      if (ctx.book.deletedAt)
+        return fail("Restore the book before adding entries.");
+      const now = new Date().toISOString();
+      const entry = {
+        id: randomUUID(),
+        entryType: input.entryType,
+        name,
+        summary: input.summary ?? "",
+        aliases: [],
+        scope: { kind: "book", id: bookId },
+        values: {},
+        overrides: [],
+        attachments: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      await q("INSERT INTO bible_entries VALUES($1,$2,$3)", [
+        entry.id,
+        bookId,
+        entry,
+      ]);
+      return entry;
+    });
+  }
+  async references(nodeId: string) {
+    required(
+      (
+        await this.db.query("SELECT id FROM manuscript_nodes WHERE id=$1", [
+          nodeId,
+        ])
+      ).rows[0],
+    );
+    return (
+      await this.db.query(
+        "SELECT data FROM manuscript_references WHERE node_id=$1 ORDER BY data->>'createdAt', id",
+        [nodeId],
+      )
+    ).rows.map((r) => r.data);
+  }
+  async saveReference(nodeId: string, input: any, id?: string) {
+    const allowed = id
+      ? ["deleted", "expectedUpdatedAt"]
+      : ["entryId", "anchorId", "expectedRevision"];
+    if (
+      !input ||
+      typeof input !== "object" ||
+      Array.isArray(input) ||
+      Object.keys(input).some((k) => !allowed.includes(k))
+    )
+      return fail("Provide valid reference details.");
+    return this.db.transaction(async (q) => {
+      const ctx = await this.nodeContext(q, nodeId);
+      if (!this.isLive(ctx, nodeId))
+        return fail("Restore the manuscript item before editing references.");
+      const doc = required(
+        (
+          await q("SELECT document,revision FROM documents WHERE node_id=$1", [
+            nodeId,
+          ])
+        ).rows[0],
+      );
+      let reference: any;
+      if (id) {
+        reference = {
+          ...required(
+            (
+              await q(
+                "SELECT data FROM manuscript_references WHERE id=$1 AND node_id=$2",
+                [id, nodeId],
+              )
+            ).rows[0],
+          ).data,
+        };
+        if (reference.updatedAt !== input.expectedUpdatedAt)
+          throw new StudioError(
+            409,
+            "REFERENCE_CONFLICT",
+            "This reference changed. Reopen References.",
+          );
+        if (typeof input.deleted !== "boolean")
+          return fail("Choose Trash or restore.");
+      } else {
+        if (
+          !Number.isSafeInteger(input.expectedRevision) ||
+          input.expectedRevision !== doc.revision
+        )
+          throw new StudioError(
+            409,
+            "REVISION_CONFLICT",
+            "The passage changed. Reopen References after saving.",
+          );
+        if (
+          typeof input.entryId !== "string" ||
+          typeof input.anchorId !== "string"
+        )
+          return fail("Choose a saved passage and bible entry.");
+        // Compare text identifiers first so malformed identifiers never reach UUID casts.
+        const target = (
+          await q(
+            "SELECT id FROM bible_entries WHERE id::text=$1 AND book_id=$2 AND NOT (data ? 'deletedAt')",
+            [input.entryId, ctx.book.id],
+          )
+        ).rows[0];
+        if (!target) return fail("Choose a live bible entry in this book.");
+        const now = new Date().toISOString();
+        reference = {
+          id: randomUUID(),
+          nodeId,
+          entryId: input.entryId,
+          anchorId: input.anchorId,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }
+      if (!id || input.deleted === false) {
+        const hasAnchor = doc.document.blocks.some((b: any) =>
+          b.content?.some((run: any) =>
+            run.marks?.some(
+              (m: any) => m.type === "anchor" && m.id === reference.anchorId,
+            ),
+          ),
+        );
+        if (!hasAnchor)
+          return fail(
+            "The passage anchor must be saved in this document first.",
+          );
+        const target = (
+          await q(
+            "SELECT id FROM bible_entries WHERE id=$1 AND book_id=$2 AND NOT (data ? 'deletedAt')",
+            [reference.entryId, ctx.book.id],
+          )
+        ).rows[0];
+        if (!target) return fail("Restore the bible entry first.");
+        const duplicate = (
+          await q("SELECT data FROM manuscript_references WHERE node_id=$1", [
+            nodeId,
+          ])
+        ).rows.some(
+          (r) =>
+            r.data.id !== id &&
+            !r.data.deletedAt &&
+            r.data.anchorId === reference.anchorId &&
+            r.data.entryId === reference.entryId,
+        );
+        if (duplicate)
+          return fail("This passage already refers to that entry.");
+      }
+      if (id) {
+        const now = new Date(
+          Math.max(Date.now(), Date.parse(reference.updatedAt) + 1),
+        ).toISOString();
+        reference.updatedAt = now;
+        if (input.deleted) reference.deletedAt = now;
+        else delete reference.deletedAt;
+        await q("UPDATE manuscript_references SET data=$2 WHERE id=$1", [
+          id,
+          reference,
+        ]);
+      } else
+        await q("INSERT INTO manuscript_references VALUES($1,$2,$3,$4)", [
+          reference.id,
+          nodeId,
+          reference.entryId,
+          reference,
+        ]);
+      return reference;
+    });
   }
   async notes(bookId: string) {
     required(

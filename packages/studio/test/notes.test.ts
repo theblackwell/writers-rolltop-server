@@ -83,6 +83,8 @@ test("v1 upgrades transactionally to notes schema and keeps manuscripts", async 
   const f = await fixture();
   try {
     const before = await f.store.document(f.scene.id);
+    await f.store.db.query("DROP TABLE manuscript_references");
+    await f.store.db.query("DROP TABLE bible_entries");
     await f.store.db.query("DROP TABLE notes");
     await f.store.db.query("UPDATE studio_schema SET version=1");
     await f.store.migrate();
@@ -90,7 +92,7 @@ test("v1 upgrades transactionally to notes schema and keeps manuscripts", async 
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      2,
+      3,
     );
     assert.deepEqual(await f.store.document(f.scene.id), before);
     assert.deepEqual(await f.store.notes(f.book.id), []);

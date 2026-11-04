@@ -21,6 +21,7 @@ import type { Item } from "./api.ts";
 import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
 import type { Target } from "./management.tsx";
 import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
+import { References } from "./references.tsx";
 import { QuickNotes } from "./notes.tsx";
 import { ManuscriptSearch } from "./search.tsx";
 import { BookDetails } from "./book-details.tsx";
@@ -132,6 +133,7 @@ function App() {
   const [error, setError] = useState("");
   const [libraries, setLibraries] = useState<Item[]>([]);
   const [library, setLibrary] = useState<Item | null>(null);
+  const [bibleOpen, setBibleOpen] = useState(false);
   const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
   const [details, setDetails] = useState<Item | null>(null);
@@ -402,6 +404,9 @@ function App() {
               <button disabled={!book} onClick={() => setNoting(true)}>
                 Quick Notes…
               </button>
+              <button disabled={!book} onClick={() => setBibleOpen(true)}>
+                Bible Entries…
+              </button>
               <hr />
               {libraries.map((l) => (
                 <button key={l.id} onClick={() => void openLibrary(l)}>
@@ -669,6 +674,11 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {bibleOpen && book && (
+        <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
+          <References bookId={book.id} />
+        </Dialog>
+      )}
       {noting && book && (
         <Dialog title="Quick Notes" close={() => setNoting(false)}>
           <QuickNotes book={book} nodes={nodes} />
@@ -777,6 +787,7 @@ const EditorPane = forwardRef<
   PaneHandle,
   { node: Item; chapter: string; layout: Layout }
 >(function EditorPane({ node, chapter, layout }, ref) {
+  const [referencesOpen, setReferencesOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState("Loading…");
   const [message, setMessage] = useState("");
@@ -955,10 +966,74 @@ const EditorPane = forwardRef<
     setBrowserDraft(null);
     await flush();
   }
+  async function openReferences(markSelection = false) {
+    if (!editor || blocked.current) {
+      setMessage("Resolve the draft or conflict before linking a passage.");
+      return;
+    }
+    if (markSelection) {
+      const { from, to, $from, $to } = editor.state.selection;
+      if (
+        from === to ||
+        !$from.sameParent($to) ||
+        !editor.state.doc.textBetween(from, to).trim()
+      ) {
+        setMessage("Select text within one paragraph to mark a passage.");
+        return;
+      }
+      editor
+        .chain()
+        .setMark("rolltopAnchor", { id: crypto.randomUUID() })
+        .run();
+    }
+    if (await flush()) {
+      editor.setEditable(false);
+      setReferencesOpen(true);
+    }
+  }
   const words =
     editor?.getText().trim().split(/\s+/u).filter(Boolean).length ?? 0;
   return (
     <div className="editor-pane">
+      {referencesOpen && (
+        <Dialog
+          title="Passage References"
+          close={() => {
+            setReferencesOpen(false);
+            editor?.setEditable(true);
+          }}
+        >
+          <References
+            bookId={node.bookId!}
+            nodeId={node.id}
+            onReveal={(id) => {
+              if (!editor) return;
+              let start: number | undefined;
+              let end = 0;
+              editor.state.doc.descendants((n, pos) => {
+                if (
+                  n.isText &&
+                  n.marks.some(
+                    (m) => m.type.name === "rolltopAnchor" && m.attrs.id === id,
+                  )
+                ) {
+                  start ??= pos;
+                  end = pos + n.nodeSize;
+                }
+              });
+              setReferencesOpen(false);
+              editor.setEditable(true);
+              if (start !== undefined)
+                editor
+                  .chain()
+                  .focus()
+                  .setTextSelection({ from: start, to: end })
+                  .scrollIntoView()
+                  .run();
+            }}
+          />
+        </Dialog>
+      )}
       <div className="scene-heading">
         <div>
           <p className="eyebrow">{chapter || "MANUSCRIPT"}</p>
@@ -1042,6 +1117,16 @@ const EditorPane = forwardRef<
             onClick={() => editor?.chain().focus().redo().run()}
           >
             ↷
+          </button>
+          <button
+            disabled={!loaded}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void openReferences(true)}
+          >
+            Mark Passage for Reference
+          </button>
+          <button disabled={!loaded} onClick={() => void openReferences()}>
+            References…
           </button>
           <span className="tool-divider" />
           <button

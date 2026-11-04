@@ -171,6 +171,86 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
       409,
     );
     assert.equal((await request(`${notePath}/invalid`, "PUT", {})).status, 400);
+    const entryPath = `/books/${f.book.id}/entries`;
+    assert.equal(
+      (
+        await request(
+          entryPath,
+          "POST",
+          { name: "Blocked", entryType: "term" },
+          "https://evil.example",
+        )
+      ).status,
+      403,
+    );
+    const entryResponse = await request(entryPath, "POST", {
+      name: "HTTP character",
+      entryType: "character",
+    });
+    assert.equal(entryResponse.status, 201);
+    const entry = await entryResponse.json();
+    assert.equal((await (await request(entryPath)).json())[0].id, entry.id);
+    const referencePath = `/nodes/${f.scene.id}/references`;
+    const passage = await f.store.document(f.scene.id);
+    const anchorId = crypto.randomUUID();
+    if (passage.document.blocks[0].type === "sceneBreak")
+      throw new Error("Expected paragraph");
+    passage.document.blocks[0].content = [
+      {
+        type: "text",
+        text: "HTTP passage",
+        marks: [{ type: "anchor", id: anchorId }],
+      },
+    ];
+    const anchorSave = await f.store.save(
+      f.scene.id,
+      passage.document,
+      passage.revision,
+    );
+    const referenceResponse = await request(referencePath, "POST", {
+      entryId: entry.id,
+      anchorId,
+      expectedRevision: anchorSave.revision,
+    });
+    assert.equal(referenceResponse.status, 201);
+    const reference = await referenceResponse.json();
+    assert.equal(
+      (await (await request(referencePath)).json())[0].id,
+      reference.id,
+    );
+    assert.equal(
+      (
+        await request(
+          `${referencePath}/${reference.id}`,
+          "PUT",
+          { deleted: true, expectedUpdatedAt: reference.updatedAt },
+          "https://evil.example",
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request(`${referencePath}/${reference.id}`, "PUT", {
+          deleted: true,
+          expectedUpdatedAt: reference.updatedAt,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(`${referencePath}/${reference.id}`, "PUT", {
+          deleted: false,
+          expectedUpdatedAt: reference.updatedAt,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (await request(`${referencePath}/invalid`, "PUT", {})).status,
+      400,
+    );
     const hits = await (
       await request(`/books/${f.book.id}/search?q=Scene%201`)
     ).json();
@@ -346,12 +426,12 @@ test("a failed revision append rolls back the document update atomically", async
 test("newer database schemas are refused without changing their version", async () => {
   const f = await fixture();
   try {
-    await f.store.db.query("UPDATE studio_schema SET version=3");
+    await f.store.db.query("UPDATE studio_schema SET version=4");
     await assert.rejects(() => f.store.migrate(), /newer/);
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      3,
+      4,
     );
   } finally {
     await f.pg.close();
