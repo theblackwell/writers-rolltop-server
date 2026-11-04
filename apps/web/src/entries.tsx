@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
+import { EntryFields } from "./entry-fields.tsx";
+import type { Catalog } from "./entry-fields.tsx";
 import { api } from "./api.ts";
 export type Entry = {
   id: string;
@@ -12,15 +14,20 @@ export type Entry = {
   toBeNamed?: true;
   updatedAt: string;
   deletedAt?: string;
+  templateId?: string;
+  values?: Record<string, unknown>;
+  overrides?: unknown[];
 };
 export function EntryList({
   bookId,
+  catalog,
   entries,
   onSaved,
   busy,
   action,
 }: {
   bookId: string;
+  catalog: Catalog;
   entries: Entry[];
   onSaved: (entry: Entry) => void;
   busy: boolean;
@@ -30,6 +37,8 @@ export function EntryList({
   const [kind, setKind] = useState("");
   const [trash, setTrash] = useState(false);
   const [editing, setEditing] = useState<string>();
+  const [fieldsEditing, setFieldsEditing] = useState<string>();
+  const fieldEntry = entries.find((e) => e.id === fieldsEditing);
   const selected = entries.find((e) => e.id === editing);
   const shown = entries
     .filter(
@@ -86,6 +95,17 @@ export function EntryList({
           onSave={(patch) => action(() => save(selected, patch))}
         />
       )}
+      {fieldEntry && (
+        <EntryFields
+          entry={fieldEntry}
+          bookId={bookId}
+          catalog={catalog}
+          busy={busy}
+          action={action}
+          onSaved={onSaved}
+          onClose={() => setFieldsEditing(undefined)}
+        />
+      )}
       {!shown.length && (
         <p>{trash ? "No entries in Trash match." : "No entries match."}</p>
       )}
@@ -100,15 +120,24 @@ export function EntryList({
             <p style={{ whiteSpace: "pre-wrap" }}>{entry.summary}</p>
             {!entry.deletedAt && (
               <button
-                disabled={busy || !!editing}
+                disabled={busy || !!editing || !!fieldsEditing}
                 onClick={() => setEditing(entry.id)}
                 aria-label={`Edit ${entry.name}`}
               >
                 Edit…
               </button>
             )}
+            {!entry.deletedAt && (
+              <button
+                disabled={busy || !!editing || !!fieldsEditing}
+                onClick={() => setFieldsEditing(entry.id)}
+                aria-label={`Fields for ${entry.name}`}
+              >
+                Fields…
+              </button>
+            )}
             <button
-              disabled={busy || !!editing}
+              disabled={busy || !!editing || !!fieldsEditing}
               onClick={() =>
                 void action(() => save(entry, { deleted: !entry.deletedAt }))
               }

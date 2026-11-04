@@ -126,10 +126,38 @@ try {
     deleted: true,
     expectedUpdatedAt: editedEntry.updatedAt,
   });
-  await api(`/books/${book.id}/entries/${entry.id}`, "PUT", {
-    deleted: false,
-    expectedUpdatedAt: trashEntry.updatedAt,
-  });
+  const restoredEntry = await api(
+    `/books/${book.id}/entries/${entry.id}`,
+    "PUT",
+    {
+      deleted: false,
+      expectedUpdatedAt: trashEntry.updatedAt,
+    },
+  );
+  const characterTemplate = catalog.templates.find(
+    (t: any) => t.entryType === "character",
+  );
+  const roleField = catalog.fields.find(
+    (f: any) => f.templateId === characterTemplate.id && f.key === "role",
+  );
+  const assigned = await api(
+    `/books/${book.id}/entries/${entry.id}/template`,
+    "PUT",
+    {
+      templateId: characterTemplate.id,
+      expectedUpdatedAt: restoredEntry.updatedAt,
+      expectedTemplateUpdatedAt: characterTemplate.updatedAt,
+    },
+  );
+  await api(
+    `/books/${book.id}/entries/${entry.id}/values/${roleField.id}`,
+    "PUT",
+    {
+      value: "Courier",
+      expectedUpdatedAt: assigned.updatedAt,
+      expectedFieldUpdatedAt: roleField.updatedAt,
+    },
+  );
   const stale = await fetch(origin + `/api/documents/${scene.id}`, {
     method: "PUT",
     headers: {
@@ -176,6 +204,7 @@ try {
   assert.deepEqual(persistedEntry.aliases, ["The courier"]);
   assert.equal(persistedEntry.toBeNamed, true);
   assert.ok(!persistedEntry.deletedAt);
+  assert.equal(persistedEntry.values[roleField.id], "Courier");
   const restored = await api(`/documents/${scene.id}`);
   assert.equal(restored.revision, 2);
   assert.deepEqual(restored.document, first.document);
@@ -251,6 +280,7 @@ try {
       if (recoveredCatalog.templates.length !== 9 || recoveredCatalog.fields.length !== 20) throw Error('Template recovery mismatch');
       const recoveredEntry = (await store.entries('${book.id}')).find(e => e.id === '${entry.id}');
       if (recoveredEntry?.name !== 'Corin Vale' || !recoveredEntry.toBeNamed) throw Error('Entry recovery mismatch');
+      if (recoveredEntry.values['${roleField.id}'] !== 'Courier') throw Error('Scalar value recovery mismatch');
       const doc = await store.document('${scene.id}');
       const { default: assert } = await import('node:assert/strict');
       assert.equal(doc.revision, 2);
@@ -264,7 +294,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore persistence, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar-value persistence/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

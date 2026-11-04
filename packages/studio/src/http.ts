@@ -230,6 +230,30 @@ export function studioServer(
         );
       }
       if (
+        parts[0] === "books" &&
+        parts[2] === "entries" &&
+        method === "PUT" &&
+        ((parts.length === 5 && parts[4] === "template") ||
+          (parts.length === 6 && parts[4] === "values"))
+      ) {
+        if (!uuid.test(parts[3]) || (parts[5] && !uuid.test(parts[5])))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid entry and field.",
+          );
+        return respond(
+          res,
+          200,
+          await store.editEntryField(
+            parts[1],
+            parts[3],
+            await body(req),
+            parts[5],
+          ),
+        );
+      }
+      if (
         parts[0] === "nodes" &&
         parts[2] === "references" &&
         (parts.length === 3 || parts.length === 4)

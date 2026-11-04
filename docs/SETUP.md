@@ -120,3 +120,9 @@ Inspect recovered content through a separate scratch studio pointing only at the
 ## Release architectures (required before final delivery)
 
 The owner requires both `linux/arm64` and `linux/amd64` (x86-64) containers. A multi-platform release build and runtime smoke check on each architecture remain final M3 acceptance gates. The current local Podman smoke was on ARM64; x86-64 support is required but has not yet been built or verified.
+
+## Bible field values (B2b)
+
+Open Library → Bible Entries, then Fields beside an entry. Choose a compatible template and Assign Template, then edit/save individual fields. Clear Value removes just that value. Empty text, zero and false remain real saved values. Decimal input stays exact text (for example `12.50`); integers must be within ±(2^53−1). Missing required fields are allowed while drafting.
+
+Template changes are blocked while saved values or overrides exist. Other field types are retained and labelled unavailable until their sections ship. Built-in templates currently offer text/integer scalar fields; decimal/boolean controls support those definitions when present, while creating custom definitions is later work. If a stale edit is refused, the form remains available: preserve your draft and close/reopen Bible Entries to review current data. Field saves compare both the entry and field-definition timestamps. No database migration is needed for this section.

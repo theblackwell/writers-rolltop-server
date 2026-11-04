@@ -254,6 +254,146 @@ export class StudioStore {
       return entry;
     });
   }
+  async editEntryField(
+    bookId: string,
+    id: string,
+    input: any,
+    fieldId?: string,
+  ) {
+    const allowed = fieldId
+      ? ["value", "expectedUpdatedAt", "expectedFieldUpdatedAt"]
+      : ["templateId", "expectedUpdatedAt", "expectedTemplateUpdatedAt"];
+    if (
+      !input ||
+      typeof input !== "object" ||
+      Array.isArray(input) ||
+      Object.keys(input).some((k) => !allowed.includes(k)) ||
+      typeof input.expectedUpdatedAt !== "string" ||
+      !(fieldId
+        ? Object.hasOwn(input, "value")
+        : Object.hasOwn(input, "templateId"))
+    )
+      return fail(
+        "Provide the field value or template and the current saved version.",
+      );
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, bookId);
+      if (ctx.book.deletedAt)
+        return fail("Restore the book before editing its bible.");
+      // Lock order matches recovery: book, then library. Template writes must use the library lock.
+      await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
+        ctx.libraryId,
+      ]);
+      const old = required(
+        (
+          await q("SELECT data FROM bible_entries WHERE id=$1 AND book_id=$2", [
+            id,
+            bookId,
+          ])
+        ).rows[0],
+      ).data;
+      if (input.expectedUpdatedAt !== old.updatedAt)
+        throw new StudioError(
+          409,
+          "ENTRY_CONFLICT",
+          "This entry changed. Your form is kept. Close and reopen Bible Entries to review the latest version.",
+        );
+      if (old.deletedAt) return fail("Restore the entry before editing it.");
+      const templateId = fieldId ? old.templateId : input.templateId;
+      let template: any;
+      if (templateId != null) {
+        if (typeof templateId !== "string")
+          return fail("Choose a compatible template.");
+        template = (
+          await q(
+            "SELECT data FROM bible_templates WHERE id::text=$1 AND library_id=$2",
+            [templateId, ctx.libraryId],
+          )
+        ).rows[0]?.data;
+        if (
+          !template ||
+          template.deletedAt ||
+          template.entryType !== old.entryType
+        )
+          return fail(
+            "Choose a live template of the same entry type in this library.",
+          );
+      }
+      const entry = { ...old };
+      if (!fieldId) {
+        if (template && input.expectedTemplateUpdatedAt !== template.updatedAt)
+          throw new StudioError(
+            409,
+            "TEMPLATE_CONFLICT",
+            "This template changed. Reopen Bible Entries before choosing it.",
+          );
+        if (
+          (old.templateId ?? null) !== templateId &&
+          (Object.keys(old.values ?? {}).length || (old.overrides ?? []).length)
+        )
+          return fail(
+            "This entry has saved values or overrides. Keep its template to preserve them.",
+          );
+        if (templateId == null) delete entry.templateId;
+        else entry.templateId = templateId;
+      } else {
+        if (!template) return fail("Assign a template before editing fields.");
+        const field = (
+          await q(
+            "SELECT data FROM bible_fields WHERE id::text=$1 AND template_id=$2 AND library_id=$3",
+            [fieldId, template.id, ctx.libraryId],
+          )
+        ).rows[0]?.data;
+        if (!field || field.deletedAt)
+          return fail("Choose a live field of this entry's template.");
+        if (input.expectedFieldUpdatedAt !== field.updatedAt)
+          throw new StudioError(
+            409,
+            "FIELD_CONFLICT",
+            "This field changed. Your form is kept. Reopen Bible Entries to review its definition.",
+          );
+        const value = input.value;
+        if (
+          !["shortText", "longText", "integer", "decimal", "boolean"].includes(
+            field.fieldType,
+          )
+        )
+          return fail("This field type is not supported yet.");
+        if (value !== null) {
+          if (
+            ["shortText", "longText"].includes(field.fieldType) &&
+            (typeof value !== "string" || value.length > 20000)
+          )
+            return fail("Use text of at most 20,000 characters.");
+          if (field.fieldType === "integer" && !Number.isSafeInteger(value))
+            return fail("Use an integer within ±(2^53−1).");
+          if (
+            field.fieldType === "decimal" &&
+            (typeof value !== "string" ||
+              value.length > 1000 ||
+              !/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$(?![\s\S])/.test(value))
+          )
+            return fail(
+              "Use an exact decimal such as 12.50, without exponent notation.",
+            );
+          if (field.fieldType === "boolean" && typeof value !== "boolean")
+            return fail("Choose true or false.");
+        }
+        entry.values = { ...(old.values ?? {}) };
+        if (value === null) delete entry.values[fieldId];
+        else entry.values[fieldId] = value;
+      }
+      entry.updatedAt = new Date(
+        Math.max(Date.now(), Date.parse(old.updatedAt) + 1),
+      ).toISOString();
+      await q("UPDATE bible_entries SET data=$3 WHERE id=$1 AND book_id=$2", [
+        id,
+        bookId,
+        entry,
+      ]);
+      return entry;
+    });
+  }
   async references(nodeId: string) {
     required(
       (

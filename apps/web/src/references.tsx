@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { EntryList } from "./entries.tsx";
+import type { Catalog } from "./entry-fields.tsx";
 import type { Entry } from "./entries.tsx";
 type Reference = {
   id: string;
@@ -19,6 +20,10 @@ export function References({
   nodeId?: string;
   onReveal?: (id: string) => void;
 }) {
+  const [catalog, setCatalog] = useState<Catalog>({
+    templates: [],
+    fields: [],
+  });
   const [entries, setEntries] = useState<Entry[]>([]);
   const [refs, setRefs] = useState<Reference[]>([]);
   const [anchors, setAnchors] = useState<[string, string][]>([]);
@@ -34,10 +39,14 @@ export function References({
         ? api<Reference[]>(`/nodes/${nodeId}/references`)
         : Promise.resolve([]),
       nodeId ? api(`/documents/${nodeId}`) : Promise.resolve(null),
+      api(`/books/${bookId}`).then((book) =>
+        api<Catalog>(`/libraries/${book.libraryId}/templates`),
+      ),
     ])
-      .then(([e, r, d]) => {
+      .then(([e, r, d, c]) => {
         if (!live) return;
         setEntries(e);
+        setCatalog(c);
         setRefs(r);
         if (d) {
           const passages = new Map<string, string>();
@@ -75,8 +84,10 @@ export function References({
   return (
     <section>
       <p>
-        Book-scoped bible entries. Edit names, aliases and summaries here.
-        Shared worlds, templates and custom fields are coming in later sections.
+        Book-scoped bible entries. Edit names, aliases and summaries here. Use
+        Fields to assign a template and edit text, integers, decimals and
+        booleans. Shared worlds and other field types are coming in later
+        sections.
       </p>
       {error && <p role="alert">{error}</p>}
       {!loaded && <p>Loading…</p>}
@@ -136,6 +147,7 @@ export function References({
       {!nodeId && (
         <EntryList
           bookId={bookId}
+          catalog={catalog}
           entries={entries}
           busy={busy || !loaded}
           action={action}

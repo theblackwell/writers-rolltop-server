@@ -1,0 +1,266 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { useState } from "react";
+import { api } from "./api.ts";
+import type { Entry } from "./entries.tsx";
+export type Template = {
+  id: string;
+  name: string;
+  entryType: string;
+  updatedAt: string;
+  deletedAt?: string;
+};
+export type Field = {
+  id: string;
+  templateId: string;
+  label: string;
+  fieldType: string;
+  required: boolean;
+  updatedAt: string;
+  deletedAt?: string;
+};
+export type Catalog = { templates: Template[]; fields: Field[] };
+export function EntryFields({
+  entry,
+  bookId,
+  catalog,
+  busy,
+  action,
+  onSaved,
+  onClose,
+}: {
+  entry: Entry;
+  bookId: string;
+  catalog: Catalog;
+  busy: boolean;
+  action: (work: () => Promise<void>) => Promise<void>;
+  onSaved: (e: Entry) => void;
+  onClose: () => void;
+}) {
+  const [templateId, setTemplateId] = useState(entry.templateId ?? "");
+  const [fieldId, setFieldId] = useState("");
+  const compatible = catalog.templates.filter(
+    (t) => !t.deletedAt && t.entryType === entry.entryType,
+  );
+  const fields = catalog.fields.filter(
+    (f) => !f.deletedAt && f.templateId === entry.templateId,
+  );
+  const field = fields.find((f) => f.id === fieldId);
+  const save = (path: string, payload: object) =>
+    action(async () => {
+      const result = await api<Entry>(
+        `/books/${bookId}/entries/${entry.id}/${path}`,
+        "PUT",
+        { ...payload, expectedUpdatedAt: entry.updatedAt },
+      );
+      onSaved(result);
+      setFieldId("");
+    });
+  const hasValues =
+    Object.keys(entry.values ?? {}).length > 0 || !!entry.overrides?.length;
+  return (
+    <section aria-label={`Fields for ${entry.name}`}>
+      <h3>Fields for {entry.name}</h3>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save("template", {
+            templateId: templateId || null,
+            expectedTemplateUpdatedAt: compatible.find(
+              (t) => t.id === templateId,
+            )?.updatedAt,
+          });
+        }}
+      >
+        <fieldset disabled={busy || !!fieldId}>
+          <label>
+            Template
+            <select
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+            >
+              <option value="">No template</option>
+              {entry.templateId &&
+                !compatible.some((t) => t.id === entry.templateId) && (
+                  <option value={entry.templateId}>
+                    Current template unavailable
+                  </option>
+                )}
+              {compatible.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={
+              templateId === (entry.templateId ?? "") ||
+              (hasValues && templateId !== (entry.templateId ?? ""))
+            }
+          >
+            Assign Template
+          </button>
+        </fieldset>
+      </form>
+      {hasValues && (
+        <p>
+          Template changes are locked while saved values or overrides exist, so
+          they are preserved.
+        </p>
+      )}
+      {!entry.templateId && (
+        <p>Choose a compatible template to start filling in fields.</p>
+      )}
+      {entry.templateId &&
+        !compatible.some((t) => t.id === entry.templateId) && (
+          <p>The saved template is unavailable. Existing values are kept.</p>
+        )}
+      <ul className="search-results">
+        {fields.map((f) => (
+          <li key={f.id}>
+            <strong>{f.label}</strong>
+            {f.required && " (suggested)"}
+            <p style={{ whiteSpace: "pre-wrap" }}>
+              {Object.hasOwn(entry.values ?? {}, f.id)
+                ? String(entry.values![f.id])
+                : "Not set"}
+            </p>
+            {[
+              "shortText",
+              "longText",
+              "integer",
+              "decimal",
+              "boolean",
+            ].includes(f.fieldType) ? (
+              <button
+                disabled={busy || !!fieldId}
+                onClick={() => setFieldId(f.id)}
+                aria-label={`Edit field ${f.label}`}
+              >
+                Edit {f.label}…
+              </button>
+            ) : (
+              <p>
+                This field type is not editable yet. Its saved value is kept.
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      {field && (
+        <ScalarForm
+          key={field.id}
+          field={field}
+          value={entry.values?.[field.id]}
+          busy={busy}
+          onCancel={() => setFieldId("")}
+          onSave={(value) =>
+            save(`values/${field.id}`, {
+              value,
+              expectedFieldUpdatedAt: field.updatedAt,
+            })
+          }
+        />
+      )}
+      <button disabled={busy} onClick={onClose}>
+        Close Fields
+      </button>
+    </section>
+  );
+}
+function ScalarForm({
+  field,
+  value,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  field: Field;
+  value: unknown;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (v: unknown) => Promise<void>;
+}) {
+  const [text, setText] = useState(value === undefined ? "" : String(value));
+  const [error, setError] = useState("");
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError("");
+        let next: unknown = text;
+        if (field.fieldType === "integer") {
+          if (!/^-?\d+$/.test(text) || !Number.isSafeInteger(Number(text))) {
+            setError(
+              "Enter an integer within ±(2^53−1), or choose Clear Value.",
+            );
+            return;
+          }
+          next = Number(text);
+        }
+        if (field.fieldType === "boolean") {
+          if (text === "") {
+            setError("Choose true or false, or choose Clear Value.");
+            return;
+          }
+          next = text === "true";
+        }
+        void onSave(next);
+      }}
+    >
+      <h4>Edit {field.label}</h4>
+      <fieldset disabled={busy}>
+        <label>
+          {field.label}
+          {field.fieldType === "boolean" ? (
+            <select
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            >
+              <option value="">Not set</option>
+              <option value="true">True</option>
+              <option value="false">False</option>
+            </select>
+          ) : field.fieldType === "longText" ? (
+            <textarea
+              autoFocus
+              maxLength={20000}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          ) : (
+            <input
+              autoFocus
+              type="text"
+              inputMode={
+                ["integer", "decimal"].includes(field.fieldType)
+                  ? "decimal"
+                  : undefined
+              }
+              maxLength={field.fieldType === "decimal" ? 1000 : 20000}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          )}
+        </label>
+        {field.fieldType === "decimal" && (
+          <p>
+            Use an exact decimal such as 12.50. Exponent notation is not
+            accepted.
+          </p>
+        )}
+        {error && <p role="alert">{error}</p>}
+        <div className="dialog-actions">
+          <button type="button" onClick={onCancel}>
+            Cancel Field Edit
+          </button>
+          <button type="button" onClick={() => void onSave(null)}>
+            Clear Value
+          </button>
+          <button className="primary">Save Value</button>
+        </div>
+      </fieldset>
+    </form>
+  );
+}
