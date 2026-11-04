@@ -108,10 +108,9 @@ export function References({
       )}
       <div hidden={templatesOpen}>
         <p>
-          Book-scoped bible entries. Edit names, aliases and summaries here. Use
-          Fields to assign a template and edit text, numbers, choices, dates and
-          tables, and entry links. Customize definitions with Templates and
-          Fields. Shared worlds and attachment values are coming later.
+          Edit book entries here, or use Fields to edit their saved values.
+          Shared world and series entries are read-only here. Customize
+          definitions with Templates and Fields.
         </p>
         {!loaded && <p>Loading…</p>}
         {!nodeId && (
@@ -216,7 +215,7 @@ export function References({
                   busy ||
                   !loaded ||
                   !anchors.length ||
-                  !entries.some((e) => !e.deletedAt)
+                  !entries.some((e) => !e.deletedAt && e.scope?.kind === "book")
                 }
               >
                 <label>
@@ -233,7 +232,7 @@ export function References({
                   Bible entry
                   <select name="entryId">
                     {entries
-                      .filter((e) => !e.deletedAt)
+                      .filter((e) => !e.deletedAt && e.scope?.kind === "book")
                       .map((e) => (
                         <option key={e.id} value={e.id}>
                           {e.name} ({e.entryType})

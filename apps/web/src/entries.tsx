@@ -14,6 +14,7 @@ export type Entry = {
   toBeNamed?: true;
   updatedAt: string;
   deletedAt?: string;
+  scope?: { kind: string; id: string };
   templateId?: string;
   values?: Record<string, unknown>;
   overrides?: unknown[];
@@ -114,6 +115,15 @@ export function EntryList({
         {shown.map((entry) => (
           <li key={entry.id}>
             <strong>{entry.name}</strong> ({entry.entryType})
+            {entry.scope && entry.scope.kind !== "book" && (
+              <span>
+                {" "}
+                · Shared {entry.scope.kind === "universe"
+                  ? "world"
+                  : "series"}{" "}
+                entry
+              </span>
+            )}
             {entry.toBeNamed && <span> · Name still to be decided</span>}
             {!!entry.aliases.length && (
               <p>Also known as: {entry.aliases.join(", ")}</p>
@@ -121,7 +131,12 @@ export function EntryList({
             <p style={{ whiteSpace: "pre-wrap" }}>{entry.summary}</p>
             {!entry.deletedAt && (
               <button
-                disabled={busy || !!editing || !!fieldsEditing}
+                disabled={
+                  busy ||
+                  !!editing ||
+                  !!fieldsEditing ||
+                  entry.scope?.kind !== "book"
+                }
                 onClick={() => setEditing(entry.id)}
                 aria-label={`Edit ${entry.name}`}
               >
@@ -130,7 +145,12 @@ export function EntryList({
             )}
             {!entry.deletedAt && (
               <button
-                disabled={busy || !!editing || !!fieldsEditing}
+                disabled={
+                  busy ||
+                  !!editing ||
+                  !!fieldsEditing ||
+                  entry.scope?.kind !== "book"
+                }
                 onClick={() => setFieldsEditing(entry.id)}
                 aria-label={`Fields for ${entry.name}`}
               >
@@ -138,7 +158,12 @@ export function EntryList({
               </button>
             )}
             <button
-              disabled={busy || !!editing || !!fieldsEditing}
+              disabled={
+                busy ||
+                !!editing ||
+                !!fieldsEditing ||
+                entry.scope?.kind !== "book"
+              }
               onClick={() =>
                 void action(() => save(entry, { deleted: !entry.deletedAt }))
               }

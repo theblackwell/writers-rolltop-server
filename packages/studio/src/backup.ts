@@ -22,8 +22,8 @@ export const backupTables = [
 ] as const;
 export type BookBackup = {
   format: "writers-rolltop/book-recovery";
-  version: 1 | 2 | 3;
-  schemaVersion: 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4;
+  schemaVersion: 3 | 4 | 5 | 6;
   createdAt: string;
   bookId: string;
   tables: Record<string, any[]>;
@@ -31,7 +31,7 @@ export type BookBackup = {
 const digest = (payload: string) =>
   createHash("sha256").update(payload).digest("hex");
 
-/** Caller must hold the book row lock until the durable backup succeeds. */
+/** Caller holds the target book lock. Other book locks never wait: contention fails closed. */
 export async function captureBook(
   q: Query,
   bookId: string,
@@ -39,23 +39,38 @@ export async function captureBook(
   const book = (await q("SELECT * FROM books WHERE id=$1 FOR UPDATE", [bookId]))
     .rows[0];
   if (!book) throw new Error("Book no longer exists.");
+  // Existing writers lock book before library. NOWAIT avoids a cycle with a
+  // writer already holding another book while waiting for this library.
+  await q(
+    "SELECT id FROM books WHERE library_id=$1 ORDER BY id FOR UPDATE NOWAIT",
+    [book.library_id],
+  );
   const tables: Record<string, any[]> = {};
   tables.libraries = (
     await q("SELECT * FROM libraries WHERE id=$1 FOR UPDATE", [book.library_id])
+  ).rows;
+  // A book could have been created between the first sweep and library lock.
+  tables.books = (
+    await q(
+      "SELECT * FROM books WHERE library_id=$1 ORDER BY id FOR UPDATE NOWAIT",
+      [book.library_id],
+    )
   ).rows;
   for (const table of [
     "bible_templates",
     "bible_fields",
     "universes",
     "series",
+    "bible_entries",
   ])
     tables[table] = (
       await q(`SELECT * FROM ${table} WHERE library_id=$1`, [book.library_id])
     ).rows;
-  tables.books = [book];
-  tables.manuscript_nodes = (
-    await q("SELECT * FROM manuscript_nodes WHERE book_id=$1", [bookId])
-  ).rows;
+  const bookIds = tables.books.map((b) => b.id);
+  for (const table of ["manuscript_nodes", "notes"])
+    tables[table] = (
+      await q(`SELECT * FROM ${table} WHERE book_id=ANY($1::uuid[])`, [bookIds])
+    ).rows;
   for (const table of [
     "documents",
     "document_revisions",
@@ -63,18 +78,17 @@ export async function captureBook(
   ])
     tables[table] = (
       await q(
-        `SELECT t.* FROM ${table} t JOIN manuscript_nodes n ON n.id=t.node_id WHERE n.book_id=$1`,
-        [bookId],
+        `SELECT t.* FROM ${table} t JOIN manuscript_nodes n ON n.id=t.node_id WHERE n.book_id=ANY($1::uuid[])`,
+        [bookIds],
       )
     ).rows;
-  for (const table of ["notes", "bible_entries"])
-    tables[table] = (
-      await q(`SELECT * FROM ${table} WHERE book_id=$1`, [bookId])
-    ).rows;
+  const entryIds = new Set(tables.bible_entries.map((e) => e.id));
+  if (tables.manuscript_references.some((r) => !entryIds.has(r.entry_id)))
+    throw new Error("Recovery cannot omit an externally referenced entry.");
   return {
     format: "writers-rolltop/book-recovery",
-    version: 3,
-    schemaVersion: 5,
+    version: 4,
+    schemaVersion: 6,
     createdAt: new Date().toISOString(),
     bookId,
     tables,
@@ -96,7 +110,8 @@ export async function readBookBackup(path: string): Promise<BookBackup> {
 function validateBackup(data: BookBackup) {
   const legacy = data?.version === 1 && data?.schemaVersion === 3;
   const prior = data?.version === 2 && data?.schemaVersion === 4;
-  const current = data?.version === 3 && data?.schemaVersion === 5;
+  const previous = data?.version === 3 && data?.schemaVersion === 5;
+  const current = data?.version === 4 && data?.schemaVersion === 6;
   const tables = legacy
     ? backupTables.filter(
         (t) =>
@@ -109,7 +124,7 @@ function validateBackup(data: BookBackup) {
       : backupTables;
   if (
     data?.format !== "writers-rolltop/book-recovery" ||
-    (!legacy && !prior && !current) ||
+    (!legacy && !prior && !previous && !current) ||
     tables.some((t) => !Array.isArray(data.tables?.[t]))
   )
     throw new Error("Unsupported recovery backup.");
@@ -164,14 +179,34 @@ export async function restoreBookBackup(q: Query, backup: BookBackup) {
     nodes.push(pending.splice(index, 1)[0]);
   }
   for (const table of backupTables) {
-    for (const row of table === "manuscript_nodes"
+    for (const sourceRow of table === "manuscript_nodes"
       ? nodes
       : (backup.tables[table] ?? [])) {
+      // Older files used a creator book for every entry. Infer library ownership
+      // before adopting a preserved canonical world/series scope, as migration does.
+      const row =
+        table === "bible_entries" && backup.version < 4
+          ? {
+              ...sourceRow,
+              library_id:
+                sourceRow.library_id ??
+                backup.tables.books.find((b) => b.id === sourceRow.book_id)
+                  ?.library_id,
+            }
+          : sourceRow;
+      if (
+        table === "bible_entries" &&
+        backup.version < 4 &&
+        ["universe", "series"].includes(row.data?.scope?.kind)
+      )
+        row.book_id = null;
       const columns = Object.keys(row).filter(
         (c) =>
           !(
             (table === "books" && ["universe_id", "series_id"].includes(c)) ||
-            (table === "series" && c === "universe_id")
+            (table === "series" && c === "universe_id") ||
+            (table === "bible_entries" &&
+              ["universe_id", "series_id"].includes(c))
           ),
       );
       // Column names originate in a backup file: quote and escape identifiers.

@@ -287,7 +287,7 @@ test("world/series Trash refuses members including Trash and scoped entries; lea
       entryType: "term",
     });
     await f.store.db.query(
-      "UPDATE bible_entries SET data=data || $2::jsonb WHERE id=$1",
+      "UPDATE bible_entries SET book_id=NULL, data=data || $2::jsonb WHERE id=$1",
       [
         e.id,
         {
@@ -333,8 +333,8 @@ test("world/series Trash refuses members including Trash and scoped entries; lea
     );
     // Trashed child series may stay attached; restore requires a live parent.
     await f.store.db.query(
-      "UPDATE bible_entries SET data=data || $2::jsonb WHERE id=$1",
-      [e.id, { scope: { kind: "book", id: f.book.id } }],
+      "UPDATE bible_entries SET book_id=$3, data=data || $2::jsonb WHERE id=$1",
+      [e.id, { scope: { kind: "book", id: f.book.id } }, f.book.id],
     );
     const deadWorld = await editWorld(
       f.store.db,

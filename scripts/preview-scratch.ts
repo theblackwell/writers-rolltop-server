@@ -86,6 +86,46 @@ await store.createNode(book.id, "The old orchard", "scene", chapter.id);
 const next = await store.createNode(book.id, "Before the rain", "chapter");
 await store.createNode(book.id, "The road home", "scene", next.id);
 await store.createBook(library.id, "Notes from a Quiet Town");
+// Optional shared-scope storage fixtures, only in this volatile development preview.
+if (process.env.STUDIO_SHARED_PREVIEW === "1") {
+  const { editWorld, bookMembership } =
+    await import("../packages/studio/src/worlds.ts");
+  const world = await editWorld(store.db, library.id, "universes", {
+    title: "Orchard world",
+  });
+  const series = await editWorld(store.db, library.id, "series", {
+    title: "Orchard stories",
+    universeId: world.id,
+  });
+  await bookMembership(store.db, book.id, {
+    universeId: world.id,
+    seriesId: series.id,
+    expectedUpdatedAt: book.updatedAt,
+  });
+  for (const [kind, id, name] of [
+    ["universe", world.id, "Orchard keeper"],
+    ["series", series.id, "The orchard secret"],
+  ]) {
+    const now = new Date().toISOString();
+    const entry = {
+      id: crypto.randomUUID(),
+      name,
+      entryType: "term",
+      aliases: [],
+      summary: "Shared reference record",
+      scope: { kind, id },
+      values: {},
+      overrides: [],
+      attachments: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await store.db.query(
+      "INSERT INTO bible_entries(id,book_id,data,library_id) VALUES($1,NULL,$2,$3)",
+      [entry.id, entry, library.id],
+    );
+  }
+}
 const saved = await store.document(scene.id);
 const paragraph = (text: string) => ({
   id: crypto.randomUUID(),

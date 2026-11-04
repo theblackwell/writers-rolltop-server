@@ -146,7 +146,7 @@ export async function editWorld(
           : [];
       const entries = (
         await q(
-          "SELECT e.id FROM bible_entries e JOIN books b ON b.id=e.book_id WHERE b.library_id=$1 AND e.data->'scope'->>'id'=$2 LIMIT 1",
+          "SELECT e.id FROM bible_entries e WHERE e.library_id=$1 AND e.data->'scope'->>'id'=$2 LIMIT 1",
           [libraryId, id],
         )
       ).rows;
@@ -247,10 +247,9 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
     ].filter(Boolean);
     if (left.length) {
       const entries = (
-        await q(
-          "SELECT e.data FROM bible_entries e JOIN books b ON b.id=e.book_id WHERE b.library_id=$1",
-          [row.library_id],
-        )
+        await q("SELECT e.data FROM bible_entries e WHERE e.library_id=$1", [
+          row.library_id,
+        ])
       ).rows;
       if (
         entries.some(

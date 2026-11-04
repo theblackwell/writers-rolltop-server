@@ -36,6 +36,7 @@ export function ReferenceField({
   const candidates = entries.filter(
     (e) =>
       !e.deletedAt &&
+      e.scope?.kind === "book" &&
       (!field.targetEntryTypes || field.targetEntryTypes.includes(e.entryType)),
   );
   const options = [

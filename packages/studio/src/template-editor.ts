@@ -207,10 +207,9 @@ export async function editDefinition(
             JSON.stringify(record.targetEntryTypes?.slice().sort()));
       if (constraintsChanged) {
         const entries = (
-          await q(
-            "SELECT e.data FROM bible_entries e JOIN books b ON b.id=e.book_id WHERE b.library_id=$1",
-            [libraryId],
-          )
+          await q("SELECT e.data FROM bible_entries e WHERE e.library_id=$1", [
+            libraryId,
+          ])
         ).rows.map((r) => r.data);
         for (const entry of entries)
           for (const map of [

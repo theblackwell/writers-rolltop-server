@@ -92,11 +92,10 @@ try {
     seriesId,
     expectedUpdatedAt: book.updatedAt,
   });
-  await api(
-    `/libraries/${library.id}/universes/${worldId}`,
-    "PUT",
-    { title: "Renamed scratch world", expectedUpdatedAt: world.updatedAt },
-  );
+  await api(`/libraries/${library.id}/universes/${worldId}`, "PUT", {
+    title: "Renamed scratch world",
+    expectedUpdatedAt: world.updatedAt,
+  });
   const unusedWorld = await api(`/libraries/${library.id}/universes`, "POST", {
     title: "Unused world",
   });
@@ -110,6 +109,61 @@ try {
     deleted: false,
     expectedUpdatedAt: trashedWorld.updatedAt,
   });
+  const companion = await api(`/libraries/${library.id}/books`, "POST", {
+    title: "Shared recovery companion",
+  });
+  await api(`/books/${companion.id}/membership`, "PUT", {
+    universeId: worldId,
+    expectedUpdatedAt: companion.updatedAt,
+  });
+  const companionChapter = await api(`/books/${companion.id}/nodes`, "POST", {
+    title: "Companion chapter",
+    kind: "chapter",
+  });
+  const companionScene = await api(`/books/${companion.id}/nodes`, "POST", {
+    title: "Companion scene",
+    kind: "scene",
+    parentId: companionChapter.id,
+  });
+  const sharedId = crypto.randomUUID();
+  // Storage-only shared setup remains confined to this disposable project.
+  console.log(
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "--input-type=module",
+      "-e",
+      `
+    const { postgres } = await import('./packages/studio/src/postgres.ts');
+    const { captureBook } = await import('./packages/studio/src/backup.ts');
+    const { default: assert } = await import('node:assert/strict');
+    const db = postgres(process.env.DATABASE_URL);
+    try {
+      const now = new Date().toISOString();
+      const e = { id: '${sharedId}', name: 'Shared term', entryType: 'term', scope: {kind:'universe',id:'${worldId}'}, values:{future:'canon'}, overrides:[{bookId:'${book.id}',values:{future:'first'}},{bookId:'${companion.id}',values:{future:'second'}}], aliases:[], attachments:[],createdAt:now,updatedAt:now };
+      await db.query('INSERT INTO bible_entries(id,book_id,data,library_id) VALUES($1,NULL,$2,$3)', [e.id,e,'${library.id}']);
+      await db.transaction(async lock => {
+        await lock('SELECT id FROM books WHERE id=$1 FOR UPDATE', ['${companion.id}']);
+        await assert.rejects(() => db.transaction(q => captureBook(q,'${book.id}')), e => e.code === '55P03');
+      });
+      const snapshot = await db.transaction(q => captureBook(q,'${book.id}'));
+      assert.equal(snapshot.tables.books.length,2);
+    } finally { await db.close(); }
+  `,
+    ),
+  );
+  assert.ok(
+    (await api(`/books/${book.id}/entries`)).some(
+      (e: any) => e.id === sharedId,
+    ),
+  );
+  assert.ok(
+    (await api(`/books/${companion.id}/entries`)).some(
+      (e: any) => e.id === sharedId,
+    ),
+  );
   const chapter = await api(`/books/${book.id}/nodes`, "POST", {
     title: "Chapter 1",
     kind: "chapter",
@@ -414,6 +468,10 @@ try {
     const db = postgres(url.href);
     try {
       const store = new StudioStore(db);
+      const companion = await store.document('${companionScene.id}');
+      if (companion.revision !== 1) throw Error('Companion manuscript recovery mismatch');
+      const shared = (await store.entries('${companion.id}')).find(e=>e.id==='${sharedId}');
+      if (shared?.values.future !== 'canon' || shared.overrides.length !== 2 || shared.overrides[1].values.future !== 'second') throw Error('Shared canon/override recovery mismatch');
       const restoredBook = (await store.book('${book.id}')).book;
       if (restoredBook.universeId !== '${worldId}' || restoredBook.seriesId !== '${seriesId}') throw Error('World membership recovery mismatch');
       if ((await db.query('SELECT id FROM universes WHERE id=$1', ['${worldId}'])).rows.length !== 1) throw Error('World recovery mismatch');

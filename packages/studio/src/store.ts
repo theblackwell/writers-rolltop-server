@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { migrateScopes, visibleEntries } from "./scopes.ts";
 import { structuredTypes, structuredValueError } from "./structured-values.ts";
 import { initializeTemplates } from "./templates.ts";
 import { entryInput, editEntry } from "./entries.ts";
@@ -87,17 +88,18 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 5)
+      if (rows[0]?.version > 6)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3, 4, 5].includes(rows[0].version))
+        if (![1, 2, 3, 4, 5, 6].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
         if (rows[0].version < 4) await this.migrateTemplates(q);
         if (rows[0].version < 5) await this.migrateWorlds(q);
+        if (rows[0].version < 6) await migrateScopes(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -112,6 +114,7 @@ export class StudioStore {
       await this.migrateReferences(q);
       await this.migrateTemplates(q);
       await this.migrateWorlds(q);
+      await migrateScopes(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -226,13 +229,9 @@ export class StudioStore {
       (await this.db.query("SELECT id FROM books WHERE id=$1", [bookId]))
         .rows[0],
     );
-    return (
-      await this.db.query(
-        "SELECT data FROM bible_entries WHERE book_id=$1 ORDER BY data->>'name', id",
-        [bookId],
-      )
-    ).rows.map((r) => r.data);
+    return visibleEntries(this.db.query, bookId);
   }
+
   async createEntry(bookId: string, input: any) {
     entryInput(input);
     const name = title(input.name);
@@ -257,7 +256,7 @@ export class StudioStore {
         },
         input,
       );
-      await q("INSERT INTO bible_entries VALUES($1,$2,$3)", [
+      await q("INSERT INTO bible_entries(id,book_id,data) VALUES($1,$2,$3)", [
         entry.id,
         bookId,
         entry,
@@ -1189,19 +1188,44 @@ export class StudioStore {
           "BACKUP_UNAVAILABLE",
           "Permanent deletion needs configured recovery backup storage. Nothing was deleted.",
         );
+      let snapshot;
+      try {
+        snapshot = await captureBook(q, ctx.book.id);
+      } catch {
+        throw new StudioError(
+          503,
+          "BACKUP_FAILED",
+          "The library recovery snapshot could not be captured. Nothing was deleted. Finish other library edits and try again.",
+        );
+      }
       if (type === "book") {
         const doomedEntries = new Set(
           (
             await q("SELECT id FROM bible_entries WHERE book_id=$1", [id])
           ).rows.map((r) => r.id),
         );
+        const externalPassages = (
+          await q(
+            `SELECT r.id FROM manuscript_references r
+          JOIN bible_entries e ON e.id=r.entry_id JOIN manuscript_nodes n ON n.id=r.node_id
+          JOIN books b ON b.id=n.book_id WHERE e.book_id=$1 AND b.library_id<>$2 LIMIT 1`,
+            [id, ctx.libraryId],
+          )
+        ).rows;
+        if (externalPassages.length)
+          return fail(
+            "This book has incoming passage links from another library. Resolve them before permanent deletion.",
+          );
         const fields = (
           await q(
             "SELECT data FROM bible_fields WHERE data->>'fieldType' IN ('entryReference','entryReferences')",
           )
         ).rows.map((r) => r.data);
         for (const row of (
-          await q("SELECT data FROM bible_entries WHERE book_id<>$1", [id])
+          await q(
+            "SELECT data FROM bible_entries WHERE book_id IS DISTINCT FROM $1",
+            [id],
+          )
         ).rows) {
           for (const values of [
             row.data.values,
@@ -1224,10 +1248,7 @@ export class StudioStore {
       }
       let path: string;
       try {
-        path = await writeBookBackup(
-          this.backupDirectory,
-          await captureBook(q, ctx.book.id),
-        );
+        path = await writeBookBackup(this.backupDirectory, snapshot);
       } catch {
         throw new StudioError(
           503,
@@ -1257,6 +1278,33 @@ export class StudioStore {
           "DELETE FROM manuscript_references WHERE entry_id IN (SELECT id FROM bible_entries WHERE book_id=$1)",
           [ctx.book.id],
         );
+        // Shared canon survives book deletion; only this book's overrides leave.
+        for (const row of (
+          await q(
+            "SELECT id,data FROM bible_entries WHERE library_id=$1 AND book_id IS DISTINCT FROM $2",
+            [ctx.libraryId, ctx.book.id],
+          )
+        ).rows) {
+          if (
+            !(row.data.overrides ?? []).some(
+              (o: any) => o.bookId === ctx.book.id,
+            )
+          )
+            continue;
+          const data = {
+            ...row.data,
+            overrides: row.data.overrides.filter(
+              (o: any) => o.bookId !== ctx.book.id,
+            ),
+            updatedAt: new Date(
+              Math.max(Date.now(), Date.parse(row.data.updatedAt) + 1),
+            ).toISOString(),
+          };
+          await q("UPDATE bible_entries SET data=$2 WHERE id=$1", [
+            row.id,
+            data,
+          ]);
+        }
         await q("DELETE FROM notes WHERE book_id=$1", [ctx.book.id]);
         await q("DELETE FROM bible_entries WHERE book_id=$1", [ctx.book.id]);
       } else {
