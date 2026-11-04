@@ -292,6 +292,67 @@ export class StudioStore {
     while (used.has(now)) now = new Date(Date.parse(now) + 1).toISOString();
     return now;
   }
+  async updateBookDetails(id: string, input: Record<string, unknown>) {
+    const allowed = [
+      "title",
+      "subtitle",
+      "authorName",
+      "description",
+      "language",
+      "targetWordCount",
+      "targetDate",
+    ];
+    if (Object.keys(input).some((key) => !allowed.includes(key)))
+      return fail("Choose supported book details.");
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (key === "title") {
+        patch[key] = title(value);
+        continue;
+      }
+      if (value === null || value === "") {
+        patch[key] = null;
+        continue;
+      }
+      if (key === "targetWordCount") {
+        if (!Number.isSafeInteger(value) || (value as number) < 1)
+          return fail("Use a positive whole number for the word goal.");
+      } else {
+        if (typeof value !== "string" || value.length > 20000)
+          return fail(
+            "Book details must be text of at most 20,000 characters.",
+          );
+        if (
+          key === "language" &&
+          !/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/.test(value)
+        )
+          return fail("Use a language tag such as en or en-US.");
+        if (
+          key === "targetDate" &&
+          (!/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+            !Number.isFinite(Date.parse(value)) ||
+            new Date(value).toISOString().slice(0, 10) !== value)
+        )
+          return fail("Choose a valid target date.");
+      }
+      patch[key] = value;
+    }
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, id);
+      if (ctx.book.deletedAt)
+        return fail("Restore the book before editing its details.");
+      const book: RecordData = {
+        ...ctx.book,
+        updatedAt: new Date().toISOString(),
+      };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete book[key];
+        else book[key] = value;
+      }
+      await q("UPDATE books SET data=$2 WHERE id=$1", [id, book]);
+      return book;
+    });
+  }
   async renameBook(id: string, name: string) {
     const newTitle = title(name);
     return this.db.transaction(async (q) => {

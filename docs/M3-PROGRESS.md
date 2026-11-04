@@ -50,3 +50,11 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Browser QA on disposable sample data: book/scene rename, move scene to another chapter, chapter Trash/restore, create a part, move chapter into part, book Trash/restore, reload hierarchy, Move Up, text unchanged (84 words). Screenshot: `docs/screenshots/m3-management.png`.
 - Real Podman/PostgreSQL smoke extended and passed: rename, move, Trash/restore, revision count unchanged, and saved text survives container restart. Scratch containers/volume removed after verification.
 - Owner authorized a Server-only checkpoint commit for these follow-up changes on top of `26f6e40`. No push requested. Apple/Spec and owner libraries remain untouched.
+
+## Book metadata and goals section — 2026-11-04
+
+- Implemented book details form reachable from Library in every layout and from the manuscript binder: title, subtitle, author, description, language, word goal and target date. Empty optional fields remove the value.
+- New same-origin authenticated `PUT /api/books/:id/details` validates an allowlisted partial patch, positive safe-integer goals, language tags and real calendar dates. Serializes on the existing book lock, refuses trashed books and preserves unknown fields/documents/revisions. No migration or Spec change.
+- Verification: TypeScript and production build pass; **27/27 tests pass**, including persistence, invalid goals/dates, optional-field clearing, unknown-field preservation, unchanged manuscript and refusal in Trash. HTTP test needed loopback permission outside the sandbox. Existing Vite bundle-size advisory remains.
+- Browser visual QA and real PostgreSQL smoke were not repeated for this section. Goal-progress totals remain to implement; this section covers editable goal settings.
+- Next session: L2, search, notes and references (see plan). Apple/Spec and owner libraries untouched. End-of-section commit authorized by standing owner instruction; no push.

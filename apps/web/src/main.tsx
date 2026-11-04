@@ -21,6 +21,7 @@ import type { Item } from "./api.ts";
 import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
 import type { Target } from "./management.tsx";
 import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
+import { BookDetails } from "./book-details.tsx";
 import "./style.css";
 
 type Layout = "desk" | "writing" | "focus";
@@ -129,6 +130,7 @@ function App() {
   const [error, setError] = useState("");
   const [libraries, setLibraries] = useState<Item[]>([]);
   const [library, setLibrary] = useState<Item | null>(null);
+  const [details, setDetails] = useState<Item | null>(null);
   const [books, setBooks] = useState<Item[]>([]);
   const [book, setBook] = useState<Item | null>(null);
   const [nodes, setNodes] = useState<Item[]>([]);
@@ -382,6 +384,9 @@ function App() {
               <button disabled={!library} onClick={() => newItem("book")}>
                 New Book…
               </button>
+              <button disabled={!book} onClick={() => setDetails(book)}>
+                Book Details and Goals…
+              </button>
               <hr />
               {libraries.map((l) => (
                 <button key={l.id} onClick={() => void openLibrary(l)}>
@@ -525,6 +530,15 @@ function App() {
           <aside className="binder" aria-label="Manuscript binder">
             <p className="eyebrow">MANUSCRIPT</p>
             <h2>{book?.title}</h2>
+            <button onClick={() => setDetails(book)}>
+              Book Details and Goals…
+            </button>
+            {book?.targetWordCount && (
+              <p>
+                Goal: {book.targetWordCount.toLocaleString()} words
+                {book.targetDate ? ` by ${book.targetDate}` : ""}
+              </p>
+            )}
             <div className="binder-actions">
               <details className="action-menu">
                 <summary>＋ Add</summary>
@@ -640,6 +654,23 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {details && (
+        <Dialog title="Book Details and Goals" close={() => setDetails(null)}>
+          <BookDetails
+            book={details}
+            onCancel={() => setDetails(null)}
+            onSaved={(updated) => {
+              setBooks((items) =>
+                items.map((item) => (item.id === updated.id ? updated : item)),
+              );
+              setBook((current) =>
+                current?.id === updated.id ? updated : current,
+              );
+              setDetails(null);
+            }}
+          />
+        </Dialog>
+      )}
       {management && (
         <Dialog
           title={`${management.action === "rename" ? "Rename" : management.action === "trash" ? "Move to Trash" : "Move"} ${management.item.title}`}

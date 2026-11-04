@@ -328,3 +328,52 @@ test("100,000 words save and reload with exact Unicode and canonical IDs", async
     await f.pg.close();
   }
 });
+
+test("book details preserve unknown fields and manuscripts; goals validate and clear", async () => {
+  const f = await fixture();
+  try {
+    await f.store.db.query(
+      "UPDATE books SET data=data || $2::jsonb WHERE id=$1",
+      [f.book.id, JSON.stringify({ futureField: { keep: true } })],
+    );
+    const before = await f.store.document(f.scene.id);
+    const updated = await f.store.updateBookDetails(f.book.id, {
+      title: "New title",
+      authorName: "A Writer",
+      language: "en-US",
+      targetWordCount: 80000,
+      targetDate: "2028-02-29",
+    });
+    assert.deepEqual(updated.futureField, { keep: true });
+    assert.equal(updated.targetWordCount, 80000);
+    assert.deepEqual((await f.store.book(f.book.id)).book, updated);
+    for (const bad of [
+      { targetWordCount: 0 },
+      { targetWordCount: 1.5 },
+      { targetWordCount: "10" },
+      { targetDate: "2027-02-29" },
+      { language: "bad tag" },
+      { id: f.scene.id },
+    ]) {
+      await assert.rejects(
+        () => f.store.updateBookDetails(f.book.id, bad),
+        StudioError,
+      );
+    }
+    const cleared = await f.store.updateBookDetails(f.book.id, {
+      targetWordCount: null,
+      targetDate: "",
+    });
+    assert.equal(cleared.targetWordCount, undefined);
+    assert.equal(cleared.targetDate, undefined);
+    assert.equal(cleared.authorName, "A Writer");
+    assert.deepEqual(await f.store.document(f.scene.id), before);
+    await f.store.trashBook(f.book.id);
+    await assert.rejects(
+      () => f.store.updateBookDetails(f.book.id, { title: "No" }),
+      StudioError,
+    );
+  } finally {
+    await f.pg.close();
+  }
+});

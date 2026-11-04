@@ -240,6 +240,17 @@ export function studioServer(
           ),
         );
       }
+      if (
+        parts[0] === "books" &&
+        parts.length === 3 &&
+        parts[2] === "details" &&
+        method === "PUT"
+      )
+        return respond(
+          res,
+          200,
+          await store.updateBookDetails(parts[1], await body(req)),
+        );
       if (parts[0] === "books" && parts.length === 2 && method === "PUT")
         return respond(
           res,

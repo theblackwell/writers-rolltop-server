@@ -1005,3 +1005,27 @@ dialog select {
   outline: 3px solid #b0843c;
   outline-offset: 2px;
 }
+
+/* Book details stays usable in short and narrow windows. */
+dialog {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+dialog fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+dialog textarea {
+  display: block;
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+  margin: 0.4rem 0 1rem;
+  padding: 0.6rem;
+  border: 1px solid #c9bda9;
+  border-radius: 4px;
+  background: #fffdf8;
+  color: #302923;
+  font: inherit;
+}

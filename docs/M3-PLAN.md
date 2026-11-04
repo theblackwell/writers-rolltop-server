@@ -22,3 +22,12 @@ Codex edits Server only; Apple belongs to Claude. No format changes are needed f
 ## Current limits
 
 This is the beginning of M3, not a complete web edition. Features in later slices must be labelled unavailable; no fake archive buttons or lossy text imports. Browser drafts and server revisions are separate from the future M4 sync protocol. No claim of seamless simultaneous editing or end-to-end encryption.
+
+## Sections (one per session, owner rule 2026-11-04)
+
+- **L1 — Book metadata and goal settings: implemented 2026-11-04.** Title, subtitle, author, description, language, word goal and target date; validated partial updates preserve unknown fields. Goal settings shown in manuscript navigation. Browser visual QA and live manuscript goal-progress totals remain follow-up work.
+- **L2 — Search, notes and references: next.** Inspect existing Spec and Apple semantics before implementation; preserve canonical reference marks. Split further if needed.
+- **L3 — Remaining formatting, goal-progress totals and layout preferences.**
+- **L4 — Backup-protected permanent deletion.**
+
+Continue delivery steps 3–5 above in separately sized sections after library editing.

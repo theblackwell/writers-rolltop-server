@@ -33,4 +33,10 @@ export type Item = {
   parentId?: string;
   orderKey?: string;
   deletedAt?: string;
+  subtitle?: string;
+  authorName?: string;
+  description?: string;
+  language?: string;
+  targetWordCount?: number;
+  targetDate?: string;
 };
