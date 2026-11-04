@@ -1,0 +1,34 @@
+services:
+  studio:
+    build: .
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-4317}:4317"
+    environment:
+      DATABASE_URL: postgresql://rolltop:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/rolltop
+      STUDIO_PASSWORD_HASH: ${STUDIO_PASSWORD_HASH:?Set STUDIO_PASSWORD_HASH in .env}
+      STUDIO_ORIGIN: ${STUDIO_ORIGIN:-http://localhost:4317}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: rolltop
+      POSTGRES_USER: rolltop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U rolltop -d rolltop"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  postgres-data:

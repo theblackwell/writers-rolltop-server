@@ -2,7 +2,7 @@
 
 The free, self-hosted Writers Rolltop studio: a browser-based writing, story-bible and continuity app, plus an optional sync service, deployed with Docker. It doesn't depend on the paid Apple apps.
 
-> Status: **M0.** The only thing here so far is the **web document adapter prototype**, which proves the browser editor (Tiptap/ProseMirror) can round-trip the canonical document format without semantic loss. The full web studio is M3; self-hosted sync is M4.
+> Status: **M3 in development.** The M0 document adapter is joined by the first web manuscript slice. See [setup](docs/SETUP.md) and [M3 plan](docs/M3-PLAN.md). Full web parity is unfinished; device synchronization is M4.
 
 ## Layout
 
@@ -32,3 +32,14 @@ Copyright 2026 The Black Well Foundry. Licensed under the [GNU Affero General Pu
 The data format itself is specified separately under Apache-2.0 in `writers-rolltop-spec`, so any software, open or proprietary, can read and write Writers Rolltop projects. The vendored files under `packages/document-adapter/fixtures/` come from that repository and remain under Apache-2.0. The license doesn't grant rights to the "Writers Rolltop" name or logos.
 
 **Contributions:** a contribution policy (with a contributor license agreement) is being prepared. External pull requests can't be accepted until it's published.
+
+## M3 development (2026-11-03)
+
+The first manuscript slice is now under development: React/Tiptap web workspace,
+PostgreSQL API, single-owner login, canonical JSON saves with revision-conflict
+protection, and OCI containers for **Docker or Podman**. This is not a complete M3
+release; bible/continuity, attachments and portable archives remain required.
+
+Start with [container setup](docs/SETUP.md), [implementation plan](docs/M3-PLAN.md)
+and `npm run check`, `npm test`, `npm run build` from this repository's root.
+The existing document adapter stays independent and retains its conformance tests.

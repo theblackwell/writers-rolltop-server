@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Creates and destroys only its own disposable Compose project and scratch volume.
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { passwordHash } from "../packages/studio/src/auth.ts";
+const exec = promisify(execFile);
+const runtime = process.env.CONTAINER_RUNTIME ?? "podman";
+const project = "rolltop-smoke-" + randomBytes(4).toString("hex");
+const directory = await mkdtemp(join(tmpdir(), "rolltop-container-"));
+const env = join(directory, ".env");
+const password = randomBytes(24).toString("hex");
+const port = process.env.SMOKE_PORT ?? "14317";
+const origin = `http://localhost:${port}`;
+await writeFile(
+  env,
+  `POSTGRES_PASSWORD=${randomBytes(32).toString("hex")}\nSTUDIO_PASSWORD_HASH='${await passwordHash(password)}'\nSTUDIO_ORIGIN=${origin}\nSTUDIO_PORT=${port}\n`,
+  { mode: 0o600 },
+);
+async function compose(...args: string[]) {
+  try {
+    const r = await exec(
+      runtime,
+      ["compose", "--project-name", project, "--env-file", env, ...args],
+      { maxBuffer: 8 * 1024 * 1024 },
+    );
+    return r.stdout;
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string };
+    throw new Error(
+      (err.stdout ?? "") + (err.stderr ?? "Container command failed"),
+    );
+  }
+}
+let cookie = "";
+async function api(path: string, method = "GET", value?: unknown) {
+  const r = await fetch(origin + "/api" + path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Origin: origin,
+      Cookie: cookie,
+    },
+    body: value === undefined ? undefined : JSON.stringify(value),
+  });
+  if (!r.ok)
+    throw new Error(`API ${method} ${path}: ${r.status} ${await r.text()}`);
+  if (r.headers.has("set-cookie"))
+    cookie = r.headers.get("set-cookie")!.split(";")[0];
+  return r.json();
+}
+async function health() {
+  for (let i = 0; i < 60; i++) {
+    try {
+      await api("/health");
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  throw new Error("Studio health check did not become ready.");
+}
+try {
+  console.log(`Building and starting isolated Compose project ${project}…`);
+  console.log(await compose("up", "--build", "-d"));
+  await health();
+  await api("/login", "POST", { password });
+  const library = await api("/libraries", "POST", {
+    title: "Container smoke scratch",
+  });
+  const book = await api(`/libraries/${library.id}/books`, "POST", {
+    title: "Restart check",
+  });
+  const chapter = await api(`/books/${book.id}/nodes`, "POST", {
+    title: "Chapter 1",
+    kind: "chapter",
+  });
+  const scene = await api(`/books/${book.id}/nodes`, "POST", {
+    title: "Scene 1",
+    kind: "scene",
+    parentId: chapter.id,
+  });
+  const first = await api(`/documents/${scene.id}`);
+  first.document.blocks[0].content = [
+    {
+      type: "text",
+      text: "This scratch manuscript survives a container restart. 雨 e\u0301",
+    },
+  ];
+  await api(`/documents/${scene.id}`, "PUT", {
+    document: first.document,
+    expectedRevision: first.revision,
+  });
+  const stale = await fetch(origin + `/api/documents/${scene.id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: origin,
+      Cookie: cookie,
+    },
+    body: JSON.stringify({ document: first.document, expectedRevision: 1 }),
+  });
+  if (stale.status !== 409) throw new Error("A stale save was not refused.");
+  await compose("restart");
+  await health();
+  const restored = await api(`/documents/${scene.id}`);
+  assert.equal(restored.revision, 2);
+  assert.deepEqual(restored.document, first.document);
+  const page = await fetch(origin);
+  if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
+    throw new Error("Built web app is not served.");
+  console.log(
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, PostgreSQL persistence across restart, and web assets.",
+  );
+} finally {
+  try {
+    await compose("down", "--volumes", "--remove-orphans");
+    console.log("Removed disposable containers and scratch database volume.");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
