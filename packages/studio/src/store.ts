@@ -79,13 +79,14 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 1)
+      if (rows[0]?.version > 2)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (rows[0].version !== 1)
+        if (![1, 2].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
+        if (rows[0].version === 1) await this.migrateNotes(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -96,6 +97,91 @@ export class StudioStore {
         CREATE TABLE document_revisions (node_id uuid NOT NULL REFERENCES manuscript_nodes(id), revision integer NOT NULL, document jsonb NOT NULL, saved_at timestamptz NOT NULL, PRIMARY KEY(node_id,revision));
         CREATE TABLE studio_sessions (token_hash text PRIMARY KEY, expires_at timestamptz NOT NULL);
         INSERT INTO studio_schema(version) VALUES(1)`);
+      await this.migrateNotes(q);
+    });
+  }
+  private async migrateNotes(q: Query) {
+    await q(`CREATE TABLE notes (id uuid PRIMARY KEY, book_id uuid NOT NULL REFERENCES books(id), data jsonb NOT NULL);
+      CREATE INDEX notes_by_book ON notes(book_id);
+      UPDATE studio_schema SET version=2`);
+  }
+  async notes(bookId: string) {
+    required(
+      (await this.db.query("SELECT id FROM books WHERE id=$1", [bookId]))
+        .rows[0],
+    );
+    return (
+      await this.db.query(
+        `SELECT data FROM notes WHERE book_id=$1 ORDER BY (data->>'orderKey') COLLATE "C", id`,
+        [bookId],
+      )
+    ).rows.map((r) => r.data);
+  }
+  async saveNote(bookId: string, input: any, id?: string) {
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      return fail("Provide note details.");
+    const allowed = id
+      ? ["text", "nodeId", "deleted", "expectedUpdatedAt"]
+      : ["text", "nodeId"];
+    if (Object.keys(input).some((k) => !allowed.includes(k)))
+      return fail("Unknown note field.");
+    if (
+      input.text !== undefined &&
+      (typeof input.text !== "string" ||
+        !input.text.trim() ||
+        input.text.length > 20000)
+    )
+      return fail("Use note text between 1 and 20,000 characters.");
+    if (input.deleted !== undefined && typeof input.deleted !== "boolean")
+      return fail("Choose Trash or restore.");
+    return this.db.transaction(async (q) => {
+      const ctx = await this.bookContext(q, bookId);
+      if (ctx.book.deletedAt)
+        return fail("Restore the book before editing notes.");
+      const all = (
+        await q("SELECT data FROM notes WHERE book_id=$1", [bookId])
+      ).rows.map((r) => r.data);
+      const old = id ? required(all.find((n) => n.id === id)) : undefined;
+      if (old && input.expectedUpdatedAt !== old.updatedAt)
+        throw new StudioError(
+          409,
+          "NOTE_CONFLICT",
+          "This note changed. Reopen Quick Notes before editing it.",
+        );
+      if (!old && input.text === undefined) return fail("Enter note text.");
+      if (old?.deletedAt && input.deleted !== false)
+        return fail("Restore the note before editing it.");
+      const nodeId = input.nodeId === undefined ? old?.nodeId : input.nodeId;
+      if (
+        nodeId != null &&
+        (typeof nodeId !== "string" || !ctx.nodes.some((n) => n.id === nodeId))
+      )
+        return fail("Pin the note within this book.");
+      const now = new Date(
+        Math.max(Date.now(), old ? Date.parse(old.updatedAt) + 1 : 0),
+      ).toISOString();
+      const note = {
+        ...(old ?? { id: randomUUID(), bookId, createdAt: now }),
+        updatedAt: now,
+      };
+      if (input.text !== undefined) note.text = input.text.trim();
+      if (nodeId == null) delete note.nodeId;
+      else note.nodeId = nodeId;
+      if (!old || old.nodeId !== nodeId) {
+        const peers = all
+          .filter(
+            (n) => n.id !== id && !n.deletedAt && n.nodeId === note.nodeId,
+          )
+          .map((n) => n.orderKey)
+          .sort();
+        note.orderKey = between(peers.at(-1), undefined);
+      }
+      if (input.deleted === true) note.deletedAt = now;
+      if (input.deleted === false) delete note.deletedAt;
+      if (old) await q("UPDATE notes SET data=$2 WHERE id=$1", [id, note]);
+      else
+        await q("INSERT INTO notes VALUES($1,$2,$3)", [note.id, bookId, note]);
+      return note;
     });
   }
   async libraries() {

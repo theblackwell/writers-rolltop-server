@@ -21,6 +21,7 @@ import type { Item } from "./api.ts";
 import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
 import type { Target } from "./management.tsx";
 import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
+import { QuickNotes } from "./notes.tsx";
 import { ManuscriptSearch } from "./search.tsx";
 import { BookDetails } from "./book-details.tsx";
 import "./style.css";
@@ -131,6 +132,7 @@ function App() {
   const [error, setError] = useState("");
   const [libraries, setLibraries] = useState<Item[]>([]);
   const [library, setLibrary] = useState<Item | null>(null);
+  const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
   const [details, setDetails] = useState<Item | null>(null);
   const [books, setBooks] = useState<Item[]>([]);
@@ -396,6 +398,9 @@ function App() {
                 }}
               >
                 Search Manuscript…
+              </button>
+              <button disabled={!book} onClick={() => setNoting(true)}>
+                Quick Notes…
               </button>
               <hr />
               {libraries.map((l) => (
@@ -664,6 +669,11 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {noting && book && (
+        <Dialog title="Quick Notes" close={() => setNoting(false)}>
+          <QuickNotes book={book} nodes={nodes} />
+        </Dialog>
+      )}
       {searching && book && (
         <Dialog title="Search Manuscript" close={() => setSearching(false)}>
           <ManuscriptSearch

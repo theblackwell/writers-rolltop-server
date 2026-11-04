@@ -137,6 +137,40 @@ test("HTTP authentication, same-origin writes, expiry, conflict responses and se
     assert.match(setCookie, /SameSite=Strict/);
     cookie = setCookie.split(";")[0];
     assert.equal((await request("/libraries")).status, 200);
+    const notePath = `/books/${f.book.id}/notes`;
+    assert.equal(
+      (
+        await request(
+          notePath,
+          "POST",
+          { text: "Blocked" },
+          "https://evil.example",
+        )
+      ).status,
+      403,
+    );
+    const noteResponse = await request(notePath, "POST", {
+      text: "HTTP note",
+      nodeId: f.scene.id,
+    });
+    assert.equal(noteResponse.status, 201);
+    const note = await noteResponse.json();
+    assert.equal((await (await request(notePath)).json())[0].id, note.id);
+    const updatedNote = await request(`${notePath}/${note.id}`, "PUT", {
+      text: "Updated",
+      expectedUpdatedAt: note.updatedAt,
+    });
+    assert.equal(updatedNote.status, 200);
+    assert.equal(
+      (
+        await request(`${notePath}/${note.id}`, "PUT", {
+          text: "Stale",
+          expectedUpdatedAt: note.updatedAt,
+        })
+      ).status,
+      409,
+    );
+    assert.equal((await request(`${notePath}/invalid`, "PUT", {})).status, 400);
     const hits = await (
       await request(`/books/${f.book.id}/search?q=Scene%201`)
     ).json();
@@ -312,12 +346,12 @@ test("a failed revision append rolls back the document update atomically", async
 test("newer database schemas are refused without changing their version", async () => {
   const f = await fixture();
   try {
-    await f.store.db.query("UPDATE studio_schema SET version=2");
+    await f.store.db.query("UPDATE studio_schema SET version=3");
     await assert.rejects(() => f.store.migrate(), /newer/);
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      2,
+      3,
     );
   } finally {
     await f.pg.close();

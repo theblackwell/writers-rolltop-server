@@ -226,6 +226,25 @@ export function studioServer(
           200,
           await store.search(parts[1], url.searchParams.get("q")),
         );
+      if (
+        parts[0] === "books" &&
+        parts[2] === "notes" &&
+        (parts.length === 3 || parts.length === 4)
+      ) {
+        if (parts[3] && !uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid note.");
+        if (parts.length === 3 && method === "GET")
+          return respond(res, 200, await store.notes(parts[1]));
+        if (
+          (parts.length === 3 && method === "POST") ||
+          (parts.length === 4 && method === "PUT")
+        )
+          return respond(
+            res,
+            method === "POST" ? 201 : 200,
+            await store.saveNote(parts[1], await body(req), parts[3]),
+          );
+      }
       if (parts[0] === "books" && parts.length === 2 && method === "GET")
         return respond(res, 200, await store.book(parts[1]));
       if (
