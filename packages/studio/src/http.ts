@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { editDefinition } from "./template-editor.ts";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -204,6 +205,30 @@ export function studioServer(
       )
         return respond(res, 200, await store.templates(parts[1]));
 
+      if (
+        parts[0] === "libraries" &&
+        ["templates", "fields"].includes(parts[2]) &&
+        ((parts.length === 3 && method === "POST") ||
+          (parts.length === 4 && method === "PUT"))
+      ) {
+        if (parts[3] && !uuid.test(parts[3]))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid definition.",
+          );
+        return respond(
+          res,
+          parts[3] ? 200 : 201,
+          await editDefinition(
+            store.db,
+            parts[1],
+            parts[2] === "templates" ? "template" : "field",
+            await body(req),
+            parts[3],
+          ),
+        );
+      }
       if (
         parts[0] === "books" &&
         parts[2] === "entries" &&

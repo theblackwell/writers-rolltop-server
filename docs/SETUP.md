@@ -121,14 +121,22 @@ Inspect recovered content through a separate scratch studio pointing only at the
 
 The owner requires both `linux/arm64` and `linux/amd64` (x86-64) containers. A multi-platform release build and runtime smoke check on each architecture remain final M3 acceptance gates. The current local Podman smoke was on ARM64; x86-64 support is required but has not yet been built or verified.
 
-## Bible field values (B2b–B2c)
+## Bible field values (B2b–B2e)
 
 Open Library → Bible Entries, then Fields beside an entry. Choose a compatible template and Assign Template, then edit/save individual fields. Clear Value removes just that value. Empty text, zero and false remain real saved values. Decimal input stays exact text (for example `12.50`); integers must be within ±(2^53−1). Missing required fields are allowed while drafting.
 
-Template changes are blocked while saved values or overrides exist. Entry-reference and attachment field values are retained and labelled unavailable until their sections ship. Built-in templates currently offer text/integer scalar fields; decimal/boolean controls support those definitions when present, while creating custom definitions is later work. If a stale edit is refused, the form remains available: preserve your draft and close/reopen Bible Entries to review current data. Field saves compare both the entry and field-definition timestamps. No database migration is needed for this section.
+Template changes are blocked while saved values or overrides exist. Entry links can target live entries of the allowed types in the same book; existing links to Trash remain visible. Attachment values remain unavailable until storage is implemented. Built-in templates currently offer text/integer scalar fields; decimal/boolean controls support those definitions when present, and custom definitions can now be created with Templates and Fields. If a stale edit is refused, the form remains available: preserve your draft and close/reopen Bible Entries to review current data. Field saves compare both the entry and field-definition timestamps. No database migration is needed for this section.
 
 Selection fields save option IDs (single choice or checkboxes). No choices saves an empty selection; Clear Value removes it. Real-world dates use YYYY-MM-DD and must exist in the Gregorian calendar. Story dates have a label, optional calendar and optional integer ordinal, including zero and negatives.
 
 Tables support 1–20 columns and up to 500 rows. Each heading/cell allows 1,000 Unicode code points. Use Add/Remove Row or Column and Save Value; Cancel leaves saved data unchanged. Column/row removal takes effect only when saved. Clear Value removes the whole field value. Other saved fields stay intact. Table requests can be up to 64 MiB; reverse proxies must permit this size for field-value routes if large tables are needed. Other API routes retain the 4 MiB bound.
 
-The native Event template exposes a story date. Selection, real-date and table controls work when their definitions exist; creating custom definitions is B2e. For disposable browser QA only, `STUDIO_STRUCTURED_PREVIEW=1 node scripts/preview-scratch.ts` adds demonstration definitions/entry to the volatile scratch library. It does not modify the production initializer or native built-ins.
+The native Event template exposes a story date. Selection, real-date and table controls work when their definitions exist; custom definitions are available under Templates and Fields. For disposable browser QA only, `STUDIO_STRUCTURED_PREVIEW=1 node scripts/preview-scratch.ts` adds demonstration definitions/entry to the volatile scratch library. It does not modify the production initializer or native built-ins.
+
+## Custom templates and fields
+
+Open Library → Bible Entries → Templates and Fields. Choose New Template and its entry type, or select an existing template. New Field offers text, number, choice, dates, entry links and table definitions; attachment definitions can be recorded, but attachment values remain unavailable. Customize changes a field's label, suggested status, choices or allowed target types. Move Up/Down changes display order. Built-ins can be customized without changing their IDs.
+
+Types and keys stay fixed. Create a new field for a different type; existing values are never converted or dropped. Renaming choices preserves saved selections. Removing choices, reducing multiplicity or narrowing target types is refused if it would invalidate values, including in Trash. Unsaved entry forms survive navigation to definitions and back. Errors retain definition drafts; cancel before changing screens. A stale definition requires reopening Bible Entries to review the latest state.
+
+Entry-reference fields save one ID or a unique list of IDs. Choose live entries in the current book, respecting allowed types. Empty multi-link lists differ from cleared values. Target Trash does not destroy existing links. Book purge refuses unexpected incoming typed links from another book instead of editing data outside its recovery snapshot; shared-scope links and their cleanup will be introduced together in B3.

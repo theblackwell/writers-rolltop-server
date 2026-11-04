@@ -1067,3 +1067,11 @@ dialog textarea {
 .bible-table textarea {
   min-height: 4rem;
 }
+
+.definition-manager > label {
+  display: block;
+  margin-top: 0.75rem;
+}
+.definition-manager button {
+  margin: 0.2rem 0.4rem 0.2rem 0;
+}

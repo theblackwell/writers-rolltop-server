@@ -158,6 +158,70 @@ try {
       expectedFieldUpdatedAt: roleField.updatedAt,
     },
   );
+  const location = await api(`/books/${book.id}/entries`, "POST", {
+    name: "Orchard",
+    entryType: "location",
+  });
+  const owner = (await api(`/books/${book.id}/entries`)).find(
+    (e: any) => e.id === entry.id,
+  );
+  const homeField = catalog.fields.find(
+    (f: any) => f.templateId === characterTemplate.id && f.key === "home",
+  );
+  await api(
+    `/books/${book.id}/entries/${entry.id}/values/${homeField.id}`,
+    "PUT",
+    {
+      value: location.id,
+      expectedUpdatedAt: owner.updatedAt,
+      expectedFieldUpdatedAt: homeField.updatedAt,
+    },
+  );
+  const customTemplate = await api(
+    `/libraries/${library.id}/templates`,
+    "POST",
+    { name: "Container custom", entryType: "term" },
+  );
+  const customField = await api(`/libraries/${library.id}/fields`, "POST", {
+    templateId: customTemplate.id,
+    label: "Route",
+    fieldType: "selection",
+    options: [{ label: "North" }, { label: "South" }],
+  });
+  const customEntry = await api(`/books/${book.id}/entries`, "POST", {
+    name: "A route",
+    entryType: "term",
+  });
+  const assignedCustom = await api(
+    `/books/${book.id}/entries/${customEntry.id}/template`,
+    "PUT",
+    {
+      templateId: customTemplate.id,
+      expectedUpdatedAt: customEntry.updatedAt,
+      expectedTemplateUpdatedAt: customTemplate.updatedAt,
+    },
+  );
+  await api(
+    `/books/${book.id}/entries/${customEntry.id}/values/${customField.id}`,
+    "PUT",
+    {
+      value: [customField.options[0].id],
+      expectedUpdatedAt: assignedCustom.updatedAt,
+      expectedFieldUpdatedAt: customField.updatedAt,
+    },
+  );
+  await assert.rejects(
+    () =>
+      api(`/libraries/${library.id}/fields/${customField.id}`, "PUT", {
+        options: [customField.options[1]],
+        expectedUpdatedAt: customField.updatedAt,
+      }),
+    /400/,
+  );
+  await api(`/libraries/${library.id}/fields/${customField.id}`, "PUT", {
+    label: "Travel route",
+    expectedUpdatedAt: customField.updatedAt,
+  });
   const eventTemplate = catalog.templates.find(
     (t: any) => t.entryType === "event",
   );
@@ -223,9 +287,13 @@ try {
   );
   assert.ok(!structure.nodes.find((n: any) => n.id === scene.id).deletedAt);
   assert.equal((await api(`/documents/${scene.id}/revisions`)).length, 2);
+  const finalCatalog = await api(`/libraries/${library.id}/templates`);
   await compose("restart");
   await health();
-  assert.deepEqual(await api(`/libraries/${library.id}/templates`), catalog);
+  assert.deepEqual(
+    await api(`/libraries/${library.id}/templates`),
+    finalCatalog,
+  );
   const persistedEntry = (await api(`/books/${book.id}/entries`)).find(
     (e: any) => e.id === entry.id,
   );
@@ -234,6 +302,7 @@ try {
   assert.equal(persistedEntry.toBeNamed, true);
   assert.ok(!persistedEntry.deletedAt);
   assert.equal(persistedEntry.values[roleField.id], "Courier");
+  assert.equal(persistedEntry.values[homeField.id], location.id);
   assert.deepEqual(
     (await api(`/books/${book.id}/entries`)).find(
       (e: any) => e.id === eventEntry.id,
@@ -312,10 +381,13 @@ try {
     try {
       const store = new StudioStore(db);
       const recoveredCatalog = await store.templates('${library.id}');
-      if (recoveredCatalog.templates.length !== 9 || recoveredCatalog.fields.length !== 20) throw Error('Template recovery mismatch');
+      if (recoveredCatalog.templates.length !== ${finalCatalog.templates.length} || recoveredCatalog.fields.length !== ${finalCatalog.fields.length}) throw Error('Template recovery mismatch');
       const recoveredEntry = (await store.entries('${book.id}')).find(e => e.id === '${entry.id}');
       if (recoveredEntry?.name !== 'Corin Vale' || !recoveredEntry.toBeNamed) throw Error('Entry recovery mismatch');
       if (recoveredEntry.values['${roleField.id}'] !== 'Courier') throw Error('Scalar value recovery mismatch');
+      if (recoveredEntry.values['${homeField.id}'] !== '${location.id}') throw Error('Entry link recovery mismatch');
+      const recoveredCustom = (await store.entries('${book.id}')).find(e=>e.id==='${customEntry.id}');
+      if (recoveredCustom.values['${customField.id}'][0] !== '${customField.options[0].id}') throw Error('Custom choice recovery mismatch');
       const doc = await store.document('${scene.id}');
       const { default: assert } = await import('node:assert/strict');
       const recoveredEvent = (await store.entries('${book.id}')).find(e => e.id === '${eventEntry.id}');
@@ -331,7 +403,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured-value persistence/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

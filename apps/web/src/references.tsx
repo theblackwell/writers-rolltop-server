@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { TemplateManager } from "./template-manager.tsx";
 import React, { useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { EntryList } from "./entries.tsx";
@@ -20,6 +21,8 @@ export function References({
   nodeId?: string;
   onReveal?: (id: string) => void;
 }) {
+  const [libraryId, setLibraryId] = useState("");
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>({
     templates: [],
     fields: [],
@@ -40,13 +43,17 @@ export function References({
         : Promise.resolve([]),
       nodeId ? api(`/documents/${nodeId}`) : Promise.resolve(null),
       api(`/books/${bookId}`).then((book) =>
-        api<Catalog>(`/libraries/${book.libraryId}/templates`),
+        api<Catalog>(`/libraries/${book.libraryId}/templates`).then((c) => ({
+          ...c,
+          libraryId: book.libraryId,
+        })),
       ),
     ])
       .then(([e, r, d, c]) => {
         if (!live) return;
         setEntries(e);
         setCatalog(c);
+        setLibraryId(c.libraryId);
         setRefs(r);
         if (d) {
           const passages = new Map<string, string>();
@@ -83,183 +90,211 @@ export function References({
   }
   return (
     <section>
-      <p>
-        Book-scoped bible entries. Edit names, aliases and summaries here. Use
-        Fields to assign a template and edit text, numbers, choices, dates and
-        tables. Shared worlds, entry links and attachments are coming in later
-        sections.
-      </p>
       {error && <p role="alert">{error}</p>}
-      {!loaded && <p>Loading…</p>}
-      <details>
-        <summary>Add Bible Entry</summary>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const input = Object.fromEntries(new FormData(form));
-            void action(async () => {
-              const entry = await api<Entry>(
-                `/books/${bookId}/entries`,
-                "POST",
-                input,
-              );
-              setEntries((es) => [...es, entry]);
-              form.reset();
-            });
-          }}
-        >
-          <fieldset disabled={busy || !loaded}>
-            <label>
-              Name
-              <input name="name" required maxLength={500} />
-            </label>
-            <label>
-              Type
-              <select name="entryType">
-                {[
-                  "character",
-                  "location",
-                  "organization",
-                  "object",
-                  "event",
-                  "plotline",
-                  "worldRule",
-                  "research",
-                  "term",
-                ].map((t) => (
-                  <option key={t} value={t}>
-                    {t === "worldRule"
-                      ? "World rule"
-                      : t[0].toUpperCase() + t.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Summary
-              <textarea name="summary" maxLength={20000} />
-            </label>
-            <button>Add Entry</button>
-          </fieldset>
-        </form>
-      </details>
-      {!nodeId && (
-        <EntryList
-          bookId={bookId}
+      {templatesOpen && (
+        <TemplateManager
+          libraryId={libraryId}
           catalog={catalog}
-          entries={entries}
-          busy={busy || !loaded}
+          busy={busy}
           action={action}
-          onSaved={(entry) =>
-            setEntries((es) => es.map((e) => (e.id === entry.id ? entry : e)))
+          reload={async () =>
+            setCatalog(await api<Catalog>(`/libraries/${libraryId}/templates`))
           }
+          onClose={() => {
+            setTemplatesOpen(false);
+            setError("");
+          }}
         />
       )}
-      {nodeId && (
-        <>
-          <p>
-            Mark a selected passage in Writing tools, then link its saved anchor
-            to an entry. Removing passage text leaves its reference visible as a
-            missing passage.
-          </p>
+      <div hidden={templatesOpen}>
+        <p>
+          Book-scoped bible entries. Edit names, aliases and summaries here. Use
+          Fields to assign a template and edit text, numbers, choices, dates and
+          tables, and entry links. Customize definitions with Templates and
+          Fields. Shared worlds and attachment values are coming later.
+        </p>
+        {!loaded && <p>Loading…</p>}
+        {!nodeId && (
+          <button
+            disabled={busy || !loaded}
+            onClick={() => {
+              setError("");
+              setTemplatesOpen(true);
+            }}
+          >
+            Templates and Fields…
+          </button>
+        )}
+        <details>
+          <summary>Add Bible Entry</summary>
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              const input = Object.fromEntries(new FormData(e.currentTarget));
+              const form = e.currentTarget;
+              const input = Object.fromEntries(new FormData(form));
               void action(async () => {
-                const ref = await api<Reference>(
-                  `/nodes/${nodeId}/references`,
+                const entry = await api<Entry>(
+                  `/books/${bookId}/entries`,
                   "POST",
-                  { ...input, expectedRevision: revision },
+                  input,
                 );
-                setRefs((rs) => [...rs, ref]);
+                setEntries((es) => [...es, entry]);
+                form.reset();
               });
             }}
           >
-            <fieldset
-              disabled={
-                busy ||
-                !loaded ||
-                !anchors.length ||
-                !entries.some((e) => !e.deletedAt)
-              }
-            >
+            <fieldset disabled={busy || !loaded}>
               <label>
-                Saved passage
-                <select name="anchorId">
-                  {anchors.map(([id, text]) => (
-                    <option key={id} value={id}>
-                      {text.slice(0, 100) || "Marked passage"}
+                Name
+                <input name="name" required maxLength={500} />
+              </label>
+              <label>
+                Type
+                <select name="entryType">
+                  {[
+                    "character",
+                    "location",
+                    "organization",
+                    "object",
+                    "event",
+                    "plotline",
+                    "worldRule",
+                    "research",
+                    "term",
+                  ].map((t) => (
+                    <option key={t} value={t}>
+                      {t === "worldRule"
+                        ? "World rule"
+                        : t[0].toUpperCase() + t.slice(1)}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Bible entry
-                <select name="entryId">
-                  {entries
-                    .filter((e) => !e.deletedAt)
-                    .map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name} ({e.entryType})
-                      </option>
-                    ))}
-                </select>
+                Summary
+                <textarea name="summary" maxLength={20000} />
               </label>
-              <button>Link Reference</button>
+              <button>Add Entry</button>
             </fieldset>
           </form>
-          {!anchors.length && loaded && <p>No saved passage anchors yet.</p>}
-          <ul className="search-results">
-            {refs.map((r) => {
-              const entry = entries.find((e) => e.id === r.entryId);
-              const passage = anchors.find(([id]) => id === r.anchorId);
-              return (
-                <li key={r.id}>
-                  <strong>
-                    {entry?.name ?? "Missing entry"}
-                    {entry?.deletedAt ? " (in Trash)" : ""}
-                  </strong>
-                  <p>{passage?.[1] ?? "Passage no longer present"}</p>
-                  {entry?.summary && <p>{entry.summary}</p>}
-                  {passage && (
+        </details>
+        {!nodeId && (
+          <EntryList
+            bookId={bookId}
+            catalog={catalog}
+            entries={entries}
+            busy={busy || !loaded}
+            action={action}
+            onSaved={(entry) =>
+              setEntries((es) => es.map((e) => (e.id === entry.id ? entry : e)))
+            }
+          />
+        )}
+        {nodeId && (
+          <>
+            <p>
+              Mark a selected passage in Writing tools, then link its saved
+              anchor to an entry. Removing passage text leaves its reference
+              visible as a missing passage.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const input = Object.fromEntries(new FormData(e.currentTarget));
+                void action(async () => {
+                  const ref = await api<Reference>(
+                    `/nodes/${nodeId}/references`,
+                    "POST",
+                    { ...input, expectedRevision: revision },
+                  );
+                  setRefs((rs) => [...rs, ref]);
+                });
+              }}
+            >
+              <fieldset
+                disabled={
+                  busy ||
+                  !loaded ||
+                  !anchors.length ||
+                  !entries.some((e) => !e.deletedAt)
+                }
+              >
+                <label>
+                  Saved passage
+                  <select name="anchorId">
+                    {anchors.map(([id, text]) => (
+                      <option key={id} value={id}>
+                        {text.slice(0, 100) || "Marked passage"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Bible entry
+                  <select name="entryId">
+                    {entries
+                      .filter((e) => !e.deletedAt)
+                      .map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name} ({e.entryType})
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <button>Link Reference</button>
+              </fieldset>
+            </form>
+            {!anchors.length && loaded && <p>No saved passage anchors yet.</p>}
+            <ul className="search-results">
+              {refs.map((r) => {
+                const entry = entries.find((e) => e.id === r.entryId);
+                const passage = anchors.find(([id]) => id === r.anchorId);
+                return (
+                  <li key={r.id}>
+                    <strong>
+                      {entry?.name ?? "Missing entry"}
+                      {entry?.deletedAt ? " (in Trash)" : ""}
+                    </strong>
+                    <p>{passage?.[1] ?? "Passage no longer present"}</p>
+                    {entry?.summary && <p>{entry.summary}</p>}
+                    {passage && (
+                      <button
+                        disabled={busy}
+                        onClick={() => onReveal?.(r.anchorId)}
+                      >
+                        Show Passage
+                      </button>
+                    )}
                     <button
                       disabled={busy}
-                      onClick={() => onReveal?.(r.anchorId)}
+                      onClick={() =>
+                        void action(async () => {
+                          const saved = await api<Reference>(
+                            `/nodes/${nodeId}/references/${r.id}`,
+                            "PUT",
+                            {
+                              deleted: !r.deletedAt,
+                              expectedUpdatedAt: r.updatedAt,
+                            },
+                          );
+                          setRefs((rs) =>
+                            rs.map((x) => (x.id === r.id ? saved : x)),
+                          );
+                        })
+                      }
                     >
-                      Show Passage
+                      {r.deletedAt
+                        ? "Restore Reference"
+                        : "Move Reference to Trash"}
                     </button>
-                  )}
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void action(async () => {
-                        const saved = await api<Reference>(
-                          `/nodes/${nodeId}/references/${r.id}`,
-                          "PUT",
-                          {
-                            deleted: !r.deletedAt,
-                            expectedUpdatedAt: r.updatedAt,
-                          },
-                        );
-                        setRefs((rs) =>
-                          rs.map((x) => (x.id === r.id ? saved : x)),
-                        );
-                      })
-                    }
-                  >
-                    {r.deletedAt
-                      ? "Restore Reference"
-                      : "Move Reference to Trash"}
-                  </button>
-                  {r.deletedAt && <span> In Trash</span>}
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
+                    {r.deletedAt && <span> In Trash</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </div>
     </section>
   );
 }
