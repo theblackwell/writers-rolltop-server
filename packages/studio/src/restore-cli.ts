@@ -18,7 +18,7 @@ try {
   await store.migrate();
   await db.transaction((q) => restoreBookBackup(q, backup));
   console.log(
-    `Recovered ${backup.version === 4 ? `the parent library (${backup.tables.books.length} books; target book ${backup.bookId})` : `book ${backup.bookId}`} into the empty scratch database. Inspect it before exporting or migrating any content.`,
+    `Recovered ${backup.version >= 4 ? `the parent library (${backup.tables.books.length} books; target book ${backup.bookId})` : `book ${backup.bookId}`} into the empty scratch database. Inspect it before exporting or migrating any content.`,
   );
 } finally {
   await db.close();

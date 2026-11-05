@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { worlds, editWorld, bookMembership } from "./worlds.ts";
 import { editDefinition } from "./template-editor.ts";
+import {
+  relationshipCatalog,
+  editRelationshipType,
+  editRelationship,
+} from "./relationships.ts";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -198,6 +203,33 @@ export function studioServer(
             "Use a valid item identifier.",
           );
       const method = req.method;
+      if (
+        parts[0] === "books" &&
+        parts[2] === "relationships" &&
+        parts.length === 3 &&
+        method === "GET"
+      )
+        return respond(res, 200, await relationshipCatalog(store.db, parts[1]));
+      if (
+        ((parts[0] === "books" && parts[2] === "relationships") ||
+          (parts[0] === "libraries" && parts[2] === "relationship-types")) &&
+        ((parts.length === 3 && method === "POST") ||
+          (parts.length === 4 && method === "PUT"))
+      ) {
+        if (parts[3] && !uuid.test(parts[3]))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid relationship or type.",
+          );
+        return respond(
+          res,
+          parts[3] ? 200 : 201,
+          await (
+            parts[0] === "books" ? editRelationship : editRelationshipType
+          )(store.db, parts[1], await body(req), parts[3]),
+        );
+      }
       if (
         parts[0] === "libraries" &&
         parts.length === 3 &&

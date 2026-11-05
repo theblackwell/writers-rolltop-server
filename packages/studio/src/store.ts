@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { migrateRelationships } from "./relationships.ts";
 import { migrateScopes, visibleEntries } from "./scopes.ts";
 import { scopeAllowsTarget } from "./scope-values.ts";
 import { structuredTypes, structuredValueError } from "./structured-values.ts";
@@ -89,18 +90,19 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 6)
+      if (rows[0]?.version > 7)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3, 4, 5, 6].includes(rows[0].version))
+        if (![1, 2, 3, 4, 5, 6, 7].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
         if (rows[0].version < 4) await this.migrateTemplates(q);
         if (rows[0].version < 5) await this.migrateWorlds(q);
         if (rows[0].version < 6) await migrateScopes(q);
+        if (rows[0].version < 7) await migrateRelationships(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -116,6 +118,7 @@ export class StudioStore {
       await this.migrateTemplates(q);
       await this.migrateWorlds(q);
       await migrateScopes(q);
+      await migrateRelationships(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -1365,6 +1368,10 @@ export class StudioStore {
         await q(
           "DELETE FROM manuscript_references WHERE entry_id IN (SELECT id FROM bible_entries WHERE book_id=$1)",
           [ctx.book.id],
+        );
+        await q(
+          `DELETE FROM relationships WHERE library_id=$1 AND (book_id=$2 OR from_entry_id IN (SELECT id FROM bible_entries WHERE book_id=$2) OR to_entry_id IN (SELECT id FROM bible_entries WHERE book_id=$2))`,
+          [ctx.libraryId, ctx.book.id],
         );
         // Shared canon survives book deletion; only this book's overrides leave.
         for (const row of (

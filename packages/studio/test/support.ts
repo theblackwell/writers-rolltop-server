@@ -26,7 +26,13 @@ export async function fixture() {
   return { pg, store, library, book, chapter, scene };
 }
 
+export async function removeRelationshipSchema(store: StudioStore) {
+  await store.db.query(
+    `DROP TABLE relationships; DROP TABLE relationship_types; ALTER TABLE bible_entries DROP CONSTRAINT entries_library_identity`,
+  );
+}
 export async function removeScopeSchema(store: StudioStore) {
+  await removeRelationshipSchema(store);
   await store.db.query(`DROP TRIGGER entry_library ON bible_entries;
     DROP FUNCTION entry_library_default();
     ALTER TABLE bible_entries DROP CONSTRAINT entries_scope;

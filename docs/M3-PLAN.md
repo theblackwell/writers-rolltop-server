@@ -51,6 +51,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B3b2/B3b3 — Shared canon, references and book overrides: implemented 2026-11-04.** Owner explicitly requested all remaining B3b in this session. Create book/world/series entries; explicitly edit shared canon; scoped field and passage links; This book only values, effective inheritance and Use Canon Again. Shared entry CAS and book→library locking protect concurrent edits; membership guards refuse stranding saved values. Schema v6/recovery v4 unchanged. 79 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL concurrent cross-book CAS/restart/recovery pass. **B3b complete; next B4a relationships**, not full M3 completion.
 
+- **B4a — Relationships: implemented 2026-11-04.** Library → Bible Entries → Relationships adds forward/inverse types, shared/book-specific links, notes and guarded reversible Trash/restore. Schema7 adds same-library type/entry/book FKs; recovery5 includes all types/links and restores v1–v4 files. Book purge removes dependent links after whole-library backup; live book-specific links guard membership changes. 85 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL persistence/recovery pass. Next: **B4b family and appearances**; no B4b/B4c work started.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

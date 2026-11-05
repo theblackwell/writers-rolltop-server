@@ -17,13 +17,15 @@ export const backupTables = [
   "documents",
   "document_revisions",
   "notes",
+  "relationship_types",
   "bible_entries",
+  "relationships",
   "manuscript_references",
 ] as const;
 export type BookBackup = {
   format: "writers-rolltop/book-recovery";
-  version: 1 | 2 | 3 | 4;
-  schemaVersion: 3 | 4 | 5 | 6;
+  version: 1 | 2 | 3 | 4 | 5;
+  schemaVersion: 3 | 4 | 5 | 6 | 7;
   createdAt: string;
   bookId: string;
   tables: Record<string, any[]>;
@@ -62,6 +64,8 @@ export async function captureBook(
     "universes",
     "series",
     "bible_entries",
+    "relationship_types",
+    "relationships",
   ])
     tables[table] = (
       await q(`SELECT * FROM ${table} WHERE library_id=$1`, [book.library_id])
@@ -87,8 +91,8 @@ export async function captureBook(
     throw new Error("Recovery cannot omit an externally referenced entry.");
   return {
     format: "writers-rolltop/book-recovery",
-    version: 4,
-    schemaVersion: 6,
+    version: 5,
+    schemaVersion: 7,
     createdAt: new Date().toISOString(),
     bookId,
     tables,
@@ -111,20 +115,26 @@ function validateBackup(data: BookBackup) {
   const legacy = data?.version === 1 && data?.schemaVersion === 3;
   const prior = data?.version === 2 && data?.schemaVersion === 4;
   const previous = data?.version === 3 && data?.schemaVersion === 5;
-  const current = data?.version === 4 && data?.schemaVersion === 6;
+  const beforeRelationships = data?.version === 4 && data?.schemaVersion === 6;
+  const current = data?.version === 5 && data?.schemaVersion === 7;
+  const compatibleTables = current
+    ? backupTables
+    : backupTables.filter(
+        (t) => !["relationship_types", "relationships"].includes(t),
+      );
   const tables = legacy
-    ? backupTables.filter(
+    ? compatibleTables.filter(
         (t) =>
           !["bible_templates", "bible_fields", "universes", "series"].includes(
             t,
           ),
       )
     : prior
-      ? backupTables.filter((t) => !["universes", "series"].includes(t))
-      : backupTables;
+      ? compatibleTables.filter((t) => !["universes", "series"].includes(t))
+      : compatibleTables;
   if (
     data?.format !== "writers-rolltop/book-recovery" ||
-    (!legacy && !prior && !previous && !current) ||
+    (!legacy && !prior && !previous && !beforeRelationships && !current) ||
     tables.some((t) => !Array.isArray(data.tables?.[t]))
   )
     throw new Error("Unsupported recovery backup.");
@@ -206,7 +216,11 @@ export async function restoreBookBackup(q: Query, backup: BookBackup) {
             (table === "books" && ["universe_id", "series_id"].includes(c)) ||
             (table === "series" && c === "universe_id") ||
             (table === "bible_entries" &&
-              ["universe_id", "series_id"].includes(c))
+              ["universe_id", "series_id"].includes(c)) ||
+            (table === "relationships" &&
+              ["type_id", "from_entry_id", "to_entry_id", "book_id"].includes(
+                c,
+              ))
           ),
       );
       // Column names originate in a backup file: quote and escape identifiers.

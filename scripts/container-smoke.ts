@@ -197,6 +197,74 @@ try {
   );
   assert.deepEqual(racing.map((r) => r.status).sort(), [200, 409]);
   sharedEntry = racing.find((r) => r.status === 200)!.data;
+  const relationshipTarget = await api(`/books/${book.id}/entries`, "POST", {
+    name: "Shared apprentice",
+    entryType: "character",
+    scopeKind: "universe",
+  });
+  let relationshipType = await api(
+    `/libraries/${library.id}/relationship-types`,
+    "POST",
+    { label: "mentor of", inverseLabel: "student of" },
+  );
+  relationshipType = await api(
+    `/libraries/${library.id}/relationship-types/${relationshipType.id}`,
+    "PUT",
+    {
+      label: "teaches",
+      inverseLabel: "learns from",
+      expectedUpdatedAt: relationshipType.updatedAt,
+    },
+  );
+  const relationshipInput = {
+    typeId: relationshipType.id,
+    fromEntryId: sharedId,
+    toEntryId: relationshipTarget.id,
+    expectedTypeUpdatedAt: relationshipType.updatedAt,
+  };
+  let sharedRelationship = await api(
+    `/books/${book.id}/relationships`,
+    "POST",
+    {
+      ...relationshipInput,
+      bookSpecific: false,
+      editSharedCanon: true,
+      note: "Shared mentoring",
+    },
+  );
+  sharedRelationship = await api(
+    `/books/${companion.id}/relationships/${sharedRelationship.id}`,
+    "PUT",
+    {
+      note: "Updated through companion",
+      expectedUpdatedAt: sharedRelationship.updatedAt,
+      editSharedCanon: true,
+    },
+  );
+  let localRelationship = await api(`/books/${book.id}/relationships`, "POST", {
+    ...relationshipInput,
+    bookSpecific: true,
+    note: "This book only",
+  });
+  localRelationship = await api(
+    `/books/${book.id}/relationships/${localRelationship.id}`,
+    "PUT",
+    { deleted: true, expectedUpdatedAt: localRelationship.updatedAt },
+  );
+  localRelationship = await api(
+    `/books/${book.id}/relationships/${localRelationship.id}`,
+    "PUT",
+    {
+      deleted: false,
+      expectedUpdatedAt: localRelationship.updatedAt,
+      expectedTypeUpdatedAt: relationshipType.updatedAt,
+    },
+  );
+  const companionRelations = await api(`/books/${companion.id}/relationships`);
+  assert.deepEqual(
+    companionRelations.relationships.map((r: any) => r.id),
+    [sharedRelationship.id],
+  );
   const companionDoc = await api(`/documents/${companionScene.id}`),
     companionAnchor = crypto.randomUUID();
   companionDoc.document.blocks[0].content = [
@@ -461,6 +529,7 @@ try {
   assert.equal((await api(`/documents/${scene.id}/revisions`)).length, 2);
   const finalCatalog = await api(`/libraries/${library.id}/templates`);
   const worldCatalog = await api(`/libraries/${library.id}/worlds`);
+  const relationshipCatalog = await api(`/books/${book.id}/relationships`);
   await compose("restart");
   await health();
   assert.deepEqual(
@@ -468,6 +537,10 @@ try {
     finalCatalog,
   );
   assert.deepEqual(await api(`/libraries/${library.id}/worlds`), worldCatalog);
+  assert.deepEqual(
+    await api(`/books/${book.id}/relationships`),
+    relationshipCatalog,
+  );
   const persistedEntry = (await api(`/books/${book.id}/entries`)).find(
     (e: any) => e.id === entry.id,
   );
@@ -554,6 +627,9 @@ try {
     const db = postgres(url.href);
     try {
       const store = new StudioStore(db);
+      const { relationshipCatalog } = await import('./packages/studio/src/relationships.ts');
+      const relations=await relationshipCatalog(db,'${book.id}');
+      if (relations.relationshipTypes[0]?.inverseLabel !== 'learns from' || relations.relationships.length !== 2 || !relations.relationships.some(r=>r.id==='${sharedRelationship.id}' && r.note==='Updated through companion') || !relations.relationships.some(r=>r.id==='${localRelationship.id}' && r.bookId==='${book.id}' && !r.deletedAt)) throw Error('Relationship recovery mismatch');
       const companion = await store.document('${companionScene.id}');
       if (companion.revision !== 2) throw Error('Companion manuscript recovery mismatch');
       const shared = (await store.entries('${companion.id}')).find(e=>e.id==='${sharedId}');
@@ -586,7 +662,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, shared canon/two-book overrides/passage links with concurrent CAS, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, shared canon/two-book overrides/passage links with concurrent CAS, directional/book-specific relationships and Trash/restore/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

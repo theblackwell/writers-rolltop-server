@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { Relationships } from "./relationships.tsx";
 import { TemplateManager } from "./template-manager.tsx";
 import React, { useEffect, useState } from "react";
 import { api } from "./api.ts";
@@ -24,6 +25,7 @@ export function References({
   const [book, setBook] = useState<any>(null);
   const [seriesWorld, setSeriesWorld] = useState<string>();
   const [libraryId, setLibraryId] = useState("");
+  const [relationshipsOpen, setRelationshipsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>({
     templates: [],
@@ -103,6 +105,14 @@ export function References({
   return (
     <section>
       {error && <p role="alert">{error}</p>}
+      {relationshipsOpen && (
+        <Relationships
+          bookId={bookId}
+          libraryId={libraryId}
+          entries={entries}
+          onClose={() => setRelationshipsOpen(false)}
+        />
+      )}
       {templatesOpen && (
         <TemplateManager
           libraryId={libraryId}
@@ -118,7 +128,7 @@ export function References({
           }}
         />
       )}
-      <div hidden={templatesOpen}>
+      <div hidden={templatesOpen || relationshipsOpen}>
         <p>
           Edit book entries here, or use Fields to edit their saved values.
           Shared canon changes apply to every book in its scope. Use This book
@@ -135,6 +145,14 @@ export function References({
             }}
           >
             Templates and Fields…
+          </button>
+        )}
+        {!nodeId && (
+          <button
+            disabled={busy || !loaded}
+            onClick={() => setRelationshipsOpen(true)}
+          >
+            Relationships…
           </button>
         )}
         <details>

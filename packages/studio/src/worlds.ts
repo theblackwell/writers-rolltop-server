@@ -315,6 +315,32 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
           }
         }
     }
+    const relations = (
+      await q(
+        "SELECT data FROM relationships WHERE book_id=$1 AND NOT (data ? 'deletedAt')",
+        [bookId],
+      )
+    ).rows.map((r) => r.data);
+    for (const relation of relations)
+      for (const id of [relation.fromEntryId, relation.toEntryId]) {
+        const target = all.find((e) => e.id === id);
+        if (
+          target &&
+          scopeAllowsTarget(
+            { scope: { kind: "book", id: bookId } },
+            target,
+            old,
+          ) &&
+          !scopeAllowsTarget(
+            { scope: { kind: "book", id: bookId } },
+            target,
+            futureBook,
+          )
+        )
+          invalid(
+            "Move this book's relationships to Trash before leaving the world or series of their entries.",
+          );
+      }
     const book = { ...old, updatedAt: stamp(old.updatedAt) };
     if (universeId) book.universeId = universeId;
     else delete book.universeId;
