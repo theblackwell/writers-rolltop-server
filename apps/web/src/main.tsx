@@ -139,6 +139,11 @@ function App() {
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressVersion, setProgressVersion] = useState(0);
   const [worldsOpen, setWorldsOpen] = useState(false);
+  const [appearance, setAppearance] = useState<{
+    nodeId: string;
+    anchorId: string;
+    requestId: string;
+  } | null>(null);
   const [bibleOpen, setBibleOpen] = useState(false);
   const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -698,6 +703,10 @@ function App() {
               <EditorPane
                 key={scene.id}
                 ref={pane}
+                reveal={
+                  appearance?.nodeId === scene.id ? appearance : undefined
+                }
+                onRevealed={() => setAppearance(null)}
                 onSaved={() => setProgressVersion((v) => v + 1)}
                 layout={layout}
                 node={scene}
@@ -735,7 +744,31 @@ function App() {
       )}
       {bibleOpen && book && (
         <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
-          <References bookId={book.id} />
+          <References
+            bookId={book.id}
+            onOpenAppearance={async (nodeId, anchorId) => {
+              if (!(await leave()))
+                throw new Error(
+                  "Resolve the current scene's draft or save conflict before opening another passage.",
+                );
+              const data = await api(`/books/${book.id}`);
+              const target = liveNodes(data.nodes).find((n) => n.id === nodeId);
+              if (!target || data.book.deletedAt)
+                throw new Error(
+                  "This scene is no longer available. Restore it from Trash before opening it.",
+                );
+              setBook(data.book);
+              setNodes(data.nodes);
+              setScene(target);
+              setView("manuscript");
+              setAppearance({
+                nodeId,
+                anchorId,
+                requestId: crypto.randomUUID(),
+              });
+              setBibleOpen(false);
+            }}
+          />
         </Dialog>
       )}
       {noting && book && (
@@ -859,14 +892,25 @@ function App() {
 
 const EditorPane = forwardRef<
   PaneHandle,
-  { node: Item; chapter: string; layout: Layout; onSaved: () => void }
->(function EditorPane({ node, chapter, layout, onSaved }, ref) {
+  {
+    node: Item;
+    chapter: string;
+    layout: Layout;
+    onSaved: () => void;
+    reveal?: { anchorId: string; requestId: string };
+    onRevealed: () => void;
+  }
+>(function EditorPane(
+  { node, chapter, layout, onSaved, reveal, onRevealed },
+  ref,
+) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkError, setLinkError] = useState("");
   const [referencesOpen, setReferencesOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState("Loading…");
   const [message, setMessage] = useState("");
+  const [revealNotice, setRevealNotice] = useState("");
   const [browserDraft, setBrowserDraft] = useState<Draft | null>(null);
   const [history, setHistory] = useState<any[] | null>(null);
   const [preview, setPreview] = useState<Draft | null>(null);
@@ -967,6 +1011,40 @@ const EditorPane = forwardRef<
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, []);
+  useEffect(() => {
+    if (!loaded || !editor || !reveal) return;
+    if (blocked.current) {
+      onRevealed();
+      return;
+    }
+    setRevealNotice("");
+    let start: number | undefined,
+      end = 0;
+    editor.state.doc.descendants((n, pos) => {
+      if (
+        n.isText &&
+        n.marks.some(
+          (m) =>
+            m.type.name === "rolltopAnchor" && m.attrs.id === reveal.anchorId,
+        )
+      ) {
+        start ??= pos;
+        end = pos + n.nodeSize;
+      }
+    });
+    if (start !== undefined)
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: start, to: end })
+        .scrollIntoView()
+        .run();
+    else
+      setRevealNotice(
+        "The linked passage is no longer present. The scene is open for review.",
+      );
+    onRevealed();
+  }, [loaded, editor, reveal?.requestId]);
   useImperativeHandle(ref, () => ({ flush, dirty: () => dirty.current }));
   async function flush(): Promise<boolean> {
     if (timer.current) clearTimeout(timer.current);
@@ -1175,6 +1253,7 @@ const EditorPane = forwardRef<
           {status}
         </span>
       </div>
+      {revealNotice && <p role="status">{revealNotice}</p>}
       {browserDraft && (
         <div className="recovery" role="alert">
           <strong>A browser draft is waiting.</strong>

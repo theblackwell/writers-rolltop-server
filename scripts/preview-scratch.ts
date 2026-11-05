@@ -171,6 +171,73 @@ await store.save(
   },
   saved.revision,
 );
+// Optional B4b demo stays entirely in volatile scratch storage.
+if (process.env.STUDIO_FAMILY_PREVIEW === "1") {
+  let character = (await store.entries(book.id)).find(
+    (e) => e.entryType === "character",
+  );
+  character = character
+    ? await store.updateEntry(book.id, character.id, {
+        givenName: "Ada",
+        familyName: "Vale",
+        expectedUpdatedAt: character.updatedAt,
+        editSharedCanon: true,
+      })
+    : await store.createEntry(book.id, {
+        name: "Ada Vale",
+        entryType: "character",
+      });
+  await store.createEntry(book.id, {
+    name: "Ben Vále",
+    entryType: "character",
+    scopeKind: character.scope.kind,
+  });
+  const original = await store.document(scene.id),
+    anchorId = crypto.randomUUID();
+  if (original.document.blocks[0].type !== "sceneBreak")
+    original.document.blocks[0].content[0] = {
+      type: "text",
+      text: "Ada Vale opened the letter.",
+      marks: [{ type: "anchor", id: anchorId }],
+    };
+  const updated = await store.save(
+    scene.id,
+    original.document,
+    original.revision,
+  );
+  await store.saveReference(scene.id, {
+    entryId: character.id,
+    anchorId,
+    expectedRevision: updated.revision,
+  });
+  const missing = await store.createNode(
+      book.id,
+      "An erased mention",
+      "scene",
+      chapter.id,
+    ),
+    content = await store.document(missing.id),
+    id = crypto.randomUUID();
+  if (content.document.blocks[0].type !== "sceneBreak")
+    content.document.blocks[0].content = [
+      { type: "text", text: "A lost mention", marks: [{ type: "anchor", id }] },
+    ];
+  const revision = await store.save(
+    missing.id,
+    content.document,
+    content.revision,
+  );
+  await store.saveReference(missing.id, {
+    entryId: character.id,
+    anchorId: id,
+    expectedRevision: revision.revision,
+  });
+  if (content.document.blocks[0].type !== "sceneBreak")
+    content.document.blocks[0].content = [
+      { type: "text", text: "The mention was removed." },
+    ];
+  await store.save(missing.id, content.document, revision.revision);
+}
 const server = studioServer(store, {
   origin: "http://localhost:4318",
   passwordHash: await passwordHash("scratch-preview-password"),

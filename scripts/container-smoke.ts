@@ -202,6 +202,31 @@ try {
     entryType: "character",
     scopeKind: "universe",
   });
+  const familyTarget = await api(`/books/${book.id}/entries`, "POST", {
+    name: "Other Keeper",
+    entryType: "character",
+    scopeKind: "universe",
+  });
+  const familyBefore = await api(
+    `/books/${book.id}/entries/${sharedId}/family`,
+  );
+  assert.ok(
+    familyBefore.matches.some(
+      (m: any) => m.entry.id === familyTarget.id && !m.related,
+    ),
+  );
+  const familyAnswer = await api(
+    `/books/${book.id}/entries/${sharedId}/family`,
+    "POST",
+    {
+      relation: "notRelated",
+      otherEntryId: familyTarget.id,
+      bookSpecific: true,
+      expectedUpdatedAt: sharedEntry.updatedAt,
+      expectedOtherUpdatedAt: familyTarget.updatedAt,
+    },
+  );
+  assert.equal(familyAnswer.relationshipType.label, "not related to");
   let relationshipType = await api(
     `/libraries/${library.id}/relationship-types`,
     "POST",
@@ -328,16 +353,67 @@ try {
     parentId: chapter.id,
   });
   const first = await api(`/documents/${scene.id}`);
+  const appearanceAnchor = crypto.randomUUID();
   first.document.blocks[0].content = [
     {
       type: "text",
       text: "This scratch manuscript survives a container restart. 雨 e\u0301",
+      marks: [{ type: "anchor", id: appearanceAnchor }],
     },
   ];
   await api(`/documents/${scene.id}`, "PUT", {
     document: first.document,
     expectedRevision: first.revision,
   });
+  await api(`/nodes/${scene.id}/references`, "POST", {
+    entryId: sharedId,
+    anchorId: appearanceAnchor,
+    expectedRevision: 2,
+  });
+  const missingScene = await api(`/books/${book.id}/nodes`, "POST", {
+    title: "Missing passage check",
+    kind: "scene",
+    parentId: chapter.id,
+  });
+  const missingDoc = await api(`/documents/${missingScene.id}`),
+    missingAnchor = crypto.randomUUID();
+  missingDoc.document.blocks[0].content = [
+    {
+      type: "text",
+      text: "Removed passage",
+      marks: [{ type: "anchor", id: missingAnchor }],
+    },
+  ];
+  await api(`/documents/${missingScene.id}`, "PUT", {
+    document: missingDoc.document,
+    expectedRevision: 1,
+  });
+  await api(`/nodes/${missingScene.id}/references`, "POST", {
+    entryId: sharedId,
+    anchorId: missingAnchor,
+    expectedRevision: 2,
+  });
+  missingDoc.document.blocks[0].content = [
+    { type: "text", text: "Replacement without anchor" },
+  ];
+  await api(`/documents/${missingScene.id}`, "PUT", {
+    document: missingDoc.document,
+    expectedRevision: 2,
+  });
+  const appearances = await api(
+    `/books/${book.id}/entries/${sharedId}/appearances`,
+  );
+  assert.equal(appearances.appearances.length, 2);
+  assert.equal(
+    appearances.appearances.find((a: any) => a.nodeId === scene.id)
+      .passageMissing,
+    false,
+  );
+  assert.equal(
+    appearances.appearances.find((a: any) => a.nodeId === missingScene.id)
+      .passageMissing,
+    true,
+  );
   const entry = await api(`/books/${book.id}/entries`, "POST", {
     name: "Corin",
     entryType: "character",
@@ -629,7 +705,15 @@ try {
       const store = new StudioStore(db);
       const { relationshipCatalog } = await import('./packages/studio/src/relationships.ts');
       const relations=await relationshipCatalog(db,'${book.id}');
-      if (relations.relationshipTypes[0]?.inverseLabel !== 'learns from' || relations.relationships.length !== 2 || !relations.relationships.some(r=>r.id==='${sharedRelationship.id}' && r.note==='Updated through companion') || !relations.relationships.some(r=>r.id==='${localRelationship.id}' && r.bookId==='${book.id}' && !r.deletedAt)) throw Error('Relationship recovery mismatch');
+      if (relations.relationshipTypes.find(t=>t.id==='${relationshipType.id}')?.inverseLabel !== 'learns from' || relations.relationships.length !== 3 || !relations.relationships.some(r=>r.id==='${sharedRelationship.id}' && r.note==='Updated through companion') || !relations.relationships.some(r=>r.id==='${localRelationship.id}' && r.bookId==='${book.id}' && !r.deletedAt)) throw Error('Relationship recovery mismatch');
+      const { familyMatches, entryAppearances } = await import('./packages/studio/src/entry-context.ts');
+      const family = await familyMatches(db,'${book.id}','${sharedId}');
+      if (!family.matches.some(m=>m.entry.id==='${familyTarget.id}' && m.labels.includes('not related to'))) throw Error('Family answer recovery mismatch');
+      const tombstonedAppearances = await entryAppearances(db,'${book.id}','${sharedId}');
+      if (tombstonedAppearances.appearances.length !== 1 || !tombstonedAppearances.appearances[0].passageMissing) throw Error('Recovered Trash appearances mismatch');
+      await store.restoreNode('${destination.id}');
+      const appearances = await entryAppearances(db,'${book.id}','${sharedId}');
+      if (appearances.appearances.length !== 2 || appearances.appearances.find(a=>a.nodeId==='${scene.id}').passageMissing || !appearances.appearances.find(a=>a.nodeId==='${missingScene.id}').passageMissing) throw Error('Appearance recovery mismatch');
       const companion = await store.document('${companionScene.id}');
       if (companion.revision !== 2) throw Error('Companion manuscript recovery mismatch');
       const shared = (await store.entries('${companion.id}')).find(e=>e.id==='${sharedId}');
@@ -662,7 +746,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, shared canon/two-book overrides/passage links with concurrent CAS, directional/book-specific relationships and Trash/restore/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, shared canon/two-book overrides/passage links with concurrent CAS, directional/book-specific relationships and Trash/restore/recovery, family answers and live/missing appearances, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

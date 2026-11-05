@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { sameFamilyName } from "../../../packages/studio/src/family-values.ts";
 import { useState } from "react";
 import { EntryFields } from "./entry-fields.tsx";
 import type { Catalog } from "./entry-fields.tsx";
@@ -30,6 +31,7 @@ export function EntryList({
   seriesWorld,
   entries,
   onSaved,
+  onInspect,
   busy,
   action,
 }: {
@@ -39,6 +41,7 @@ export function EntryList({
   seriesWorld?: string;
   entries: Entry[];
   onSaved: (entry: Entry) => void;
+  onInspect: (entryId: string) => void;
   busy: boolean;
   action: (work: () => Promise<void>) => Promise<void>;
 }) {
@@ -71,6 +74,18 @@ export function EntryList({
     );
     onSaved(updated);
     setEditing(undefined);
+    if (
+      (updated.name !== entry.name ||
+        updated.familyName !== entry.familyName) &&
+      !updated.deletedAt &&
+      entries.some(
+        (other) =>
+          other.id !== updated.id &&
+          !other.deletedAt &&
+          sameFamilyName(updated, other),
+      )
+    )
+      onInspect(updated.id);
   };
   return (
     <section aria-label="Bible entry details">
@@ -161,6 +176,15 @@ export function EntryList({
                 Fields…
               </button>
             )}
+            <button
+              disabled={busy || !!editing || !!fieldsEditing}
+              onClick={() => onInspect(entry.id)}
+              aria-label={`Family and appearances for ${entry.name}`}
+            >
+              {entry.entryType === "character"
+                ? "Family and Appearances…"
+                : "Appearances…"}
+            </button>
             <button
               disabled={busy || !!editing || !!fieldsEditing}
               onClick={() =>

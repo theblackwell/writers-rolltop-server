@@ -53,6 +53,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B4a — Relationships: implemented 2026-11-04.** Library → Bible Entries → Relationships adds forward/inverse types, shared/book-specific links, notes and guarded reversible Trash/restore. Schema7 adds same-library type/entry/book FKs; recovery5 includes all types/links and restores v1–v4 files. Book purge removes dependent links after whole-library backup; live book-specific links guard membership changes. 85 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL persistence/recovery pass. Next: **B4b family and appearances**; no B4b/B4c work started.
 
+- **B4b — Family and appearances: implemented 2026-11-04.** Same-name prompts after character creation/rename, explicit family answers including Not related, scoped relationship/type reuse and CAS. Current-book appearances distinguish live/missing passages and open/select saved anchors after flushing the editor; conflicted drafts refuse navigation. Schema7/recovery5 unchanged. 91 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL persistence/recovery pass. Next **B4c entry permanent deletion**; no B4c work started.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {
+  familyMatches,
+  saveFamilyAnswer,
+  entryAppearances,
+} from "./entry-context.ts";
 import { worlds, editWorld, bookMembership } from "./worlds.ts";
 import { editDefinition } from "./template-editor.ts";
 import {
@@ -203,6 +208,28 @@ export function studioServer(
             "Use a valid item identifier.",
           );
       const method = req.method;
+      if (
+        parts[0] === "books" &&
+        parts[2] === "entries" &&
+        parts.length === 5 &&
+        ["family", "appearances"].includes(parts[4]) &&
+        (method === "GET" || (parts[4] === "family" && method === "POST"))
+      ) {
+        if (!uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid entry.");
+        const result =
+          method === "POST"
+            ? await saveFamilyAnswer(
+                store.db,
+                parts[1],
+                parts[3],
+                await body(req),
+              )
+            : parts[4] === "family"
+              ? await familyMatches(store.db, parts[1], parts[3])
+              : await entryAppearances(store.db, parts[1], parts[3]);
+        return respond(res, method === "POST" ? 201 : 200, result);
+      }
       if (
         parts[0] === "books" &&
         parts[2] === "relationships" &&

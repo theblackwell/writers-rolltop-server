@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { EntryContext } from "./entry-context.tsx";
+import { sameFamilyName } from "../../../packages/studio/src/family-values.ts";
 import { Relationships } from "./relationships.tsx";
 import { TemplateManager } from "./template-manager.tsx";
 import React, { useEffect, useState } from "react";
@@ -17,11 +19,14 @@ export function References({
   bookId,
   nodeId,
   onReveal,
+  onOpenAppearance,
 }: {
   bookId: string;
   nodeId?: string;
   onReveal?: (id: string) => void;
+  onOpenAppearance?: (nodeId: string, anchorId: string) => Promise<void>;
 }) {
+  const [inspect, setInspect] = useState<string>();
   const [book, setBook] = useState<any>(null);
   const [seriesWorld, setSeriesWorld] = useState<string>();
   const [libraryId, setLibraryId] = useState("");
@@ -32,6 +37,7 @@ export function References({
     fields: [],
   });
   const [entries, setEntries] = useState<Entry[]>([]);
+  const inspected = entries.find((e) => e.id === inspect);
   const [refs, setRefs] = useState<Reference[]>([]);
   const [anchors, setAnchors] = useState<[string, string][]>([]);
   const [revision, setRevision] = useState(0);
@@ -105,6 +111,15 @@ export function References({
   return (
     <section>
       {error && <p role="alert">{error}</p>}
+      {inspected && (
+        <EntryContext
+          key={inspected.id}
+          entry={inspected}
+          bookId={bookId}
+          onClose={() => setInspect(undefined)}
+          onOpen={onOpenAppearance}
+        />
+      )}
       {relationshipsOpen && (
         <Relationships
           bookId={bookId}
@@ -128,7 +143,7 @@ export function References({
           }}
         />
       )}
-      <div hidden={templatesOpen || relationshipsOpen}>
+      <div hidden={templatesOpen || relationshipsOpen || !!inspected}>
         <p>
           Edit book entries here, or use Fields to edit their saved values.
           Shared canon changes apply to every book in its scope. Use This book
@@ -170,6 +185,13 @@ export function References({
                 );
                 setEntries((es) => [...es, entry]);
                 form.reset();
+                if (
+                  !nodeId &&
+                  entries.some(
+                    (other) => !other.deletedAt && sameFamilyName(entry, other),
+                  )
+                )
+                  setInspect(entry.id);
               });
             }}
           >
@@ -229,6 +251,10 @@ export function References({
             entries={entries}
             busy={busy || !loaded}
             action={action}
+            onInspect={(id) => {
+              setError("");
+              setInspect(id);
+            }}
             onSaved={(entry) =>
               setEntries((es) => es.map((e) => (e.id === entry.id ? entry : e)))
             }
