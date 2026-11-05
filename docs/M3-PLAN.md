@@ -55,6 +55,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B4b — Family and appearances: implemented 2026-11-04.** Same-name prompts after character creation/rename, explicit family answers including Not related, scoped relationship/type reuse and CAS. Current-book appearances distinguish live/missing passages and open/select saved anchors after flushing the editor; conflicted drafts refuse navigation. Schema7/recovery5 unchanged. 91 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL persistence/recovery pass. Next **B4c entry permanent deletion**; no B4c work started.
 
+- **B4c — Entry permanent deletion: implemented 2026-11-05.** Exact-name/Trash-version/entry CAS and explicit shared-scope intent; durable whole-library recovery before typed canon/override links, relationship/passages and POV/setting cleanup. Opaque data and canonical prose/revisions preserved; cross-library incoming links fail closed. 96 tests, TypeScript/build, focused live browser QA and ARM64 PostgreSQL/Podman failure/contention/restart/recovery checks pass. Schema7/recovery5 unchanged. **Next: B5a facts and knowledge**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

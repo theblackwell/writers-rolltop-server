@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { purgeEntry } from "./entry-purge.ts";
 import {
   familyMatches,
   saveFamilyAnswer,
@@ -208,6 +209,22 @@ export function studioServer(
             "Use a valid item identifier.",
           );
       const method = req.method;
+      if (
+        parts[0] === "books" &&
+        parts[2] === "entries" &&
+        parts.length === 5 &&
+        parts[4] === "purge" &&
+        method === "POST"
+      ) {
+        if (!uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid entry.");
+        return respond(
+          res,
+          200,
+          await purgeEntry(store, parts[1], parts[3], await body(req)),
+        );
+      }
+
       if (
         parts[0] === "books" &&
         parts[2] === "entries" &&

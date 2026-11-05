@@ -251,6 +251,13 @@ export function References({
             entries={entries}
             busy={busy || !loaded}
             action={action}
+            onPurged={async (id) => {
+              setEntries((es) => es.filter((e) => e.id !== id));
+              setRefs((rs) => rs.filter((r) => r.entryId !== id));
+              if (inspect === id) setInspect(undefined);
+              // Keep controls busy until dependent values are refreshed.
+              setEntries(await api<Entry[]>(`/books/${bookId}/entries`));
+            }}
             onInspect={(id) => {
               setError("");
               setInspect(id);

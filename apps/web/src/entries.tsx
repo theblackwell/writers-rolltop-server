@@ -31,6 +31,7 @@ export function EntryList({
   seriesWorld,
   entries,
   onSaved,
+  onPurged,
   onInspect,
   busy,
   action,
@@ -41,6 +42,7 @@ export function EntryList({
   seriesWorld?: string;
   entries: Entry[];
   onSaved: (entry: Entry) => void;
+  onPurged: (id: string) => Promise<void>;
   onInspect: (entryId: string) => void;
   busy: boolean;
   action: (work: () => Promise<void>) => Promise<void>;
@@ -48,6 +50,8 @@ export function EntryList({
   const [filter, setFilter] = useState("");
   const [kind, setKind] = useState("");
   const [trash, setTrash] = useState(false);
+  const [purging, setPurging] = useState<Entry>();
+  const [receipt, setReceipt] = useState("");
   const [editing, setEditing] = useState<string>();
   const [fieldsEditing, setFieldsEditing] = useState<string>();
   const fieldEntry = entries.find((e) => e.id === fieldsEditing);
@@ -114,6 +118,36 @@ export function EntryList({
         />
         Show Entry Trash
       </label>
+      {receipt && (
+        <p role="status">
+          Deleted permanently. Recovery backup: {receipt}. Keep this filename
+          for your administrator.
+        </p>
+      )}
+      {purging && (
+        <EntryPurge
+          entry={purging}
+          busy={busy}
+          onCancel={() => setPurging(undefined)}
+          onDelete={(confirmName, editSharedCanon) =>
+            action(async () => {
+              const result = await api<{ backup: string }>(
+                `/books/${bookId}/entries/${purging.id}/purge`,
+                "POST",
+                {
+                  confirmName,
+                  expectedUpdatedAt: purging.updatedAt,
+                  expectedDeletedAt: purging.deletedAt,
+                  editSharedCanon,
+                },
+              );
+              setReceipt(result.backup);
+              setPurging(undefined);
+              await onPurged(purging.id);
+            })
+          }
+        />
+      )}
       {selected && (
         <EntryForm
           key={selected.id + selected.updatedAt}
@@ -160,7 +194,7 @@ export function EntryList({
             <p style={{ whiteSpace: "pre-wrap" }}>{entry.summary}</p>
             {!entry.deletedAt && (
               <button
-                disabled={busy || !!editing || !!fieldsEditing}
+                disabled={busy || !!editing || !!fieldsEditing || !!purging}
                 onClick={() => setEditing(entry.id)}
                 aria-label={`Edit ${entry.name}`}
               >
@@ -169,7 +203,7 @@ export function EntryList({
             )}
             {!entry.deletedAt && (
               <button
-                disabled={busy || !!editing || !!fieldsEditing}
+                disabled={busy || !!editing || !!fieldsEditing || !!purging}
                 onClick={() => setFieldsEditing(entry.id)}
                 aria-label={`Fields for ${entry.name}`}
               >
@@ -177,7 +211,7 @@ export function EntryList({
               </button>
             )}
             <button
-              disabled={busy || !!editing || !!fieldsEditing}
+              disabled={busy || !!editing || !!fieldsEditing || !!purging}
               onClick={() => onInspect(entry.id)}
               aria-label={`Family and appearances for ${entry.name}`}
             >
@@ -186,7 +220,7 @@ export function EntryList({
                 : "Appearances…"}
             </button>
             <button
-              disabled={busy || !!editing || !!fieldsEditing}
+              disabled={busy || !!editing || !!fieldsEditing || !!purging}
               onClick={() =>
                 void action(() => save(entry, { deleted: !entry.deletedAt }))
               }
@@ -198,6 +232,18 @@ export function EntryList({
                   ? "Trash Shared Entry for All Books"
                   : "Move Entry to Trash"}
             </button>
+            {entry.deletedAt && (
+              <button
+                disabled={busy || !!editing || !!fieldsEditing || !!purging}
+                aria-label={`Delete entry ${entry.name} permanently`}
+                onClick={() => {
+                  setReceipt("");
+                  setPurging(entry);
+                }}
+              >
+                Delete Entry Permanently…
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -343,6 +389,64 @@ function EntryForm({
           </button>
         </div>
       </fieldset>
+    </form>
+  );
+}
+
+function EntryPurge({
+  entry,
+  busy,
+  onCancel,
+  onDelete,
+}: {
+  entry: Entry;
+  busy: boolean;
+  onCancel: () => void;
+  onDelete: (name: string, shared: boolean) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [shared, setShared] = useState(false);
+  const isShared = entry.scope?.kind !== "book";
+  return (
+    <form
+      aria-label={`Delete ${entry.name} permanently`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onDelete(name, shared);
+      }}
+    >
+      <h3>Delete {entry.name} Permanently</h3>
+      <p>
+        This removes the entry, its relationships and passage links, and clears
+        references to it in other entries and manuscript details. Manuscript
+        text stays. A verified library recovery backup is required first.
+      </p>
+      {isShared && (
+        <label className="entry-toggle" style={{ marginBottom: "1rem" }}>
+          <input
+            type="checkbox"
+            checked={shared}
+            disabled={busy}
+            onChange={(e) => setShared(e.target.checked)}
+          />
+          Delete this shared entry for every book in its scope
+        </label>
+      )}
+      <label>
+        Type the exact entry name to confirm
+        <input
+          value={name}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+          autoComplete="off"
+        />
+      </label>
+      <button type="button" disabled={busy} onClick={onCancel}>
+        Cancel
+      </button>
+      <button disabled={busy || name !== entry.name || (isShared && !shared)}>
+        Delete Permanently
+      </button>
     </form>
   );
 }

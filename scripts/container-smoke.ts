@@ -742,6 +742,137 @@ try {
   `,
     ),
   );
+  // B4c: permanent entry deletion uses the same whole-library recovery boundary.
+  const entryTrash = await api(
+    `/books/${book.id}/entries/${location.id}`,
+    "PUT",
+    {
+      deleted: true,
+      expectedUpdatedAt: location.updatedAt,
+    },
+  );
+  const entryConfirmation = {
+    confirmName: entryTrash.name,
+    expectedUpdatedAt: entryTrash.updatedAt,
+    expectedDeletedAt: entryTrash.deletedAt,
+  };
+  await assert.rejects(
+    () =>
+      api(`/books/${book.id}/entries/${location.id}/purge`, "POST", {
+        ...entryConfirmation,
+        expectedUpdatedAt: "stale",
+      }),
+    /409/,
+  );
+  await compose(
+    "exec",
+    "-T",
+    "studio",
+    "node",
+    "--input-type=module",
+    "-e",
+    `
+    import assert from 'node:assert/strict';
+    import { postgres } from './packages/studio/src/postgres.ts';
+    import { StudioStore } from './packages/studio/src/store.ts';
+    import { purgeEntry } from './packages/studio/src/entry-purge.ts';
+    const db=postgres(process.env.DATABASE_URL);
+    try {
+      await db.transaction(async q => {
+        await q('SELECT id FROM books WHERE id=$1 FOR UPDATE',['${companion.id}']);
+        await assert.rejects(() => purgeEntry(new StudioStore(db,'/studio/backups'),'${book.id}','${location.id}',${JSON.stringify(entryConfirmation)}),/snapshot/);
+      });
+    } finally { await db.close(); }
+  `,
+  );
+  await compose(
+    "exec",
+    "-T",
+    "studio",
+    "node",
+    "-e",
+    "require('node:fs').chmodSync('/studio/backups',0o500)",
+  );
+  try {
+    await assert.rejects(
+      () =>
+        api(
+          `/books/${book.id}/entries/${location.id}/purge`,
+          "POST",
+          entryConfirmation,
+        ),
+      /503/,
+    );
+    assert.ok(
+      (await api(`/books/${book.id}/entries`)).some(
+        (e: any) => e.id === location.id,
+      ),
+    );
+  } finally {
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "-e",
+      "require('node:fs').chmodSync('/studio/backups',0o700)",
+    );
+  }
+  const entryReceipt = await api(
+    `/books/${book.id}/entries/${location.id}/purge`,
+    "POST",
+    entryConfirmation,
+  );
+  assert.equal(
+    (await api(`/books/${book.id}/entries`)).find((e: any) => e.id === entry.id)
+      .values[homeField.id],
+    undefined,
+  );
+  await compose("restart", "studio");
+  await health();
+  assert.ok(
+    !(await api(`/books/${book.id}/entries`)).some(
+      (e: any) => e.id === location.id,
+    ),
+  );
+  await compose(
+    "exec",
+    "-T",
+    "postgres",
+    "createdb",
+    "-U",
+    "rolltop",
+    "entry_recovery_scratch",
+  );
+  console.log(
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "--input-type=module",
+      "-e",
+      `
+    import assert from 'node:assert/strict';
+    import { postgres } from './packages/studio/src/postgres.ts';
+    import { StudioStore } from './packages/studio/src/store.ts';
+    import { readBookBackup,restoreBookBackup,captureBook,backupTables } from './packages/studio/src/backup.ts';
+    const url=new URL(process.env.DATABASE_URL);url.pathname='/entry_recovery_scratch';
+    const db=postgres(url.href),store=new StudioStore(db);
+    try {
+      await store.migrate();
+      const backup=await readBookBackup('/studio/backups/${entryReceipt.backup}');
+      await db.transaction(q=>restoreBookBackup(q,backup));
+      const restored=await db.transaction(q=>captureBook(q,'${book.id}'));
+      const normalized=rows=>JSON.parse(JSON.stringify(rows)).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+      for(const table of backupTables) assert.deepEqual(normalized(restored.tables[table]),normalized(backup.tables[table]),table);
+      assert.equal((await store.entries('${book.id}')).find(e=>e.id==='${entry.id}').values['${homeField.id}'],'${location.id}');
+      console.log('PASS: entry purge exact CAS, real NOWAIT contention, backup failure, typed cleanup, restart and complete recovery.');
+    } finally {await db.close();}
+  `,
+    ),
+  );
+
   const page = await fetch(origin);
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
