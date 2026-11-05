@@ -20,6 +20,7 @@ test("facts migration v7 is atomic, repeatable and preserves documents", async (
   const f = await fixture();
   try {
     const before = await f.store.document(f.scene.id);
+    await f.store.db.query("DROP TABLE questions");
     await f.store.db.query("DROP TABLE facts");
     await f.store.db.query("UPDATE studio_schema SET version=7");
     const broken = new StudioStore({
@@ -43,7 +44,7 @@ test("facts migration v7 is atomic, repeatable and preserves documents", async (
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      8,
+      9,
     );
     assert.deepEqual(await f.store.document(f.scene.id), before);
   } finally {
@@ -204,7 +205,7 @@ test("facts join verified recovery, shared membership guards and backed entry/no
       { knower: "reader", nodeId: f.scene.id },
     ]);
     const backup = await readBookBackup(join(dir, receipt.backup));
-    assert.equal(backup.version, 6);
+    assert.equal(backup.version, 7);
     assert.equal(backup.tables.facts.length, 1);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q(`DELETE FROM ${t}`);

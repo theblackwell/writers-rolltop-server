@@ -228,8 +228,8 @@ test("full library recovery restores other manuscripts and shared canon/override
     assert.deepEqual(live.future, e.future);
     assert.deepEqual(await f.store.document(scene.id), before);
     const backup = await readBookBackup(join(dir, receipt.backup));
-    assert.equal(backup.version, 6);
-    assert.equal(backup.schemaVersion, 8);
+    assert.equal(backup.version, 7);
+    assert.equal(backup.schemaVersion, 9);
     assert.equal(backup.tables.books.length, 2);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q(`DELETE FROM ${t}`);

@@ -141,7 +141,7 @@ test("v2 upgrades preserve notes and manuscripts", async () => {
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      8,
+      9,
     );
     assert.deepEqual(await f.store.notes(f.book.id), [note]);
     assert.deepEqual(await f.store.document(f.scene.id), doc);

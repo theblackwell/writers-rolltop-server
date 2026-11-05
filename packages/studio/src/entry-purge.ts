@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { unlinkQuestions } from "./questions.ts";
 import { unlinkFacts } from "./facts.ts";
 import { basename } from "node:path";
 import { captureBook, writeBookBackup } from "./backup.ts";
@@ -180,6 +181,7 @@ export async function purgeEntry(
       );
     }
     await unlinkFacts(q, book.library_id, [id], []);
+    await unlinkQuestions(q, book.library_id, [id], []);
     for (const row of updates)
       await q("UPDATE bible_entries SET data=$2 WHERE id=$1", [
         row.id,

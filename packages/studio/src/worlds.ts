@@ -157,9 +157,21 @@ export async function editWorld(
           [libraryId, id],
         )
       ).rows;
-      if (members.length || children.length || entries.length || facts.length)
+      const questions = (
+        await q(
+          "SELECT id FROM questions WHERE library_id=$1 AND data->'scope'->>'id'=$2 LIMIT 1",
+          [libraryId, id],
+        )
+      ).rows;
+      if (
+        members.length ||
+        children.length ||
+        entries.length ||
+        facts.length ||
+        questions.length
+      )
         invalid(
-          "This item still has books, series, bible entries or facts, including Trash. Move or clear those first.",
+          "This item still has books, series, bible entries, facts or questions, including Trash. Move or clear those first.",
         );
       data.deletedAt = stamp(data.updatedAt);
     }
@@ -290,6 +302,24 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
       )
         invalid(
           "Clear this book's chapter/scene links in shared facts before leaving their scope.",
+        );
+    }
+    for (const { data: question } of (
+      await q("SELECT data FROM questions WHERE library_id=$1", [
+        row.library_id,
+      ])
+    ).rows) {
+      if (!left.includes(question.scope.id) || !question.nodeId) continue;
+      if (
+        (
+          await q(
+            "SELECT id FROM manuscript_nodes WHERE book_id=$1 AND id::text=$2 LIMIT 1",
+            [bookId, question.nodeId],
+          )
+        ).rows.length
+      )
+        invalid(
+          "Clear this book's chapter/scene links in shared questions before leaving their scope.",
         );
     }
     const all = (
