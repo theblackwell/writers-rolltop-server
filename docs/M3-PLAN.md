@@ -63,6 +63,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B5b1 — Internal question storage and recovery: implemented 2026-11-05.** B5b split before implementation; schema9 question text/topic/status/decision/about/decide-by validation, CAS/shared intent/Trash, recovery7 with legacy1–6 support and safe purge/membership integration. 106 tests, TypeScript/build and real ARM64 PostgreSQL shared-CAS/restart/exact recovery pass. No public API/UI. **Next B5b2 question and decision controls**, not B6a.
 
+- **B5b2a — Question and decision APIs: implemented 2026-11-05.** B5b2 split before implementation at the authenticated API boundary. Bounded independent catalog and POST/PUT expose canonical topic/status/optional decision/about/decide-by editing with scope isolation, explicit shared intent, CAS and reversible Trash. 108 tests and TypeScript/build pass; real PostgreSQL API verification recorded in M3-PROGRESS. No UI; **next B5b2b in-window controls**, not B6a.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement
