@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { purgeEntry } from "./entry-purge.ts";
+import { factCatalog, saveFact } from "./facts.ts";
 import {
   familyMatches,
   saveFamilyAnswer,
@@ -209,6 +210,22 @@ export function studioServer(
             "Use a valid item identifier.",
           );
       const method = req.method;
+      if (
+        parts[0] === "books" &&
+        parts[2] === "facts" &&
+        ((parts.length === 3 && ["GET", "POST"].includes(method!)) ||
+          (parts.length === 4 && method === "PUT"))
+      ) {
+        if (parts[3] && !uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid fact.");
+        return respond(
+          res,
+          method === "POST" ? 201 : 200,
+          method === "GET"
+            ? await factCatalog(store.db, parts[1])
+            : await saveFact(store.db, parts[1], await body(req), parts[3]),
+        );
+      }
       if (
         parts[0] === "books" &&
         parts[2] === "entries" &&

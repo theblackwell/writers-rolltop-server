@@ -59,6 +59,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B5a1 — Internal fact storage and recovery: implemented 2026-11-05.** B5a split before implementation. Schema8 fact storage/validation/CAS/Trash, recovery6 with legacy1–5 restoration and safe purge/membership integration; 99 tests, TypeScript/build and real ARM64 PostgreSQL restart/exact recovery pass. No public API/UI. **Next B5a2 fact and knowledge controls**, not B5b.
 
+- **B5a2 — Fact and knowledge controls: implemented 2026-11-05.** Authenticated bounded fact catalog and scoped POST/PUT, text/truth/about/established-at and unique reader/character knowledge editing, shared consent, CAS/draft preservation and reversible Trash. 102 tests, TypeScript/build, focused live browser and ARM64 PostgreSQL API/restart/exact recovery pass. Schema8/recovery6 unchanged. **B5a complete; next B5b questions and decisions**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

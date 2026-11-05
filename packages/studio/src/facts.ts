@@ -23,7 +23,123 @@ export async function migrateFacts(q: Query) {
  CREATE INDEX facts_by_library ON facts(library_id);
  UPDATE studio_schema SET version=8`);
 }
-/** Internal storage API only. Public routes and controls belong to B5a2. */
+/** Saved fact catalog and choices; a single book→library lock gives a consistent view. */
+export async function factCatalog(db: Database, bookId: string) {
+  return db.transaction(async (q) => {
+    const row = (
+      await q("SELECT data,library_id FROM books WHERE id=$1 FOR UPDATE", [
+        bookId,
+      ])
+    ).rows[0];
+    if (!row) throw new StudioError(404, "NOT_FOUND", "Book no longer exists.");
+    await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
+      row.library_id,
+    ]);
+    if (row.data.deletedAt) invalid("Restore the book before opening facts.");
+    const read = async (table: string) => {
+      const rows = (
+        await q(`SELECT data FROM ${table} WHERE library_id=$1 LIMIT 10001`, [
+          row.library_id,
+        ])
+      ).rows;
+      if (rows.length > 10000)
+        throw new StudioError(
+          413,
+          "CATALOG_TOO_LARGE",
+          "This library is too large for the facts catalog. No records were omitted.",
+        );
+      return rows.map((r) => r.data);
+    };
+    const books = await read("books"),
+      entries = await read("bible_entries"),
+      facts = await read("facts");
+    const worlds = await read("universes"),
+      series = await read("series");
+    const allNodes = (
+      await q(
+        "SELECT n.data FROM manuscript_nodes n JOIN books b ON b.id=n.book_id WHERE b.library_id=$1 LIMIT 10001",
+        [row.library_id],
+      )
+    ).rows.map((r) => r.data);
+    if (allNodes.length > 10000)
+      throw new StudioError(
+        413,
+        "CATALOG_TOO_LARGE",
+        "This library has too many manuscript items for the facts catalog. No records were omitted.",
+      );
+    const byId = new Map(allNodes.map((n) => [n.id, n]));
+    const isTrashed = (n: any): boolean => {
+      const seen = new Set();
+      while (n && !seen.has(n.id)) {
+        seen.add(n.id);
+        if (n.deletedAt) return true;
+        n = byId.get(n.parentId);
+      }
+      return false;
+    };
+    return {
+      book: row.data,
+      scopes: [
+        { kind: "book", id: bookId, title: "This book" },
+        ...worlds
+          .filter((w) => w.id === row.data.universeId && !w.deletedAt)
+          .map((w) => ({
+            kind: "universe",
+            id: w.id,
+            title: `Shared world: ${w.title}`,
+          })),
+        ...series
+          .filter((s) => s.id === row.data.seriesId && !s.deletedAt)
+          .map((s) => ({
+            kind: "series",
+            id: s.id,
+            title: `Shared series: ${s.title}`,
+          })),
+      ],
+      facts: facts
+        .filter((f) => factVisible(f, row.data))
+        .sort((a, b) =>
+          a.orderKey < b.orderKey
+            ? -1
+            : a.orderKey > b.orderKey
+              ? 1
+              : a.id.localeCompare(b.id),
+        ),
+      entries: entries.map((e) => ({
+        id: e.id,
+        name: e.name,
+        entryType: e.entryType,
+        scope: e.scope,
+        scopeTitle:
+          e.scope.kind === "book"
+            ? `Book: ${books.find((b) => b.id === e.scope.id)?.title ?? e.scope.id}`
+            : e.scope.kind === "universe"
+              ? `World: ${worlds.find((w) => w.id === e.scope.id)?.title ?? e.scope.id}`
+              : `Series: ${series.find((s) => s.id === e.scope.id)?.title ?? e.scope.id}`,
+        deletedAt: e.deletedAt,
+      })),
+      books: books.map((b) => ({
+        id: b.id,
+        title: b.title,
+        universeId: b.universeId,
+        seriesId: b.seriesId,
+        deletedAt: b.deletedAt,
+      })),
+      nodes: allNodes
+        .filter((n) => ["chapter", "scene"].includes(n.kind))
+        .map((n) => ({
+          id: n.id,
+          bookId: n.bookId,
+          title: n.title,
+          kind: n.kind,
+          inTrash:
+            isTrashed(n) || !!books.find((b) => b.id === n.bookId)?.deletedAt,
+        })),
+    };
+  });
+}
+
+/** Canonical fact writes shared by the HTTP API and internal recovery checks. */
 export async function saveFact(
   db: Database,
   bookId: string,

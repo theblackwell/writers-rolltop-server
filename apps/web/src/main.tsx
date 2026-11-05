@@ -25,6 +25,7 @@ import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
 import { BookProgress } from "./progress.tsx";
 import { wordCount } from "../../../packages/document-adapter/src/text.ts";
 import { References } from "./references.tsx";
+import { Facts } from "./facts.tsx";
 import { QuickNotes } from "./notes.tsx";
 import { ManuscriptSearch } from "./search.tsx";
 import { BookDetails } from "./book-details.tsx";
@@ -145,6 +146,7 @@ function App() {
     requestId: string;
   } | null>(null);
   const [bibleOpen, setBibleOpen] = useState(false);
+  const [factsOpen, setFactsOpen] = useState(false);
   const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
   const [details, setDetails] = useState<Item | null>(null);
@@ -435,6 +437,9 @@ function App() {
               </button>
               <button disabled={!book} onClick={() => setBibleOpen(true)}>
                 Bible Entries…
+              </button>
+              <button disabled={!book} onClick={() => setFactsOpen(true)}>
+                Facts and Knowledge…
               </button>
               <button
                 disabled={!book}
@@ -740,6 +745,11 @@ function App() {
           close={() => setProgressOpen(false)}
         >
           <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
+        </Dialog>
+      )}
+      {factsOpen && book && (
+        <Dialog title="Facts and Knowledge" close={() => setFactsOpen(false)}>
+          <Facts key={book.id} bookId={book.id} />
         </Dialog>
       )}
       {bibleOpen && book && (
