@@ -151,9 +151,15 @@ export async function editWorld(
           [libraryId, id],
         )
       ).rows;
-      if (members.length || children.length || entries.length)
+      const facts = (
+        await q(
+          "SELECT id FROM facts WHERE library_id=$1 AND data->'scope'->>'id'=$2 LIMIT 1",
+          [libraryId, id],
+        )
+      ).rows;
+      if (members.length || children.length || entries.length || facts.length)
         invalid(
-          "This item still has books, series or bible entries, including Trash. Move or clear those first.",
+          "This item still has books, series, bible entries or facts, including Trash. Move or clear those first.",
         );
       data.deletedAt = stamp(data.updatedAt);
     }
@@ -265,6 +271,27 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
     }
     // Local values and this-book overrides must still resolve after membership changes.
     const futureBook = { ...old, universeId, seriesId };
+    // Fact node links must remain inside their canonical scope, even in Trash.
+    for (const { data: fact } of (
+      await q("SELECT data FROM facts WHERE library_id=$1", [row.library_id])
+    ).rows) {
+      if (!left.includes(fact.scope.id)) continue;
+      const linked = [
+        fact.nodeId,
+        ...fact.knowledge.map((k: any) => k.nodeId),
+      ].filter(Boolean);
+      if (
+        (
+          await q(
+            "SELECT id FROM manuscript_nodes WHERE book_id=$1 AND id::text=ANY($2::text[]) LIMIT 1",
+            [bookId, linked],
+          )
+        ).rows.length
+      )
+        invalid(
+          "Clear this book's chapter/scene links in shared facts before leaving their scope.",
+        );
+    }
     const all = (
       await q("SELECT data FROM bible_entries WHERE library_id=$1", [
         row.library_id,

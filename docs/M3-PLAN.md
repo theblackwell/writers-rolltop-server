@@ -57,6 +57,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B4c — Entry permanent deletion: implemented 2026-11-05.** Exact-name/Trash-version/entry CAS and explicit shared-scope intent; durable whole-library recovery before typed canon/override links, relationship/passages and POV/setting cleanup. Opaque data and canonical prose/revisions preserved; cross-library incoming links fail closed. 96 tests, TypeScript/build, focused live browser QA and ARM64 PostgreSQL/Podman failure/contention/restart/recovery checks pass. Schema7/recovery5 unchanged. **Next: B5a facts and knowledge**, in another session.
 
+- **B5a1 — Internal fact storage and recovery: implemented 2026-11-05.** B5a split before implementation. Schema8 fact storage/validation/CAS/Trash, recovery6 with legacy1–5 restoration and safe purge/membership integration; 99 tests, TypeScript/build and real ARM64 PostgreSQL restart/exact recovery pass. No public API/UI. **Next B5a2 fact and knowledge controls**, not B5b.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

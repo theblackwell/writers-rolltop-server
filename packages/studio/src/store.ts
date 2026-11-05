@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { migrateFacts, unlinkFacts } from "./facts.ts";
 import { migrateRelationships } from "./relationships.ts";
 import { migrateScopes, visibleEntries } from "./scopes.ts";
 import { scopeAllowsTarget } from "./scope-values.ts";
@@ -90,12 +91,12 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 7)
+      if (rows[0]?.version > 8)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3, 4, 5, 6, 7].includes(rows[0].version))
+        if (![1, 2, 3, 4, 5, 6, 7, 8].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
@@ -103,6 +104,7 @@ export class StudioStore {
         if (rows[0].version < 5) await this.migrateWorlds(q);
         if (rows[0].version < 6) await migrateScopes(q);
         if (rows[0].version < 7) await migrateRelationships(q);
+        if (rows[0].version < 8) await migrateFacts(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -119,6 +121,7 @@ export class StudioStore {
       await this.migrateWorlds(q);
       await migrateScopes(q);
       await migrateRelationships(q);
+      await migrateFacts(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -1360,6 +1363,19 @@ export class StudioStore {
           }
       }
       const ids = [...doomed];
+      const purgedEntries =
+        type === "book"
+          ? (
+              await q("SELECT id FROM bible_entries WHERE book_id=$1", [id])
+            ).rows.map((r) => r.id)
+          : [];
+      await unlinkFacts(
+        q,
+        ctx.libraryId,
+        purgedEntries,
+        ids,
+        type === "book" ? id : undefined,
+      );
       await q(
         "DELETE FROM manuscript_references WHERE node_id=ANY($1::uuid[])",
         [ids],
