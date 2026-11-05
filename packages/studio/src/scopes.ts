@@ -39,12 +39,23 @@ export async function migrateScopes(q: Query) {
 }
 
 /** Native visibility is exactly the book, its series and its world. Includes Trash for review. */
-export async function visibleEntries(q: Query, bookId: string) {
+export async function visibleEntries(
+  q: Query,
+  bookId: string,
+  liveOnly = false,
+) {
   return (
     await q(
       `SELECT e.data FROM bible_entries e JOIN books b ON b.id=$1
     WHERE e.library_id=b.library_id AND
       (e.book_id=b.id OR e.universe_id=b.universe_id OR e.series_id=b.series_id)
+    ${
+      liveOnly
+        ? `AND NOT (e.data ? 'deletedAt')
+      AND (e.universe_id IS NULL OR EXISTS(SELECT 1 FROM universes u WHERE u.id=e.universe_id AND NOT (u.data ? 'deletedAt')))
+      AND (e.series_id IS NULL OR EXISTS(SELECT 1 FROM series s WHERE s.id=e.series_id AND NOT (s.data ? 'deletedAt')))`
+        : ""
+    }
     ORDER BY e.data->>'name',e.id`,
       [bookId],
     )

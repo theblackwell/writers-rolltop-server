@@ -21,6 +21,8 @@ export function References({
   nodeId?: string;
   onReveal?: (id: string) => void;
 }) {
+  const [book, setBook] = useState<any>(null);
+  const [seriesWorld, setSeriesWorld] = useState<string>();
   const [libraryId, setLibraryId] = useState("");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>({
@@ -42,18 +44,28 @@ export function References({
         ? api<Reference[]>(`/nodes/${nodeId}/references`)
         : Promise.resolve([]),
       nodeId ? api(`/documents/${nodeId}`) : Promise.resolve(null),
-      api(`/books/${bookId}`).then((book) =>
-        api<Catalog>(`/libraries/${book.libraryId}/templates`).then((c) => ({
+      api(`/books/${bookId}`).then(async (data) => {
+        const [c, worlds] = await Promise.all([
+          api<Catalog>(`/libraries/${data.libraryId}/templates`),
+          api(`/libraries/${data.libraryId}/worlds`),
+        ]);
+        return {
           ...c,
-          libraryId: book.libraryId,
-        })),
-      ),
+          libraryId: data.libraryId,
+          book: data.book,
+          seriesWorld: worlds.series.find(
+            (s: any) => s.id === data.book.seriesId,
+          )?.universeId,
+        };
+      }),
     ])
       .then(([e, r, d, c]) => {
         if (!live) return;
         setEntries(e);
         setCatalog(c);
         setLibraryId(c.libraryId);
+        setBook(c.book);
+        setSeriesWorld(c.seriesWorld);
         setRefs(r);
         if (d) {
           const passages = new Map<string, string>();
@@ -109,8 +121,9 @@ export function References({
       <div hidden={templatesOpen}>
         <p>
           Edit book entries here, or use Fields to edit their saved values.
-          Shared world and series entries are read-only here. Customize
-          definitions with Templates and Fields.
+          Shared canon changes apply to every book in its scope. Use This book
+          only in Fields for values specific to this book. Customize definitions
+          with Templates and Fields.
         </p>
         {!loaded && <p>Loading…</p>}
         {!nodeId && (
@@ -170,6 +183,18 @@ export function References({
                 </select>
               </label>
               <label>
+                Scope
+                <select name="scopeKind">
+                  <option value="book">This book</option>
+                  {book?.universeId && (
+                    <option value="universe">Shared world</option>
+                  )}
+                  {book?.seriesId && (
+                    <option value="series">Shared series</option>
+                  )}
+                </select>
+              </label>
+              <label>
                 Summary
                 <textarea name="summary" maxLength={20000} />
               </label>
@@ -181,6 +206,8 @@ export function References({
           <EntryList
             bookId={bookId}
             catalog={catalog}
+            book={book}
+            seriesWorld={seriesWorld}
             entries={entries}
             busy={busy || !loaded}
             action={action}
@@ -215,7 +242,7 @@ export function References({
                   busy ||
                   !loaded ||
                   !anchors.length ||
-                  !entries.some((e) => !e.deletedAt && e.scope?.kind === "book")
+                  !entries.some((e) => !e.deletedAt)
                 }
               >
                 <label>
@@ -232,7 +259,7 @@ export function References({
                   Bible entry
                   <select name="entryId">
                     {entries
-                      .filter((e) => !e.deletedAt && e.scope?.kind === "book")
+                      .filter((e) => !e.deletedAt)
                       .map((e) => (
                         <option key={e.id} value={e.id}>
                           {e.name} ({e.entryType})

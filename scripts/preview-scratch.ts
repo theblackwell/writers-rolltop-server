@@ -85,7 +85,7 @@ const scene = await store.createNode(
 await store.createNode(book.id, "The old orchard", "scene", chapter.id);
 const next = await store.createNode(book.id, "Before the rain", "chapter");
 await store.createNode(book.id, "The road home", "scene", next.id);
-await store.createBook(library.id, "Notes from a Quiet Town");
+const companion = await store.createBook(library.id, "Notes from a Quiet Town");
 // Optional shared-scope storage fixtures, only in this volatile development preview.
 if (process.env.STUDIO_SHARED_PREVIEW === "1") {
   const { editWorld, bookMembership } =
@@ -102,29 +102,49 @@ if (process.env.STUDIO_SHARED_PREVIEW === "1") {
     seriesId: series.id,
     expectedUpdatedAt: book.updatedAt,
   });
-  for (const [kind, id, name] of [
-    ["universe", world.id, "Orchard keeper"],
-    ["series", series.id, "The orchard secret"],
-  ]) {
-    const now = new Date().toISOString();
-    const entry = {
-      id: crypto.randomUUID(),
-      name,
-      entryType: "term",
-      aliases: [],
-      summary: "Shared reference record",
-      scope: { kind, id },
-      values: {},
-      overrides: [],
-      attachments: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-    await store.db.query(
-      "INSERT INTO bible_entries(id,book_id,data,library_id) VALUES($1,NULL,$2,$3)",
-      [entry.id, entry, library.id],
+  await bookMembership(store.db, companion.id, {
+    universeId: world.id,
+    seriesId: series.id,
+    expectedUpdatedAt: companion.updatedAt,
+  });
+  let entry = await store.createEntry(book.id, {
+    scopeKind: "universe",
+    entryType: "character",
+    name: "Orchard keeper",
+    summary: "Shared reference record",
+  });
+  const catalog = await store.templates(library.id);
+  const template = catalog.templates.find((t) => t.entryType === "character")!;
+  entry = await store.editEntryField(book.id, entry.id, {
+    templateId: template.id,
+    expectedUpdatedAt: entry.updatedAt,
+    expectedTemplateUpdatedAt: template.updatedAt,
+    editSharedCanon: true,
+  });
+  for (const [key, value] of [
+    ["role", "Keeper"],
+    ["age", 40],
+  ] as const) {
+    const field = catalog.fields.find(
+      (f) => f.templateId === template.id && f.key === key,
+    )!;
+    entry = await store.editEntryField(
+      book.id,
+      entry.id,
+      {
+        value,
+        expectedUpdatedAt: entry.updatedAt,
+        expectedFieldUpdatedAt: field.updatedAt,
+        editSharedCanon: true,
+      },
+      field.id,
     );
   }
+  await store.createEntry(book.id, {
+    scopeKind: "series",
+    entryType: "term",
+    name: "The orchard secret",
+  });
 }
 const saved = await store.document(scene.id);
 const paragraph = (text: string) => ({

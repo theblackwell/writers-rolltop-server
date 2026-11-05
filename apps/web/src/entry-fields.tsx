@@ -6,6 +6,7 @@ import {
 } from "./reference-field.tsx";
 import { StructuredForm, structuredSummary } from "./structured-fields.tsx";
 import { structuredTypes } from "../../../packages/studio/src/structured-values.ts";
+import { scopeAllowsTarget } from "../../../packages/studio/src/scope-values.ts";
 import { useState } from "react";
 import { api } from "./api.ts";
 import type { Entry } from "./entries.tsx";
@@ -33,6 +34,8 @@ export function EntryFields({
   entry,
   entries,
   bookId,
+  book,
+  seriesWorld,
   catalog,
   busy,
   action,
@@ -42,12 +45,26 @@ export function EntryFields({
   entry: Entry;
   entries: Entry[];
   bookId: string;
+  book: { id: string; universeId?: string; seriesId?: string };
+  seriesWorld?: string;
   catalog: Catalog;
   busy: boolean;
   action: (work: () => Promise<void>) => Promise<void>;
   onSaved: (e: Entry) => void;
   onClose: () => void;
 }) {
+  const shared = entry.scope?.kind !== "book";
+  const [mode, setMode] = useState<"canon" | "book">(shared ? "book" : "canon");
+  const override = entry.overrides?.find((o) => o.bookId === bookId);
+  const values =
+    shared && mode === "book"
+      ? { ...entry.values, ...override?.values }
+      : (entry.values ?? {});
+  const targetOwner =
+    mode === "book" ? { scope: { kind: "book", id: bookId } } : entry;
+  const candidateEntries = entries.filter((target) =>
+    scopeAllowsTarget(targetOwner, target, book, seriesWorld),
+  );
   const [templateId, setTemplateId] = useState(entry.templateId ?? "");
   const [fieldId, setFieldId] = useState("");
   const compatible = catalog.templates.filter(
@@ -62,7 +79,14 @@ export function EntryFields({
       const result = await api<Entry>(
         `/books/${bookId}/entries/${entry.id}/${path}`,
         "PUT",
-        { ...payload, expectedUpdatedAt: entry.updatedAt },
+        {
+          ...payload,
+          expectedUpdatedAt: entry.updatedAt,
+          ...(path.startsWith("values/") ? { mode } : {}),
+          ...(shared && (path === "template" || mode === "canon")
+            ? { editSharedCanon: true }
+            : {}),
+        },
       );
       onSaved(result);
       setFieldId("");
@@ -72,6 +96,28 @@ export function EntryFields({
   return (
     <section aria-label={`Fields for ${entry.name}`}>
       <h3>Fields for {entry.name}</h3>
+      {shared && (
+        <>
+          <label>
+            Edit values for
+            <select
+              aria-label="Edit values for"
+              disabled={busy || !!fieldId}
+              value={mode}
+              onChange={(e) => setMode(e.target.value as "canon" | "book")}
+            >
+              <option value="book">This book only</option>
+              <option value="canon">Shared canon (all books)</option>
+            </select>
+          </label>
+          <p>
+            {mode === "book"
+              ? "Saved overrides affect this book only. Clear Value or Use Canon Again removes its override and inherits canon."
+              : "These values are shared canon. Changes affect every book without its own override."}
+          </p>
+        </>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -83,7 +129,7 @@ export function EntryFields({
           });
         }}
       >
-        <fieldset disabled={busy || !!fieldId}>
+        <fieldset disabled={busy || !!fieldId || (shared && mode === "book")}>
           <label>
             Template
             <select
@@ -110,10 +156,15 @@ export function EntryFields({
               (hasValues && templateId !== (entry.templateId ?? ""))
             }
           >
-            Assign Template
+            {shared ? "Assign Shared Template" : "Assign Template"}
           </button>
         </fieldset>
       </form>
+      {shared && mode === "book" && (
+        <p>
+          Templates belong to shared canon. Choose Shared canon to assign one.
+        </p>
+      )}
       {hasValues && (
         <p>
           Template changes are locked while saved values or overrides exist, so
@@ -133,12 +184,36 @@ export function EntryFields({
             <strong>{f.label}</strong>
             {f.required && " (suggested)"}
             <p style={{ whiteSpace: "pre-wrap" }}>
-              {Object.hasOwn(entry.values ?? {}, f.id)
+              {Object.hasOwn(values, f.id)
                 ? referenceTypes.includes(f.fieldType)
-                  ? referenceSummary(entry.values![f.id], entries)
-                  : structuredSummary(f, entry.values![f.id])
+                  ? referenceSummary(values[f.id], entries)
+                  : structuredSummary(f, values[f.id])
                 : "Not set"}
             </p>
+            {shared && (
+              <p>
+                {mode === "canon"
+                  ? "Shared canon"
+                  : Object.hasOwn(override?.values ?? {}, f.id)
+                    ? "This book overrides canon"
+                    : "Inherited from canon"}
+              </p>
+            )}
+            {shared &&
+              mode === "book" &&
+              Object.hasOwn(override?.values ?? {}, f.id) && (
+                <button
+                  disabled={busy || !!fieldId}
+                  onClick={() =>
+                    void save(`values/${f.id}`, {
+                      value: null,
+                      expectedFieldUpdatedAt: f.updatedAt,
+                    })
+                  }
+                >
+                  Use Canon Again for {f.label}
+                </button>
+              )}
             {[
               "shortText",
               "longText",
@@ -168,8 +243,8 @@ export function EntryFields({
           <ReferenceField
             key={field.id}
             field={field}
-            value={entry.values?.[field.id]}
-            entries={entries}
+            value={values[field.id]}
+            entries={candidateEntries}
             busy={busy}
             onCancel={() => setFieldId("")}
             onSave={(value) =>
@@ -183,7 +258,7 @@ export function EntryFields({
           <StructuredForm
             key={field.id}
             field={field}
-            value={entry.values?.[field.id]}
+            value={values[field.id]}
             busy={busy}
             onCancel={() => setFieldId("")}
             onSave={(value) =>
@@ -197,7 +272,7 @@ export function EntryFields({
           <ScalarForm
             key={field.id}
             field={field}
-            value={entry.values?.[field.id]}
+            value={values[field.id]}
             busy={busy}
             onCancel={() => setFieldId("")}
             onSave={(value) =>

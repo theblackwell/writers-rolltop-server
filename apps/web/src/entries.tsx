@@ -17,11 +17,17 @@ export type Entry = {
   scope?: { kind: string; id: string };
   templateId?: string;
   values?: Record<string, unknown>;
-  overrides?: unknown[];
+  overrides?: {
+    bookId: string;
+    values: Record<string, unknown>;
+    [key: string]: unknown;
+  }[];
 };
 export function EntryList({
   bookId,
   catalog,
+  book,
+  seriesWorld,
   entries,
   onSaved,
   busy,
@@ -29,6 +35,8 @@ export function EntryList({
 }: {
   bookId: string;
   catalog: Catalog;
+  book: { id: string; universeId?: string; seriesId?: string };
+  seriesWorld?: string;
   entries: Entry[];
   onSaved: (entry: Entry) => void;
   busy: boolean;
@@ -55,7 +63,11 @@ export function EntryList({
     const updated = await api<Entry>(
       `/books/${bookId}/entries/${entry.id}`,
       "PUT",
-      { ...patch, expectedUpdatedAt: entry.updatedAt },
+      {
+        ...patch,
+        expectedUpdatedAt: entry.updatedAt,
+        ...(entry.scope?.kind !== "book" ? { editSharedCanon: true } : {}),
+      },
     );
     onSaved(updated);
     setEditing(undefined);
@@ -101,6 +113,8 @@ export function EntryList({
           entry={fieldEntry}
           entries={entries}
           bookId={bookId}
+          book={book}
+          seriesWorld={seriesWorld}
           catalog={catalog}
           busy={busy}
           action={action}
@@ -131,26 +145,16 @@ export function EntryList({
             <p style={{ whiteSpace: "pre-wrap" }}>{entry.summary}</p>
             {!entry.deletedAt && (
               <button
-                disabled={
-                  busy ||
-                  !!editing ||
-                  !!fieldsEditing ||
-                  entry.scope?.kind !== "book"
-                }
+                disabled={busy || !!editing || !!fieldsEditing}
                 onClick={() => setEditing(entry.id)}
                 aria-label={`Edit ${entry.name}`}
               >
-                Edit…
+                {entry.scope?.kind !== "book" ? "Edit Shared Canon…" : "Edit…"}
               </button>
             )}
             {!entry.deletedAt && (
               <button
-                disabled={
-                  busy ||
-                  !!editing ||
-                  !!fieldsEditing ||
-                  entry.scope?.kind !== "book"
-                }
+                disabled={busy || !!editing || !!fieldsEditing}
                 onClick={() => setFieldsEditing(entry.id)}
                 aria-label={`Fields for ${entry.name}`}
               >
@@ -158,18 +162,17 @@ export function EntryList({
               </button>
             )}
             <button
-              disabled={
-                busy ||
-                !!editing ||
-                !!fieldsEditing ||
-                entry.scope?.kind !== "book"
-              }
+              disabled={busy || !!editing || !!fieldsEditing}
               onClick={() =>
                 void action(() => save(entry, { deleted: !entry.deletedAt }))
               }
               aria-label={`${entry.deletedAt ? "Restore" : "Trash"} entry ${entry.name}`}
             >
-              {entry.deletedAt ? "Restore Entry" : "Move Entry to Trash"}
+              {entry.deletedAt
+                ? "Restore Entry"
+                : entry.scope?.kind !== "book"
+                  ? "Trash Shared Entry for All Books"
+                  : "Move Entry to Trash"}
             </button>
           </li>
         ))}
@@ -230,6 +233,12 @@ function EntryForm({
       }}
     >
       <h3>Edit {entry.name}</h3>
+      {entry.scope?.kind !== "book" && (
+        <p>
+          These details are shared canon. Saving changes them for every book in
+          this scope.
+        </p>
+      )}
       <fieldset disabled={busy}>
         {character ? (
           <>
@@ -291,10 +300,7 @@ function EntryForm({
           />
           Name still to be decided
         </label>
-        <p>
-          Changes save when you choose Save Entry. Type and book scope stay the
-          same.
-        </p>
+        <p>Changes save explicitly. Entry type and scope stay the same.</p>
         <div className="dialog-actions">
           <button type="button" onClick={onCancel}>
             Cancel Edit
@@ -305,7 +311,11 @@ function EntryForm({
               character ? !(given.trim() || family.trim()) : !name.trim()
             }
           >
-            {busy ? "Saving…" : "Save Entry"}
+            {busy
+              ? "Saving…"
+              : entry.scope?.kind !== "book"
+                ? "Save Shared Canon"
+                : "Save Entry"}
           </button>
         </div>
       </fieldset>

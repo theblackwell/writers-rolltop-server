@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { scopeAllowsTarget } from "./scope-values.ts";
 import { randomUUID } from "node:crypto";
 import { StudioError, title } from "./store.ts";
 import type { Database, Query } from "./store.ts";
@@ -261,6 +262,58 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
         invalid(
           "Clear this book's values on entries in the world or series it would leave first.",
         );
+    }
+    // Local values and this-book overrides must still resolve after membership changes.
+    const futureBook = { ...old, universeId, seriesId };
+    const all = (
+      await q("SELECT data FROM bible_entries WHERE library_id=$1", [
+        row.library_id,
+      ])
+    ).rows.map((r) => r.data);
+    const fields = (
+      await q(
+        "SELECT data FROM bible_fields WHERE library_id=$1 AND data->>'fieldType' IN ('entryReference','entryReferences')",
+        [row.library_id],
+      )
+    ).rows.map((r) => r.data);
+    for (const entry of all) {
+      const maps =
+        entry.scope?.kind === "book" && entry.scope.id === bookId
+          ? [entry.values]
+          : (entry.overrides ?? [])
+              .filter((o: any) => o.bookId === bookId)
+              .map((o: any) => o.values);
+      for (const values of maps)
+        for (const field of fields) {
+          const value = values?.[field.id];
+          const ids =
+            field.fieldType === "entryReferences"
+              ? Array.isArray(value)
+                ? value
+                : []
+              : value == null
+                ? []
+                : [value];
+          for (const id of ids) {
+            const target = all.find((e) => e.id === id);
+            if (
+              target &&
+              scopeAllowsTarget(
+                { scope: { kind: "book", id: bookId } },
+                target,
+                old,
+              ) &&
+              !scopeAllowsTarget(
+                { scope: { kind: "book", id: bookId } },
+                target,
+                futureBook,
+              )
+            )
+              invalid(
+                "Clear saved entry links to the world or series this book would leave first.",
+              );
+          }
+        }
     }
     const book = { ...old, updatedAt: stamp(old.updatedAt) };
     if (universeId) book.universeId = universeId;

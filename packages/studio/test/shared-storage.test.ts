@@ -119,7 +119,7 @@ test("schema6 adopts legacy shared scope without rewriting canonical data and re
   }
 });
 
-test("visible entries include exactly book/world/series, preserve Trash and keep shared writes unavailable", async () => {
+test("visible entries include exactly book/world/series, preserve Trash and require explicit shared canon writes", async () => {
   const f = await fixture();
   try {
     const { w, s, other } = await hierarchy(f);
@@ -156,7 +156,7 @@ test("visible entries include exactly book/world/series, preserve Trash and keep
           name: "Unsafe",
           expectedUpdatedAt: world.updatedAt,
         }),
-      /no longer/,
+      /shared canon/,
     );
     const template = (await f.store.templates(f.library.id)).templates.find(
       (t) => t.entryType === "term",
@@ -168,7 +168,7 @@ test("visible entries include exactly book/world/series, preserve Trash and keep
           expectedUpdatedAt: world.updatedAt,
           expectedTemplateUpdatedAt: template.updatedAt,
         }),
-      /no longer/,
+      /shared canon/,
     );
   } finally {
     await f.pg.close();

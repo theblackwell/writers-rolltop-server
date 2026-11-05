@@ -25,10 +25,12 @@ export function entryInput(input: any, updating = false) {
         "toBeNamed",
         "expectedUpdatedAt",
         "deleted",
+        "editSharedCanon",
       ]
     : [
         "name",
         "entryType",
+        "scopeKind",
         "givenName",
         "familyName",
         "aliases",
@@ -42,6 +44,17 @@ export function entryInput(input: any, updating = false) {
     Object.keys(input).some((k) => !allowed.includes(k))
   )
     invalid("Provide only editable bible-entry details.");
+  if (
+    input.editSharedCanon !== undefined &&
+    typeof input.editSharedCanon !== "boolean"
+  )
+    invalid("Confirm shared canon explicitly.");
+  if (
+    !updating &&
+    input.scopeKind !== undefined &&
+    !["book", "universe", "series"].includes(input.scopeKind)
+  )
+    invalid("Choose book, world or series scope.");
   if (!updating && !entryTypes.includes(input.entryType))
     invalid("Choose a bible entry type.");
   if (updating && typeof input.expectedUpdatedAt !== "string")
@@ -50,7 +63,7 @@ export function entryInput(input: any, updating = false) {
     input.deleted !== undefined &&
     (typeof input.deleted !== "boolean" ||
       Object.keys(input).some(
-        (k) => !["deleted", "expectedUpdatedAt"].includes(k),
+        (k) => !["deleted", "expectedUpdatedAt", "editSharedCanon"].includes(k),
       ))
   )
     invalid("Choose Trash or restore separately from editing details.");

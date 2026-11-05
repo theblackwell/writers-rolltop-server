@@ -49,6 +49,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B3b1 — Shared storage, visibility and recovery: implemented 2026-11-04.** B3b split before scoped writes. Schema v6 moves shared entries to library ownership with scope FKs; native visibility and read-only scope labels. Recovery v4/schema6 takes a whole-library snapshot, preserves legacy v1–v3 restore and refuses competing book locks; book purge keeps shared canon and removes only that book's overrides. 71 tests, TypeScript/build, browser QA and ARM64 PostgreSQL/Podman recovery/real lock-contention smoke pass. Next **B3b2 scoped canon editing/references**, then B3b3 overrides; B3b is not complete.
 
+- **B3b2/B3b3 — Shared canon, references and book overrides: implemented 2026-11-04.** Owner explicitly requested all remaining B3b in this session. Create book/world/series entries; explicitly edit shared canon; scoped field and passage links; This book only values, effective inheritance and Use Canon Again. Shared entry CAS and book→library locking protect concurrent edits; membership guards refuse stranding saved values. Schema v6/recovery v4 unchanged. 79 tests, TypeScript/build, browser QA and ARM64 Podman/PostgreSQL concurrent cross-book CAS/restart/recovery pass. **B3b complete; next B4a relationships**, not full M3 completion.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

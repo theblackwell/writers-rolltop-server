@@ -125,7 +125,96 @@ try {
     kind: "scene",
     parentId: companionChapter.id,
   });
-  const sharedId = crypto.randomUUID();
+  let sharedEntry = await api(`/books/${book.id}/entries`, "POST", {
+    name: "Shared keeper",
+    entryType: "character",
+    scopeKind: "universe",
+  });
+  const sharedId = sharedEntry.id;
+  const sharedTemplate = catalog.templates.find(
+    (t: any) => t.entryType === "character",
+  );
+  const sharedRole = catalog.fields.find(
+    (f: any) => f.templateId === sharedTemplate.id && f.key === "role",
+  );
+  sharedEntry = await api(
+    `/books/${book.id}/entries/${sharedId}/template`,
+    "PUT",
+    {
+      templateId: sharedTemplate.id,
+      expectedUpdatedAt: sharedEntry.updatedAt,
+      expectedTemplateUpdatedAt: sharedTemplate.updatedAt,
+      editSharedCanon: true,
+    },
+  );
+  async function sharedValue(bookId: string, value: unknown, mode: string) {
+    sharedEntry = await api(
+      `/books/${bookId}/entries/${sharedId}/values/${sharedRole.id}`,
+      "PUT",
+      {
+        value,
+        mode,
+        editSharedCanon: mode === "canon",
+        expectedUpdatedAt: sharedEntry.updatedAt,
+        expectedFieldUpdatedAt: sharedRole.updatedAt,
+      },
+    );
+  }
+  await sharedValue(book.id, "Shared canon", "canon");
+  await sharedValue(book.id, "First book", "book");
+  await sharedValue(companion.id, "Second book", "book");
+  sharedEntry = await api(`/books/${companion.id}/entries/${sharedId}`, "PUT", {
+    summary: "Canon summary from another book",
+    editSharedCanon: true,
+    expectedUpdatedAt: sharedEntry.updatedAt,
+  });
+  const sharedExpected = sharedEntry.updatedAt;
+  const racing = await Promise.all(
+    [
+      [book.id, "First book"],
+      [companion.id, "Second book"],
+    ].map(async ([bookId, value]) => {
+      const r = await fetch(
+        origin +
+          `/api/books/${bookId}/entries/${sharedId}/values/${sharedRole.id}`,
+        {
+          method: "PUT",
+          headers: {
+            Origin: origin,
+            Cookie: cookie,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            value,
+            mode: "book",
+            expectedUpdatedAt: sharedExpected,
+            expectedFieldUpdatedAt: sharedRole.updatedAt,
+          }),
+        },
+      );
+      return { status: r.status, data: await r.json() };
+    }),
+  );
+  assert.deepEqual(racing.map((r) => r.status).sort(), [200, 409]);
+  sharedEntry = racing.find((r) => r.status === 200)!.data;
+  const companionDoc = await api(`/documents/${companionScene.id}`),
+    companionAnchor = crypto.randomUUID();
+  companionDoc.document.blocks[0].content = [
+    {
+      type: "text",
+      text: "Shared companion passage",
+      marks: [{ type: "anchor", id: companionAnchor }],
+    },
+  ];
+  const companionSaved = await api(`/documents/${companionScene.id}`, "PUT", {
+    document: companionDoc.document,
+    expectedRevision: companionDoc.revision,
+  });
+  await api(`/nodes/${companionScene.id}/references`, "POST", {
+    entryId: sharedId,
+    anchorId: companionAnchor,
+    expectedRevision: companionSaved.revision,
+  });
   // Storage-only shared setup remains confined to this disposable project.
   console.log(
     await compose(
@@ -141,9 +230,6 @@ try {
     const { default: assert } = await import('node:assert/strict');
     const db = postgres(process.env.DATABASE_URL);
     try {
-      const now = new Date().toISOString();
-      const e = { id: '${sharedId}', name: 'Shared term', entryType: 'term', scope: {kind:'universe',id:'${worldId}'}, values:{future:'canon'}, overrides:[{bookId:'${book.id}',values:{future:'first'}},{bookId:'${companion.id}',values:{future:'second'}}], aliases:[], attachments:[],createdAt:now,updatedAt:now };
-      await db.query('INSERT INTO bible_entries(id,book_id,data,library_id) VALUES($1,NULL,$2,$3)', [e.id,e,'${library.id}']);
       await db.transaction(async lock => {
         await lock('SELECT id FROM books WHERE id=$1 FOR UPDATE', ['${companion.id}']);
         await assert.rejects(() => db.transaction(q => captureBook(q,'${book.id}')), e => e.code === '55P03');
@@ -469,9 +555,10 @@ try {
     try {
       const store = new StudioStore(db);
       const companion = await store.document('${companionScene.id}');
-      if (companion.revision !== 1) throw Error('Companion manuscript recovery mismatch');
+      if (companion.revision !== 2) throw Error('Companion manuscript recovery mismatch');
       const shared = (await store.entries('${companion.id}')).find(e=>e.id==='${sharedId}');
-      if (shared?.values.future !== 'canon' || shared.overrides.length !== 2 || shared.overrides[1].values.future !== 'second') throw Error('Shared canon/override recovery mismatch');
+      if (shared?.values['${sharedRole.id}'] !== 'Shared canon' || shared.overrides.length !== 2 || shared.overrides.find(o=>o.bookId==='${companion.id}').values['${sharedRole.id}'] !== 'Second book') throw Error('Shared canon/override recovery mismatch');
+      if ((await store.references('${companionScene.id}')).length !== 1) throw Error('Shared passage recovery mismatch');
       const restoredBook = (await store.book('${book.id}')).book;
       if (restoredBook.universeId !== '${worldId}' || restoredBook.seriesId !== '${seriesId}') throw Error('World membership recovery mismatch');
       if ((await db.query('SELECT id FROM universes WHERE id=$1', ['${worldId}'])).rows.length !== 1) throw Error('World recovery mismatch');
@@ -499,7 +586,7 @@ try {
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
   console.log(
-    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
+    "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, shared canon/two-book overrides/passage links with concurrent CAS, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );
 } finally {
   try {

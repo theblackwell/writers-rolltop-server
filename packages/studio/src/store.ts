@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { migrateScopes, visibleEntries } from "./scopes.ts";
+import { scopeAllowsTarget } from "./scope-values.ts";
 import { structuredTypes, structuredValueError } from "./structured-values.ts";
 import { initializeTemplates } from "./templates.ts";
 import { entryInput, editEntry } from "./entries.ts";
@@ -232,6 +233,31 @@ export class StudioStore {
     return visibleEntries(this.db.query, bookId);
   }
 
+  private async visibleEntry(
+    q: Query,
+    ctx: { book: RecordData; libraryId: string },
+    id: string,
+  ) {
+    const entry = required(
+      (await visibleEntries(q, ctx.book.id)).find((e) => e.id === id),
+    );
+    if (entry.scope.kind !== "book") {
+      const table = entry.scope.kind === "universe" ? "universes" : "series";
+      const parent = (
+        await q(`SELECT data FROM ${table} WHERE id=$1 AND library_id=$2`, [
+          entry.scope.id,
+          ctx.libraryId,
+        ])
+      ).rows[0]?.data;
+      if (!parent || parent.deletedAt)
+        return fail("Restore the shared scope before editing its entries.");
+    }
+    return entry;
+  }
+  private sharedConfirmation(entry: any, input: any) {
+    if (entry.scope.kind !== "book" && input.editSharedCanon !== true)
+      return fail("Confirm editing shared canon for every book in this scope.");
+  }
   async createEntry(bookId: string, input: any) {
     entryInput(input);
     const name = title(input.name);
@@ -239,6 +265,30 @@ export class StudioStore {
       const ctx = await this.bookContext(q, bookId);
       if (ctx.book.deletedAt)
         return fail("Restore the book before adding entries.");
+      await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
+        ctx.libraryId,
+      ]);
+      const kind = input.scopeKind ?? "book";
+      const scopeId =
+        kind === "book"
+          ? bookId
+          : kind === "universe"
+            ? ctx.book.universeId
+            : ctx.book.seriesId;
+      if (!scopeId)
+        return fail(
+          "Join a world or series before creating entries in that scope.",
+        );
+      if (kind !== "book") {
+        const parent = (
+          await q(
+            `SELECT data FROM ${kind === "universe" ? "universes" : "series"} WHERE id=$1 AND library_id=$2`,
+            [scopeId, ctx.libraryId],
+          )
+        ).rows[0]?.data;
+        if (!parent || parent.deletedAt)
+          return fail("Choose a live scope in this library.");
+      }
       const now = new Date().toISOString();
       const entry = editEntry(
         {
@@ -247,7 +297,7 @@ export class StudioStore {
           name,
           summary: input.summary ?? "",
           aliases: [],
-          scope: { kind: "book", id: bookId },
+          scope: { kind, id: scopeId },
           values: {},
           overrides: [],
           attachments: [],
@@ -256,11 +306,10 @@ export class StudioStore {
         },
         input,
       );
-      await q("INSERT INTO bible_entries(id,book_id,data) VALUES($1,$2,$3)", [
-        entry.id,
-        bookId,
-        entry,
-      ]);
+      await q(
+        "INSERT INTO bible_entries(id,book_id,data,library_id) VALUES($1,$2,$3,$4)",
+        [entry.id, kind === "book" ? bookId : null, entry, ctx.libraryId],
+      );
       return entry;
     });
   }
@@ -270,14 +319,11 @@ export class StudioStore {
       const ctx = await this.bookContext(q, bookId);
       if (ctx.book.deletedAt)
         return fail("Restore the book before editing its bible.");
-      const old = required(
-        (
-          await q("SELECT data FROM bible_entries WHERE id=$1 AND book_id=$2", [
-            id,
-            bookId,
-          ])
-        ).rows[0],
-      ).data;
+      await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
+        ctx.libraryId,
+      ]);
+      const old = await this.visibleEntry(q, ctx, id);
+      this.sharedConfirmation(old, input);
       if (input.expectedUpdatedAt !== old.updatedAt)
         throw new StudioError(
           409,
@@ -293,11 +339,10 @@ export class StudioStore {
       entry.updatedAt = now;
       if (input.deleted === true) entry.deletedAt = now;
       if (input.deleted === false) delete entry.deletedAt;
-      await q("UPDATE bible_entries SET data=$3 WHERE id=$1 AND book_id=$2", [
-        id,
-        bookId,
-        entry,
-      ]);
+      await q(
+        "UPDATE bible_entries SET data=$3 WHERE id=$1 AND library_id=$2",
+        [id, ctx.libraryId, entry],
+      );
       return entry;
     });
   }
@@ -308,8 +353,19 @@ export class StudioStore {
     fieldId?: string,
   ) {
     const allowed = fieldId
-      ? ["value", "expectedUpdatedAt", "expectedFieldUpdatedAt"]
-      : ["templateId", "expectedUpdatedAt", "expectedTemplateUpdatedAt"];
+      ? [
+          "value",
+          "expectedUpdatedAt",
+          "expectedFieldUpdatedAt",
+          "mode",
+          "editSharedCanon",
+        ]
+      : [
+          "templateId",
+          "expectedUpdatedAt",
+          "expectedTemplateUpdatedAt",
+          "editSharedCanon",
+        ];
     if (
       !input ||
       typeof input !== "object" ||
@@ -323,6 +379,13 @@ export class StudioStore {
       return fail(
         "Provide the field value or template and the current saved version.",
       );
+    if (input.mode !== undefined && !["canon", "book"].includes(input.mode))
+      return fail("Choose canon or this-book values.");
+    if (
+      input.editSharedCanon !== undefined &&
+      typeof input.editSharedCanon !== "boolean"
+    )
+      return fail("Confirm shared canon explicitly.");
     return this.db.transaction(async (q) => {
       const ctx = await this.bookContext(q, bookId);
       if (ctx.book.deletedAt)
@@ -331,14 +394,11 @@ export class StudioStore {
       await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
         ctx.libraryId,
       ]);
-      const old = required(
-        (
-          await q("SELECT data FROM bible_entries WHERE id=$1 AND book_id=$2", [
-            id,
-            bookId,
-          ])
-        ).rows[0],
-      ).data;
+      const old = await this.visibleEntry(q, ctx, id);
+      const override = fieldId && input.mode === "book";
+      if (override && old.scope.kind === "book")
+        return fail("Book-specific overrides apply only to shared entries.");
+      if (!override) this.sharedConfirmation(old, input);
       if (input.expectedUpdatedAt !== old.updatedAt)
         throw new StudioError(
           409,
@@ -424,13 +484,20 @@ export class StudioStore {
             new Set(ids).size !== ids.length
           )
             return fail("Choose unique entries in this book.");
-          const targets = (
-            await q("SELECT data FROM bible_entries WHERE book_id=$1", [bookId])
-          ).rows.map((r) => r.data);
+          const targets = await visibleEntries(q, bookId, true);
+          const seriesWorld =
+            old.scope.kind === "series"
+              ? (await q("SELECT data FROM series WHERE id=$1", [old.scope.id]))
+                  .rows[0]?.data.universeId
+              : undefined;
+          const owner = override
+            ? { scope: { kind: "book", id: bookId } }
+            : old;
           for (const id of ids) {
             const target = targets.find((t) => t.id === id && !t.deletedAt);
             if (
               !target ||
+              !scopeAllowsTarget(owner, target, ctx.book, seriesWorld) ||
               (field.targetEntryTypes &&
                 !field.targetEntryTypes.includes(target.entryType))
             )
@@ -461,18 +528,36 @@ export class StudioStore {
           if (field.fieldType === "boolean" && typeof value !== "boolean")
             return fail("Choose true or false.");
         }
-        entry.values = { ...(old.values ?? {}) };
-        if (value === null) delete entry.values[fieldId];
-        else entry.values[fieldId] = value;
+        const previousOverride = (old.overrides ?? []).find(
+          (o: any) => o.bookId === bookId,
+        );
+        const values = {
+          ...((override ? previousOverride?.values : old.values) ?? {}),
+        };
+        if (value === null) delete values[fieldId];
+        else values[fieldId] = value;
+        if (override) {
+          entry.overrides = [...(old.overrides ?? [])];
+          const index = entry.overrides.findIndex(
+            (o: any) => o.bookId === bookId,
+          );
+          const next = { ...(previousOverride ?? { bookId }), values };
+          if (
+            !Object.keys(values).length &&
+            Object.keys(next).every((k) => ["bookId", "values"].includes(k))
+          ) {
+            if (index >= 0) entry.overrides.splice(index, 1);
+          } else if (index >= 0) entry.overrides[index] = next;
+          else entry.overrides.push(next);
+        } else entry.values = values;
       }
       entry.updatedAt = new Date(
         Math.max(Date.now(), Date.parse(old.updatedAt) + 1),
       ).toISOString();
-      await q("UPDATE bible_entries SET data=$3 WHERE id=$1 AND book_id=$2", [
-        id,
-        bookId,
-        entry,
-      ]);
+      await q(
+        "UPDATE bible_entries SET data=$3 WHERE id=$1 AND library_id=$2",
+        [id, ctx.libraryId, entry],
+      );
       return entry;
     });
   }
@@ -504,6 +589,9 @@ export class StudioStore {
       return fail("Provide valid reference details.");
     return this.db.transaction(async (q) => {
       const ctx = await this.nodeContext(q, nodeId);
+      await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
+        ctx.libraryId,
+      ]);
       if (!this.isLive(ctx, nodeId))
         return fail("Restore the manuscript item before editing references.");
       const doc = required(
@@ -549,13 +637,11 @@ export class StudioStore {
         )
           return fail("Choose a saved passage and bible entry.");
         // Compare text identifiers first so malformed identifiers never reach UUID casts.
-        const target = (
-          await q(
-            "SELECT id FROM bible_entries WHERE id::text=$1 AND book_id=$2 AND NOT (data ? 'deletedAt')",
-            [input.entryId, ctx.book.id],
-          )
-        ).rows[0];
-        if (!target) return fail("Choose a live bible entry in this book.");
+        const target = (await visibleEntries(q, ctx.book.id, true)).find(
+          (e) => e.id === input.entryId && !e.deletedAt,
+        );
+        if (!target)
+          return fail("Choose a live bible entry visible in this book.");
         const now = new Date().toISOString();
         reference = {
           id: randomUUID(),
@@ -578,13 +664,11 @@ export class StudioStore {
           return fail(
             "The passage anchor must be saved in this document first.",
           );
-        const target = (
-          await q(
-            "SELECT id FROM bible_entries WHERE id=$1 AND book_id=$2 AND NOT (data ? 'deletedAt')",
-            [reference.entryId, ctx.book.id],
-          )
-        ).rows[0];
-        if (!target) return fail("Restore the bible entry first.");
+        const target = (await visibleEntries(q, ctx.book.id, true)).find(
+          (e) => e.id === reference.entryId && !e.deletedAt,
+        );
+        if (!target)
+          return fail("Restore the bible entry and its visible scope first.");
         const duplicate = (
           await q("SELECT data FROM manuscript_references WHERE node_id=$1", [
             nodeId,
@@ -1223,13 +1307,17 @@ export class StudioStore {
         ).rows.map((r) => r.data);
         for (const row of (
           await q(
-            "SELECT data FROM bible_entries WHERE book_id IS DISTINCT FROM $1",
+            "SELECT data,library_id FROM bible_entries WHERE book_id IS DISTINCT FROM $1",
             [id],
           )
         ).rows) {
           for (const values of [
             row.data.values,
-            ...(row.data.overrides ?? []).map((o: any) => o.values),
+            ...(row.data.overrides ?? [])
+              .filter(
+                (o: any) => o.bookId !== id || row.library_id !== ctx.libraryId,
+              )
+              .map((o: any) => o.values),
           ])
             for (const field of fields) {
               const value = values?.[field.id];

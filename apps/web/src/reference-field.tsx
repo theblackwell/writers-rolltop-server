@@ -36,7 +36,6 @@ export function ReferenceField({
   const candidates = entries.filter(
     (e) =>
       !e.deletedAt &&
-      e.scope?.kind === "book" &&
       (!field.targetEntryTypes || field.targetEntryTypes.includes(e.entryType)),
   );
   const options = [
@@ -94,8 +93,8 @@ export function ReferenceField({
           </fieldset>
         )}
         <p>
-          Choose live entries in this book. Saved links to entries in Trash stay
-          visible until you clear or replace them.
+          Choose live entries available in this scope. Saved links to entries in
+          Trash stay visible until you clear or replace them.
         </p>
         <div className="dialog-actions">
           <button type="button" onClick={onCancel}>
