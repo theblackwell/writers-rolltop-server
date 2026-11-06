@@ -65,6 +65,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B5b2a — Question and decision APIs: implemented 2026-11-05.** B5b2 split before implementation at the authenticated API boundary. Bounded independent catalog and POST/PUT expose canonical topic/status/optional decision/about/decide-by editing with scope isolation, explicit shared intent, CAS and reversible Trash. 108 tests and TypeScript/build pass; real PostgreSQL API verification recorded in M3-PROGRESS. No UI; **next B5b2b in-window controls**, not B6a.
 
+- **B5b2b — Question and decision controls: implemented 2026-11-06.** Library → Questions and Decisions edits text/topic/status/optional answer/About/deadline with explicit shared consent, CAS draft retention and reversible Trash. 109 tests, TypeScript/build and focused scratch desktop browser creation/reopen/concurrent conflict/shared Trash/restore pass. Schema9/recovery7 unchanged. **B5b complete; next B6a timeline**, in a separate session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement
