@@ -40,7 +40,13 @@ export type QuestionCatalog = {
     inTrash: boolean;
   }[];
 };
-export function Questions({ bookId }: { bookId: string }) {
+export function Questions({
+  bookId,
+  initialId,
+}: {
+  bookId: string;
+  initialId?: string;
+}) {
   const [catalog, setCatalog] = useState<QuestionCatalog>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -53,7 +59,20 @@ export function Questions({ bookId }: { bookId: string }) {
     let live = true;
     api<QuestionCatalog>(`/books/${bookId}/questions`)
       .then((c) => {
-        if (live) setCatalog(c);
+        if (live) {
+          setCatalog(c);
+          if (initialId) {
+            const target = c.questions.find((r) => r.id === initialId);
+            if (target && !target.deletedAt)
+              setEdit({ question: target, mode: "edit" });
+            else {
+              setTrash(!!target?.deletedAt);
+              setError(
+                "This record is no longer live here. Review its Trash or reopen continuity.",
+              );
+            }
+          }
+        }
       })
       .catch((e) => {
         if (live) setError(e.message);
@@ -61,7 +80,7 @@ export function Questions({ bookId }: { bookId: string }) {
     return () => {
       live = false;
     };
-  }, [bookId]);
+  }, [bookId, initialId]);
   function open(value: typeof edit) {
     setError("");
     setEdit(value);

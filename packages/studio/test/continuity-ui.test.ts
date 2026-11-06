@@ -5,7 +5,7 @@ import { registerHooks } from "node:module";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { JSDOM } from "jsdom";
-test("mounted continuity controls show saved warnings, refresh, preserve last results on error and expose no mutation actions", async () => {
+test("mounted continuity controls show saved warnings, refresh, preserve last results on error and retain deliberate-warning controls", async () => {
   const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", {
     url: "http://localhost",
   });
@@ -80,6 +80,18 @@ test("mounted continuity controls show saved warnings, refresh, preserve last re
           JSON.stringify({
             warnings: empty ? [] : [warning],
             intentionalCount: 1,
+            intentionalWarnings: [
+              {
+                ...warning,
+                id: "intentional/key",
+                subject: { kind: "fact", id: "intentional" },
+                dismissal: {
+                  warning: "undecidedButKnown",
+                  note: "On purpose",
+                  dismissedAt: "stamp",
+                },
+              },
+            ],
             checkedAt: "stamp",
             subjects: [{ id: warning.id, title: "A secret" }],
           }),
@@ -98,9 +110,9 @@ test("mounted continuity controls show saved warnings, refresh, preserve last re
     assert.match(doc.body.textContent!, /1 continuity warning/);
     assert.match(doc.body.textContent!, /Fact: A secret/);
     assert.match(doc.body.textContent!, /reader knows/);
-    assert.match(doc.body.textContent!, /already marked intentional/);
-    assert.equal(button("Mark as Intentional…"), undefined);
-    assert.equal(button("Show Again"), undefined);
+    assert.match(doc.body.textContent!, /Marked as intentional/);
+    assert.ok(button("Mark as Intentional…"));
+    assert.ok(button("Show Again"));
     failure = true;
     await click(button("Check Again"));
     assert.match(

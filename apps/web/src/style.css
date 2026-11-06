@@ -1075,3 +1075,15 @@ dialog textarea {
 .definition-manager button {
   margin: 0.2rem 0.4rem 0.2rem 0;
 }
+
+.story-continuity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+}
+.continuity-badge {
+  color: #75501e;
+  white-space: nowrap;
+  padding: 0.25rem 0.4rem;
+}

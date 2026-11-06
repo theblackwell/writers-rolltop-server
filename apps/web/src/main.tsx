@@ -25,6 +25,10 @@ import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
 import { BookProgress } from "./progress.tsx";
 import { wordCount } from "../../../packages/document-adapter/src/text.ts";
 import { References } from "./references.tsx";
+import { Knowledge } from "./knowledge.tsx";
+import { prepareContinuityPlace } from "./continuity-navigation.ts";
+import { warningCountsByNode } from "../../../packages/studio/src/continuity-values.ts";
+import type { ContinuityCatalog } from "./continuity.tsx";
 import { Continuity } from "./continuity.tsx";
 import { StateChanges } from "./state-changes.tsx";
 import { Timeline } from "./timeline.tsx";
@@ -150,6 +154,17 @@ function App() {
     requestId: string;
   } | null>(null);
   const [bibleOpen, setBibleOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [continuityPoint, setContinuityPoint] = useState<string>();
+  const [recordTarget, setRecordTarget] = useState<{
+    kind: "fact" | "question" | "event";
+    id: string;
+  }>();
+  const [warningSnapshot, setWarningSnapshot] = useState<{
+    bookId: string;
+    catalog: ContinuityCatalog;
+  }>();
+  const [warningError, setWarningError] = useState("");
   const [continuityOpen, setContinuityOpen] = useState(false);
   const [stateOpen, setStateOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -188,6 +203,81 @@ function App() {
   const [management, setManagement] = useState<Target | null>(null);
   const [mutating, setMutating] = useState(false);
   const mutationLock = useRef(false);
+  const warningCounts =
+    warningSnapshot && warningSnapshot.bookId === book?.id
+      ? warningCountsByNode(warningSnapshot.catalog.warnings)
+      : {};
+  useEffect(() => {
+    let live = true;
+    if (!book) {
+      setWarningSnapshot(undefined);
+      setWarningError("");
+      return;
+    }
+    if (
+      continuityOpen ||
+      factsOpen ||
+      questionsOpen ||
+      timelineOpen ||
+      stateOpen
+    )
+      return;
+    api<ContinuityCatalog>("/books/" + book.id + "/continuity")
+      .then((c) => {
+        if (live) {
+          setWarningSnapshot({ bookId: book.id, catalog: c });
+          setWarningError("");
+        }
+      })
+      .catch((e) => {
+        if (live) {
+          setWarningSnapshot(undefined);
+          setWarningError(e.message);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [
+    book?.id,
+    progressVersion,
+    nodes,
+    continuityOpen,
+    factsOpen,
+    questionsOpen,
+    timelineOpen,
+    stateOpen,
+  ]);
+  function showWarnings(point?: string) {
+    setContinuityPoint(point);
+    setContinuityOpen(true);
+  }
+  async function openWarningSubject(
+    kind: "fact" | "question" | "event",
+    id: string,
+  ) {
+    if (!(await leave()))
+      throw new Error(
+        "Resolve the current scene's draft or save conflict before opening this record.",
+      );
+    setRecordTarget({ kind, id });
+    setContinuityOpen(false);
+    setKnowledgeOpen(false);
+    if (kind === "fact") setFactsOpen(true);
+    else if (kind === "question") setQuestionsOpen(true);
+    else setTimelineOpen(true);
+  }
+  async function openWarningPlace(point: { id: string; bookId: string }) {
+    const data = await prepareContinuityPlace(point, leave, (id) =>
+      api("/books/" + id),
+    );
+    setBook(data.book);
+    setNodes(data.nodes);
+    setScene(data.target);
+    setView("manuscript");
+    setContinuityOpen(false);
+    setKnowledgeOpen(false);
+  }
   useEffect(() => {
     api("/session")
       .then(() => setAuth(true))
@@ -446,19 +536,40 @@ function App() {
               <button disabled={!book} onClick={() => setBibleOpen(true)}>
                 Bible Entries…
               </button>
-              <button disabled={!book} onClick={() => setContinuityOpen(true)}>
+              <button disabled={!book} onClick={() => showWarnings()}>
                 Continuity Warnings…
+              </button>
+              <button disabled={!book} onClick={() => setKnowledgeOpen(true)}>
+                Who Knows What…
               </button>
               <button disabled={!book} onClick={() => setStateOpen(true)}>
                 Changing State…
               </button>
-              <button disabled={!book} onClick={() => setTimelineOpen(true)}>
+              <button
+                disabled={!book}
+                onClick={() => {
+                  setRecordTarget(undefined);
+                  setTimelineOpen(true);
+                }}
+              >
                 Timeline…
               </button>
-              <button disabled={!book} onClick={() => setQuestionsOpen(true)}>
+              <button
+                disabled={!book}
+                onClick={() => {
+                  setRecordTarget(undefined);
+                  setQuestionsOpen(true);
+                }}
+              >
                 Questions and Decisions…
               </button>
-              <button disabled={!book} onClick={() => setFactsOpen(true)}>
+              <button
+                disabled={!book}
+                onClick={() => {
+                  setRecordTarget(undefined);
+                  setFactsOpen(true);
+                }}
+              >
                 Facts and Knowledge…
               </button>
               <button
@@ -684,6 +795,8 @@ function App() {
               }}
               onAction={(t) => void manage(t)}
               disabled={mutating}
+              warningCounts={warningCounts}
+              onWarnings={(id) => showWarnings(id)}
             />
             {!activeNodes.length && (
               <p className="hint">
@@ -724,7 +837,36 @@ function App() {
             )}
           </aside>
           <main className="manuscript-area">
-            {scene ? (
+            {scene && ["scene", "chapter"].includes(scene.kind ?? "") && (
+              <div className="story-continuity-actions">
+                <button onClick={() => showWarnings(scene.id)}>
+                  {warningSnapshot?.bookId === book?.id
+                    ? `${warningCounts[scene.id] ?? 0} continuity warnings here`
+                    : "Check Continuity Here"}
+                </button>
+                <button onClick={() => setKnowledgeOpen(true)}>
+                  Who Knows What Here
+                </button>
+              </div>
+            )}
+            {warningError && (
+              <p role="alert">
+                Continuity badges could not be refreshed. {warningError}
+              </p>
+            )}
+            {scene?.kind === "chapter" ? (
+              <section aria-label="Chapter location">
+                <h1>{scene.title}</h1>
+                <p>Scenes in this chapter</p>
+                {children(liveNodes(nodes), scene.id)
+                  .filter((n) => n.kind === "scene")
+                  .map((n) => (
+                    <button key={n.id} onClick={() => setScene(n)}>
+                      {n.title}
+                    </button>
+                  ))}
+              </section>
+            ) : scene ? (
               <EditorPane
                 key={scene.id}
                 ref={pane}
@@ -772,7 +914,30 @@ function App() {
           title="Continuity Warnings"
           close={() => setContinuityOpen(false)}
         >
-          <Continuity key={book.id} bookId={book.id} />
+          <Continuity
+            key={book.id + ":" + (continuityPoint ?? "all")}
+            bookId={book.id}
+            nodeFilter={continuityPoint}
+            onCatalog={(c) =>
+              setWarningSnapshot({ bookId: book.id, catalog: c })
+            }
+            onOpenSubject={openWarningSubject}
+            onOpenPlace={openWarningPlace}
+          />
+        </Dialog>
+      )}
+      {knowledgeOpen && book && (
+        <Dialog title="Who Knows What" close={() => setKnowledgeOpen(false)}>
+          <Knowledge
+            key={book.id}
+            bookId={book.id}
+            initialPoint={
+              scene && ["chapter", "scene"].includes(scene.kind ?? "")
+                ? scene.id
+                : undefined
+            }
+            onOpenFact={(id) => openWarningSubject("fact", id)}
+          />
         </Dialog>
       )}
       {stateOpen && book && (
@@ -782,7 +947,17 @@ function App() {
       )}
       {timelineOpen && book && (
         <Dialog title="Timeline" close={() => setTimelineOpen(false)}>
-          <Timeline key={book.id} bookId={book.id} />
+          <Timeline
+            key={
+              book.id +
+              ":" +
+              (recordTarget?.kind === "event" ? recordTarget.id : "list")
+            }
+            bookId={book.id}
+            initialId={
+              recordTarget?.kind === "event" ? recordTarget.id : undefined
+            }
+          />
         </Dialog>
       )}
       {questionsOpen && book && (
@@ -790,12 +965,32 @@ function App() {
           title="Questions and Decisions"
           close={() => setQuestionsOpen(false)}
         >
-          <Questions key={book.id} bookId={book.id} />
+          <Questions
+            key={
+              book.id +
+              ":" +
+              (recordTarget?.kind === "question" ? recordTarget.id : "list")
+            }
+            bookId={book.id}
+            initialId={
+              recordTarget?.kind === "question" ? recordTarget.id : undefined
+            }
+          />
         </Dialog>
       )}
       {factsOpen && book && (
         <Dialog title="Facts and Knowledge" close={() => setFactsOpen(false)}>
-          <Facts key={book.id} bookId={book.id} />
+          <Facts
+            key={
+              book.id +
+              ":" +
+              (recordTarget?.kind === "fact" ? recordTarget.id : "list")
+            }
+            bookId={book.id}
+            initialId={
+              recordTarget?.kind === "fact" ? recordTarget.id : undefined
+            }
+          />
         </Dialog>
       )}
       {bibleOpen && book && (

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { purgeEntry } from "./entry-purge.ts";
 import { factCatalog, saveFact } from "./facts.ts";
+import { knowledgeCatalog } from "./knowledge.ts";
+import { changeWarningDismissal } from "./warning-dismissals.ts";
 import { continuityCatalog } from "./continuity.ts";
 import { stateCatalog, saveStateChange } from "./state-changes.ts";
 import { eventCatalog, saveEvent } from "./events.ts";
@@ -262,6 +264,37 @@ export function studioServer(
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
         );
       }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "knowledge" &&
+        parts.length === 3 &&
+        method === "GET"
+      ) {
+        const asOf = url.searchParams.get("asOf");
+        if (asOf && !uuid.test(asOf))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid chapter or scene.",
+          );
+        return respond(
+          res,
+          200,
+          await knowledgeCatalog(store.db, parts[1], asOf ?? undefined),
+        );
+      }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "continuity" &&
+        parts[3] === "dismissals" &&
+        parts.length === 4 &&
+        method === "PUT"
+      )
+        return respond(
+          res,
+          200,
+          await changeWarningDismissal(store.db, parts[1], await body(req)),
+        );
       if (
         parts[0] === "books" &&
         parts[2] === "continuity" &&

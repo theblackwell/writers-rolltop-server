@@ -75,6 +75,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B7a — Continuity checks: implemented 2026-11-06.** Eight canonical deterministic checks, stable keys/order and existing-dismissal suppression; authenticated bounded read-only consistent-snapshot API and Library → Continuity Warnings with refresh. No prose inference, schema or recovery change. 138 tests, TypeScript/build, all-eight-kind scratch browser QA and ARM64 PostgreSQL read-only/restart/exact recovery pass. **Next B7b knowledge, warning navigation/badges and intentional-warning controls**, in another session.
 
+- **B7b — Knowledge and intentional warnings: implemented 2026-11-06.** Reader-first as-of knowledge with native cross-book chronology, warning links/badges, exact-key intentional notes and Show Again, shared consent/CAS/draft retention and changed-place warning return. Schema11/recovery9 unchanged. 147 tests, TypeScript/build, focused scratch browser and ARM64 PostgreSQL shared-CAS/read-only/restart/exact recovery pass. **Next B8a story and manuscript planning**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

@@ -84,12 +84,16 @@ export function BinderTree({
   onSelect,
   onAction,
   disabled = false,
+  warningCounts = {},
+  onWarnings,
 }: {
   nodes: Item[];
   selected: string | undefined;
   onSelect: (item: Item) => void;
   onAction: (t: Target) => void;
   disabled?: boolean;
+  warningCounts?: Record<string, number>;
+  onWarnings?: (id: string) => void;
 }) {
   const live = liveNodes(nodes);
   function branch(parent: string | null): React.ReactNode {
@@ -110,6 +114,19 @@ export function BinderTree({
               {n.kind === "part" ? "Part · " : ""}
               {n.title}
             </span>
+          )}
+          {!!warningCounts[n.id] && (
+            <button
+              className="continuity-badge"
+              disabled={disabled}
+              aria-label={
+                warningCounts[n.id] + " continuity warnings for " + n.title
+              }
+              title="Saved continuity warnings"
+              onClick={() => onWarnings?.(n.id)}
+            >
+              ⚠ {warningCounts[n.id]}
+            </button>
           )}
           <ItemActions
             item={n}

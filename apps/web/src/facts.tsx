@@ -41,7 +41,13 @@ export type FactCatalog = {
 };
 const truthTitle = (truth: string) =>
   truth === "false" ? "Not true" : truth === "true" ? "True" : "Undecided";
-export function Facts({ bookId }: { bookId: string }) {
+export function Facts({
+  bookId,
+  initialId,
+}: {
+  bookId: string;
+  initialId?: string;
+}) {
   const [catalog, setCatalog] = useState<FactCatalog>(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -54,7 +60,20 @@ export function Facts({ bookId }: { bookId: string }) {
     let live = true;
     api<FactCatalog>(`/books/${bookId}/facts`)
       .then((c) => {
-        if (live) setCatalog(c);
+        if (live) {
+          setCatalog(c);
+          if (initialId) {
+            const target = c.facts.find((r) => r.id === initialId);
+            if (target && !target.deletedAt)
+              setEdit({ fact: target, mode: "edit" });
+            else {
+              setTrash(!!target?.deletedAt);
+              setError(
+                "This record is no longer live here. Review its Trash or reopen continuity.",
+              );
+            }
+          }
+        }
       })
       .catch((e) => {
         if (live) setError(e.message);
@@ -62,7 +81,7 @@ export function Facts({ bookId }: { bookId: string }) {
     return () => {
       live = false;
     };
-  }, [bookId]);
+  }, [bookId, initialId]);
   function open(value: typeof edit) {
     setError("");
     setEdit(value);

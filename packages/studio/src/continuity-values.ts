@@ -337,3 +337,110 @@ export function continuityWarnings(s: ContinuitySnapshot): ContinuityWarning[] {
       rank(a) - rank(b) || compare(a.message, b.message) || compare(a.id, b.id),
   );
 }
+export type KnowerFacts = {
+  id: string;
+  name: string;
+  facts: {
+    id: string;
+    text: string;
+    truth: "true" | "false" | "undecided";
+    learnedIn?: { id: string; bookId: string; title: string };
+  }[];
+};
+/** Native knowledge-as-of: facts in scope, learned by then or known from the start. */
+export function knowledgeAt(
+  s: ContinuitySnapshot,
+  nodeId: string,
+): KnowerFacts[] {
+  const nodeMap = new Map(s.nodes.map((n) => [n.id, n])),
+    entries = new Map(s.entries.map((e) => [e.id, e]));
+  const orders = new Map<string, Record<string, number>>(),
+    clocks = new Map<string, Map<string, number>>();
+  const at = (id: string, scope: any): [number, number] | undefined => {
+    const n = nodeMap.get(id);
+    if (!n) return;
+    const key = scope.kind + "/" + scope.id;
+    if (!clocks.has(key))
+      clocks.set(
+        key,
+        new Map(
+          s.books
+            .filter((b) => !b.deletedAt && inScope(scope, b))
+            .sort(
+              (a, b) => compare(a.orderKey, b.orderKey) || compare(a.id, b.id),
+            )
+            .map((b, i) => [b.id, i]),
+        ),
+      );
+    if (!orders.has(n.bookId))
+      orders.set(n.bookId, manuscriptPositions(s.nodes, n.bookId));
+    const rank = clocks.get(key)!.get(n.bookId),
+      position = orders.get(n.bookId)![id];
+    return rank === undefined || position === undefined
+      ? undefined
+      : [rank, position];
+  };
+  const groups = new Map<string, KnowerFacts>();
+  const facts = s.facts
+    .filter((f) => !f.deletedAt && inScope(f.scope, s.book))
+    .sort((a, b) => compare(a.orderKey, b.orderKey) || compare(a.id, b.id));
+  for (const f of facts) {
+    const limit = at(nodeId, f.scope);
+    if (!limit) continue;
+    for (const k of f.knowledge) {
+      const e = entries.get(k.knower);
+      if (k.knower !== "reader" && (!e || e.deletedAt)) continue;
+      if (k.nodeId) {
+        const p = at(k.nodeId, f.scope);
+        if (!p || p[0] > limit[0] || (p[0] === limit[0] && p[1] > limit[1]))
+          continue;
+      }
+      const g: KnowerFacts = groups.get(k.knower) ?? {
+        id: k.knower,
+        name: k.knower === "reader" ? "The reader" : e.name,
+        facts: [],
+      };
+      const n = k.nodeId ? nodeMap.get(k.nodeId) : undefined;
+      g.facts.push({
+        id: f.id,
+        text: f.text,
+        truth: f.truth,
+        ...(n
+          ? {
+              learnedIn: {
+                id: n.id,
+                bookId: n.bookId,
+                title:
+                  (s.books.find((b) => b.id === n.bookId)?.title ??
+                    "Unavailable book") +
+                  " › " +
+                  n.title,
+              },
+            }
+          : {}),
+      });
+      groups.set(k.knower, g);
+    }
+  }
+  const collator = new Intl.Collator("en", {
+    numeric: true,
+    sensitivity: "base",
+  });
+  return [...groups.values()].sort(
+    (a, b) =>
+      (a.id === "reader"
+        ? -1
+        : b.id === "reader"
+          ? 1
+          : collator.compare(a.name, b.name)) || compare(a.id, b.id),
+  );
+}
+export function warningCountsByNode(
+  warnings: ContinuityWarning[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const w of warnings)
+    if (!w.dismissal)
+      for (const id of new Set(w.nodeIds)) counts[id] = (counts[id] ?? 0) + 1;
+  return counts;
+}
