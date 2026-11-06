@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { purgeEntry } from "./entry-purge.ts";
 import { factCatalog, saveFact } from "./facts.ts";
+import { stateCatalog, saveStateChange } from "./state-changes.ts";
 import { eventCatalog, saveEvent } from "./events.ts";
 import { questionCatalog, saveQuestion } from "./questions.ts";
 import {
@@ -258,6 +259,31 @@ export function studioServer(
           method === "GET"
             ? await eventCatalog(store.db, parts[1])
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
+        );
+      }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "state-changes" &&
+        ((parts.length === 3 && ["GET", "POST"].includes(method!)) ||
+          (parts.length === 4 && method === "PUT"))
+      ) {
+        if (parts[3] && !uuid.test(parts[3]))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid state change.",
+          );
+        return respond(
+          res,
+          method === "POST" ? 201 : 200,
+          method === "GET"
+            ? await stateCatalog(store.db, parts[1])
+            : await saveStateChange(
+                store.db,
+                parts[1],
+                await body(req, 64 * 1024 * 1024),
+                parts[3],
+              ),
         );
       }
       if (

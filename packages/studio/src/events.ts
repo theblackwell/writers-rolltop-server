@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { unlinkStateChanges } from "./state-changes.ts";
 import { randomUUID } from "node:crypto";
 import { StudioError } from "./store.ts";
 import type { Database, Query } from "./store.ts";
@@ -416,6 +417,7 @@ export async function unlinkEvents(
         "Unbacked event dependencies from another library prevent permanent deletion.",
       );
     if (owned) {
+      await unlinkStateChanges(q, libraryId, [], [], [f.id]);
       await q("DELETE FROM continuity_events WHERE id=$1", [f.id]);
       continue;
     }

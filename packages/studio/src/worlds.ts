@@ -352,6 +352,28 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
         row.library_id,
       ])
     ).rows.map((r) => r.data);
+    const changes = (
+      await q("SELECT data FROM state_changes WHERE library_id=$1", [
+        row.library_id,
+      ])
+    ).rows.map((r) => r.data);
+    for (const c of changes) {
+      const entry = all.find((e) => e.id === c.entryId);
+      if (
+        entry &&
+        left.includes(entry.scope.id) &&
+        c.nodeId &&
+        (
+          await q(
+            "SELECT id FROM manuscript_nodes WHERE book_id=$1 AND id::text=$2",
+            [bookId, c.nodeId],
+          )
+        ).rows.length
+      )
+        invalid(
+          "Clear this book's chapter/scene state changes on shared entries before leaving their scope, including Trash.",
+        );
+    }
     const fields = (
       await q(
         "SELECT data FROM bible_fields WHERE library_id=$1 AND data->>'fieldType' IN ('entryReference','entryReferences')",
@@ -361,7 +383,12 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
     for (const entry of all) {
       const maps =
         entry.scope?.kind === "book" && entry.scope.id === bookId
-          ? [entry.values]
+          ? [
+              entry.values,
+              ...changes
+                .filter((c) => c.entryId === entry.id)
+                .map((c) => ({ [c.fieldId]: c.value })),
+            ]
           : (entry.overrides ?? [])
               .filter((o: any) => o.bookId === bookId)
               .map((o: any) => o.values);

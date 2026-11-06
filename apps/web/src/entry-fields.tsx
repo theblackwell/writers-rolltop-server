@@ -289,13 +289,15 @@ export function EntryFields({
     </section>
   );
 }
-function ScalarForm({
+export function ScalarForm({
+  allowClear = true,
   field,
   value,
   busy,
   onCancel,
   onSave,
 }: {
+  allowClear?: boolean;
   field: Field;
   value: unknown;
   busy: boolean;
@@ -313,7 +315,9 @@ function ScalarForm({
         if (field.fieldType === "integer") {
           if (!/^-?\d+$/.test(text) || !Number.isSafeInteger(Number(text))) {
             setError(
-              "Enter an integer within ±(2^53−1), or choose Clear Value.",
+              allowClear
+                ? "Enter an integer within ±(2^53−1), or choose Clear Value."
+                : "Enter an integer within ±(2^53−1).",
             );
             return;
           }
@@ -321,7 +325,11 @@ function ScalarForm({
         }
         if (field.fieldType === "boolean") {
           if (text === "") {
-            setError("Choose true or false, or choose Clear Value.");
+            setError(
+              allowClear
+                ? "Choose true or false, or choose Clear Value."
+                : "Choose true or false.",
+            );
             return;
           }
           next = text === "true";
@@ -376,9 +384,11 @@ function ScalarForm({
           <button type="button" onClick={onCancel}>
             Cancel Field Edit
           </button>
-          <button type="button" onClick={() => void onSave(null)}>
-            Clear Value
-          </button>
+          {allowClear && (
+            <button type="button" onClick={() => void onSave(null)}>
+              Clear Value
+            </button>
+          )}
           <button className="primary">Save Value</button>
         </div>
       </fieldset>

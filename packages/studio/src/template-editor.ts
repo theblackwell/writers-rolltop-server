@@ -211,6 +211,31 @@ export async function editDefinition(
             libraryId,
           ])
         ).rows.map((r) => r.data);
+        const changes = (
+          await q(
+            "SELECT data FROM state_changes WHERE library_id=$1 AND field_id=$2",
+            [libraryId, record.id],
+          )
+        ).rows.map((r) => r.data);
+        for (const c of changes) {
+          const bad =
+            record.fieldType === "selection"
+              ? structuredValueError(record, c.value)
+              : record.targetEntryTypes &&
+                (Array.isArray(c.value) ? c.value : [c.value]).some(
+                  (id: string) => {
+                    const target = entries.find((e) => e.id === id);
+                    return (
+                      !target ||
+                      !record.targetEntryTypes.includes(target.entryType)
+                    );
+                  },
+                );
+          if (bad)
+            return fail(
+              "These constraints are used by saved state changes, including Trash. Keep them to preserve history.",
+            );
+        }
         for (const entry of entries)
           for (const map of [
             entry.values,

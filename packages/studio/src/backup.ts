@@ -24,11 +24,12 @@ export const backupTables = [
   "facts",
   "questions",
   "continuity_events",
+  "state_changes",
 ] as const;
 export type BookBackup = {
   format: "writers-rolltop/book-recovery";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
-  schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
   createdAt: string;
   bookId: string;
   tables: Record<string, any[]>;
@@ -72,6 +73,7 @@ export async function captureBook(
     "facts",
     "questions",
     "continuity_events",
+    "state_changes",
   ])
     tables[table] = (
       await q(`SELECT * FROM ${table} WHERE library_id=$1`, [book.library_id])
@@ -97,8 +99,8 @@ export async function captureBook(
     throw new Error("Recovery cannot omit an externally referenced entry.");
   return {
     format: "writers-rolltop/book-recovery",
-    version: 8,
-    schemaVersion: 10,
+    version: 9,
+    schemaVersion: 11,
     createdAt: new Date().toISOString(),
     bookId,
     tables,
@@ -125,13 +127,20 @@ function validateBackup(data: BookBackup) {
   const beforeFacts = data?.version === 5 && data?.schemaVersion === 7;
   const beforeQuestions = data?.version === 6 && data?.schemaVersion === 8;
   const beforeEvents = data?.version === 7 && data?.schemaVersion === 9;
-  const current = data?.version === 8 && data?.schemaVersion === 10;
+  const beforeState = data?.version === 8 && data?.schemaVersion === 10;
+  const current = data?.version === 9 && data?.schemaVersion === 11;
   const compatibleTables = backupTables.filter(
     (t) =>
-      (current || t !== "continuity_events") &&
-      (current || beforeEvents || t !== "questions") &&
-      (current || beforeEvents || beforeQuestions || t !== "facts") &&
+      (current || t !== "state_changes") &&
+      (current || beforeState || t !== "continuity_events") &&
+      (current || beforeState || beforeEvents || t !== "questions") &&
       (current ||
+        beforeState ||
+        beforeEvents ||
+        beforeQuestions ||
+        t !== "facts") &&
+      (current ||
+        beforeState ||
         beforeEvents ||
         beforeFacts ||
         beforeQuestions ||
@@ -156,6 +165,7 @@ function validateBackup(data: BookBackup) {
       !beforeFacts &&
       !beforeQuestions &&
       !beforeEvents &&
+      !beforeState &&
       !current) ||
     tables.some((t) => !Array.isArray(data.tables?.[t]))
   )
@@ -241,6 +251,8 @@ export async function restoreBookBackup(q: Query, backup: BookBackup) {
               ["universe_id", "series_id"].includes(c)) ||
             (["facts", "questions", "continuity_events"].includes(table) &&
               ["book_id", "universe_id", "series_id"].includes(c)) ||
+            (table === "state_changes" &&
+              ["entry_id", "field_id", "event_id", "node_id"].includes(c)) ||
             (table === "relationships" &&
               ["type_id", "from_entry_id", "to_entry_id", "book_id"].includes(
                 c,

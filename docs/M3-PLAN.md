@@ -71,6 +71,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B6a2 — Timeline APIs and controls: implemented 2026-11-06.** Bounded independent catalog, authenticated scoped event writes, Library → Timeline fields/links/roles, explicit shared consent, complete failed-draft retention and reversible Trash. Native Story Date/Reading Order views with stable canonical ties. 117 tests, TypeScript/build, focused scratch desktop browser QA and ARM64 PostgreSQL API/shared-CAS/restart/exact recovery pass. Schema10/recovery8 unchanged. **B6a complete; next B6b changing state**, in another session.
 
+- **B6b — Changing state: implemented 2026-11-06.** Owner requested all B6b together. Schema11 typed state history at events/chapter/scene nodes, recovery9 (legacy1–8), safe purge/template/membership guards, authenticated bounded APIs and Library → Changing State with typed editors, shared consent, CAS/draft retention and Trash/restore. Native cross-book/as-of precedence and stable event placement. 128 tests, TypeScript/build, scratch browser QA and real ARM64 PostgreSQL API/shared-CAS/as-of/restart/exact recovery pass. **Next B7a continuity checks**, in another session; attachments remain portable-library work.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

@@ -25,6 +25,7 @@ import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
 import { BookProgress } from "./progress.tsx";
 import { wordCount } from "../../../packages/document-adapter/src/text.ts";
 import { References } from "./references.tsx";
+import { StateChanges } from "./state-changes.tsx";
 import { Timeline } from "./timeline.tsx";
 import { Questions } from "./questions.tsx";
 import { Facts } from "./facts.tsx";
@@ -148,6 +149,7 @@ function App() {
     requestId: string;
   } | null>(null);
   const [bibleOpen, setBibleOpen] = useState(false);
+  const [stateOpen, setStateOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
   const [factsOpen, setFactsOpen] = useState(false);
@@ -441,6 +443,9 @@ function App() {
               </button>
               <button disabled={!book} onClick={() => setBibleOpen(true)}>
                 Bible Entries…
+              </button>
+              <button disabled={!book} onClick={() => setStateOpen(true)}>
+                Changing State…
               </button>
               <button disabled={!book} onClick={() => setTimelineOpen(true)}>
                 Timeline…
@@ -755,6 +760,11 @@ function App() {
           close={() => setProgressOpen(false)}
         >
           <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
+        </Dialog>
+      )}
+      {stateOpen && book && (
+        <Dialog title="Changing State" close={() => setStateOpen(false)}>
+          <StateChanges key={book.id} bookId={book.id} />
         </Dialog>
       )}
       {timelineOpen && book && (

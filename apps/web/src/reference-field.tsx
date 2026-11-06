@@ -16,6 +16,7 @@ export function referenceSummary(value: unknown, entries: Entry[]) {
   );
 }
 export function ReferenceField({
+  allowClear = true,
   field,
   value,
   entries,
@@ -23,6 +24,7 @@ export function ReferenceField({
   onCancel,
   onSave,
 }: {
+  allowClear?: boolean;
   field: Field;
   value: unknown;
   entries: Entry[];
@@ -100,9 +102,11 @@ export function ReferenceField({
           <button type="button" onClick={onCancel}>
             Cancel Field Edit
           </button>
-          <button type="button" onClick={() => void onSave(null)}>
-            Clear Value
-          </button>
+          {allowClear && (
+            <button type="button" onClick={() => void onSave(null)}>
+              Clear Value
+            </button>
+          )}
           <button className="primary">Save Value</button>
         </div>
       </fieldset>

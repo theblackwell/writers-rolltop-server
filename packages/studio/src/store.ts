@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { migrateStateChanges, unlinkStateChanges } from "./state-changes.ts";
 import { migrateEvents, unlinkEvents } from "./events.ts";
 import { migrateQuestions, unlinkQuestions } from "./questions.ts";
 import { migrateFacts, unlinkFacts } from "./facts.ts";
@@ -93,12 +94,12 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 10)
+      if (rows[0]?.version > 11)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(rows[0].version))
+        if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
@@ -109,6 +110,7 @@ export class StudioStore {
         if (rows[0].version < 8) await migrateFacts(q);
         if (rows[0].version < 9) await migrateQuestions(q);
         if (rows[0].version < 10) await migrateEvents(q);
+        if (rows[0].version < 11) await migrateStateChanges(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -128,6 +130,7 @@ export class StudioStore {
       await migrateFacts(q);
       await migrateQuestions(q);
       await migrateEvents(q);
+      await migrateStateChanges(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -448,10 +451,17 @@ export class StudioStore {
           );
         if (
           (old.templateId ?? null) !== templateId &&
-          (Object.keys(old.values ?? {}).length || (old.overrides ?? []).length)
+          (Object.keys(old.values ?? {}).length ||
+            (old.overrides ?? []).length ||
+            (
+              await q(
+                "SELECT id FROM state_changes WHERE entry_id=$1 LIMIT 1",
+                [old.id],
+              )
+            ).rows.length)
         )
           return fail(
-            "This entry has saved values or overrides. Keep its template to preserve them.",
+            "This entry has saved values or overrides or state changes. Keep its template to preserve them.",
           );
         if (templateId == null) delete entry.templateId;
         else entry.templateId = templateId;
@@ -1389,6 +1399,7 @@ export class StudioStore {
         ids,
         type === "book" ? id : undefined,
       );
+      await unlinkStateChanges(q, ctx.libraryId, purgedEntries, ids);
       await unlinkEvents(
         q,
         ctx.libraryId,

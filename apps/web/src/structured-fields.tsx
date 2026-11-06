@@ -30,12 +30,14 @@ export function structuredSummary(field: Field, value: any): string {
   return String(value);
 }
 export function StructuredForm({
+  allowClear = true,
   field,
   value,
   busy,
   onCancel,
   onSave,
 }: {
+  allowClear?: boolean;
   field: Field;
   value: any;
   busy: boolean;
@@ -305,9 +307,11 @@ export function StructuredForm({
           <button type="button" onClick={onCancel}>
             Cancel Field Edit
           </button>
-          <button type="button" onClick={() => void onSave(null)}>
-            Clear Value
-          </button>
+          {allowClear && (
+            <button type="button" onClick={() => void onSave(null)}>
+              Clear Value
+            </button>
+          )}
           <button className="primary">Save Value</button>
         </div>
       </fieldset>
