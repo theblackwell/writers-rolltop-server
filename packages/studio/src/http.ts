@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {
+  bibleExports,
+  createBibleExport,
+  readBibleExport,
+} from "./bible-exports.ts";
 import { namesCatalog } from "./names.ts";
 import { planningCatalog, savePlanning } from "./planning.ts";
 import { purgeEntry } from "./entry-purge.ts";
@@ -265,6 +270,41 @@ export function studioServer(
             ? await eventCatalog(store.db, parts[1])
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
         );
+      }
+      if (parts[0] === "books" && parts[2] === "bible-exports") {
+        if (parts.length === 3 && method === "GET")
+          return respond(res, 200, await bibleExports(store.db, parts[1]));
+        if (parts.length === 3 && method === "POST")
+          return respond(
+            res,
+            201,
+            await createBibleExport(store.db, parts[1], await body(req)),
+          );
+        if (parts.length === 4 && method === "GET") {
+          if (!uuid.test(parts[3]))
+            throw new StudioError(
+              400,
+              "INVALID_ID",
+              "Choose a valid saved export.",
+            );
+          const { data, bytes } = await readBibleExport(
+            store.db,
+            parts[1],
+            parts[3],
+          );
+          res.writeHead(200, {
+            "Content-Type":
+              data.format === "pdf"
+                ? "application/pdf"
+                : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Content-Disposition": `attachment; filename="${data.filename}"`,
+            "Content-Length": bytes.length,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+          });
+          res.end(bytes);
+          return;
+        }
       }
       if (
         parts[0] === "books" &&

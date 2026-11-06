@@ -876,6 +876,32 @@ try {
   const page = await fetch(origin);
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");
+  const exportBook = await api(`/libraries/${library.id}/books`, "POST", {
+    title: "Bible runtime check",
+  });
+  let exportStamp = exportBook.updatedAt;
+  for (const format of ["docx", "pdf"]) {
+    const result = await api(`/books/${exportBook.id}/bible-exports`, "POST", {
+      id: crypto.randomUUID(),
+      version: "1.0",
+      format,
+      expectedUpdatedAt: exportStamp,
+    });
+    exportStamp = result.book.updatedAt;
+    const response = await fetch(
+      origin + `/api/books/${exportBook.id}/bible-exports/${result.export.id}`,
+      { headers: { Cookie: cookie } },
+    );
+    assert.equal(response.status, 200);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(
+      bytes.subarray(0, format === "pdf" ? 5 : 2).toString(),
+      format === "pdf" ? "%PDF-" : "PK",
+    );
+  }
+  console.log(
+    "PASS: container Word/PDF export generation with vendored fonts and authenticated downloads.",
+  );
   console.log(
     "PASS: OCI build, Compose startup, login, manuscript save, stale-save rejection, rename/move/trash/restore, PostgreSQL persistence across restart, template catalog initialization/restart/recovery, bible entry edit/conflict/Trash/restore and scalar/structured/reference/custom-definition persistence/recovery, shared canon/two-book overrides/passage links with concurrent CAS, directional/book-specific relationships and Trash/restore/recovery, family answers and live/missing appearances, verified deletion backup/failure/restore into separate PostgreSQL database, and web assets.",
   );

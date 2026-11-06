@@ -9,6 +9,7 @@ export async function readContinuitySnapshot(
   q: Query,
   bookId: string,
   knowledgeOnly: boolean | "planning" = false,
+  includeDocuments = true,
 ): Promise<ContinuitySnapshot> {
   const book = (
     await q("SELECT data,library_id FROM books WHERE id=$1 FOR UPDATE", [
@@ -47,7 +48,7 @@ export async function readContinuitySnapshot(
   columns.push(
     "(SELECT coalesce(jsonb_agg(data),'[]'::jsonb) FROM (SELECT n.data FROM manuscript_nodes n JOIN books b ON b.id=n.book_id WHERE b.library_id=$1 LIMIT 10001) t) AS nodes",
   );
-  if (!knowledgeOnly)
+  if (!knowledgeOnly && includeDocuments)
     columns.push(
       "(SELECT coalesce(jsonb_agg(jsonb_build_object('nodeId',node_id,'document',document)),'[]'::jsonb) FROM (SELECT d.node_id,d.document FROM documents d JOIN manuscript_nodes n ON n.id=d.node_id JOIN books b ON b.id=n.book_id WHERE b.library_id=$1 LIMIT 10001) t) AS documents",
     );

@@ -169,7 +169,7 @@ test("v3 upgrade preserves entries/revisions and rolls back seeding failure befo
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      11,
+      12,
     );
     assert.equal((await f.store.templates(f.library.id)).fields.length, 20);
     assert.deepEqual(await f.store.entries(f.book.id), [entry]);
@@ -187,8 +187,8 @@ test("new recovery includes library templates; legacy v1 files restore into v4 w
     const backup = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    assert.equal(backup.version, 9);
-    assert.equal(backup.schemaVersion, 11);
+    assert.equal(backup.version, 10);
+    assert.equal(backup.schemaVersion, 12);
     assert.equal(backup.tables.bible_fields.length, 20);
     const legacy = structuredClone(backup);
     legacy.version = 1;

@@ -22,7 +22,7 @@ test("question schema upgrade is atomic, repeatable and preserves existing recor
     const before = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    await f.store.db.query("DROP TABLE state_changes");
+    await f.store.db.query("DROP TABLE bible_exports; DROP TABLE state_changes");
     await f.store.db.query(
       "ALTER TABLE bible_fields DROP CONSTRAINT state_fields_library_identity; ALTER TABLE continuity_events DROP CONSTRAINT state_events_library_identity",
     );
@@ -51,7 +51,7 @@ test("question schema upgrade is atomic, repeatable and preserves existing recor
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      11,
+      12,
     );
     assert.deepEqual(
       (await f.store.db.transaction((q) => captureBook(q, f.book.id))).tables,
@@ -260,7 +260,7 @@ test("questions join exact recovery/legacy restore, scope guards and backed entr
     const before = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    assert.equal(before.version, 9);
+    assert.equal(before.version, 10);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q(`DELETE FROM ${t}`);
       await restoreBookBackup(q, before);

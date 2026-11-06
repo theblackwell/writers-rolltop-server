@@ -81,6 +81,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B8b — Names still needed: implemented 2026-11-06.** Native-compatible read-only placeholder/flag catalog, in-window source/text filters and exact manuscript/fact/entry navigation; Bible Entries flagged-only filter and async direct editing. Existing shared flag CAS/consent preserved; no schema/recovery change. 157 tests, TypeScript/build, scratch browser and ARM64 PostgreSQL shared-CAS/read-only/restart/exact recovery pass. **Next B9a Word bible export**, in another session.
 
+- **B9a/B9b — Word/PDF bible exports: implemented 2026-11-06.** Owner requested all B9 together. One native-aligned content model, editable structured Word, paginated PDF/embedded fonts, version suggestions/CAS/idempotent retries, immutable checksummed saved copies and authenticated downloads. Schema12/recovery10 preserves legacy1–9 and protects copies through backup/purge. 163 tests, TypeScript/build, every-page sample/stress render review, live browser download and ARM64 PostgreSQL plus packaged OCI smoke pass. **B9 complete; next size portable archive/attachment work and remaining M3 acceptance**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

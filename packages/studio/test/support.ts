@@ -27,7 +27,7 @@ export async function fixture() {
 }
 
 export async function removeRelationshipSchema(store: StudioStore) {
-  await store.db.query("DROP TABLE state_changes");
+  await store.db.query("DROP TABLE bible_exports; DROP TABLE state_changes");
   await store.db.query(
     "ALTER TABLE bible_fields DROP CONSTRAINT state_fields_library_identity; ALTER TABLE continuity_events DROP CONSTRAINT state_events_library_identity",
   );

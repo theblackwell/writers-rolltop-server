@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { BibleExports } from "./bible-exports.tsx";
 import { NamesNeeded } from "./names.tsx";
 import { prepareNamesPlace } from "./names-navigation.ts";
 import type { NameNeeded } from "../../../packages/studio/src/names.ts";
@@ -157,6 +158,7 @@ function App() {
     anchorId: string;
     requestId: string;
   } | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [namesOpen, setNamesOpen] = useState(false);
   const [bibleTarget, setBibleTarget] = useState<string>();
   const [bibleOpen, setBibleOpen] = useState(false);
@@ -552,6 +554,14 @@ function App() {
               </button>
               <button disabled={!library} onClick={() => setWorldsOpen(true)}>
                 Worlds and Series…
+              </button>
+              <button
+                disabled={!book}
+                onClick={async () => {
+                  if (await leave()) setExportOpen(true);
+                }}
+              >
+                Export Story Bible…
               </button>
               <button
                 disabled={!book}
@@ -995,6 +1005,18 @@ function App() {
           close={() => setProgressOpen(false)}
         >
           <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
+        </Dialog>
+      )}
+      {book && exportOpen && (
+        <Dialog title="Export Story Bible" close={() => setExportOpen(false)}>
+          <BibleExports
+            key={book.id}
+            bookId={book.id}
+            onSaved={(b) => {
+              setBook(b);
+              setBooks((bs) => bs.map((x) => (x.id === b.id ? b : x)));
+            }}
+          />
         </Dialog>
       )}
       {book && namesOpen && (

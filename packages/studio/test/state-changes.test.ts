@@ -55,7 +55,7 @@ test("state schema migration is atomic and repeatable with prior all-table data 
       captureBook(q, f.book.id),
     );
     await f.store.db.query(
-      "DROP TABLE state_changes; ALTER TABLE bible_fields DROP CONSTRAINT state_fields_library_identity; ALTER TABLE continuity_events DROP CONSTRAINT state_events_library_identity; UPDATE studio_schema SET version=10",
+      "DROP TABLE bible_exports; DROP TABLE state_changes; ALTER TABLE bible_fields DROP CONSTRAINT state_fields_library_identity; ALTER TABLE continuity_events DROP CONSTRAINT state_events_library_identity; UPDATE studio_schema SET version=10",
     );
     const broken = new StudioStore({
       ...f.store.db,

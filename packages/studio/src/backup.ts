@@ -25,11 +25,12 @@ export const backupTables = [
   "questions",
   "continuity_events",
   "state_changes",
+  "bible_exports",
 ] as const;
 export type BookBackup = {
   format: "writers-rolltop/book-recovery";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
-  schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   createdAt: string;
   bookId: string;
   tables: Record<string, any[]>;
@@ -74,6 +75,7 @@ export async function captureBook(
     "questions",
     "continuity_events",
     "state_changes",
+    "bible_exports",
   ])
     tables[table] = (
       await q(`SELECT * FROM ${table} WHERE library_id=$1`, [book.library_id])
@@ -99,8 +101,8 @@ export async function captureBook(
     throw new Error("Recovery cannot omit an externally referenced entry.");
   return {
     format: "writers-rolltop/book-recovery",
-    version: 9,
-    schemaVersion: 11,
+    version: 10,
+    schemaVersion: 12,
     createdAt: new Date().toISOString(),
     bookId,
     tables,
@@ -128,9 +130,12 @@ function validateBackup(data: BookBackup) {
   const beforeQuestions = data?.version === 6 && data?.schemaVersion === 8;
   const beforeEvents = data?.version === 7 && data?.schemaVersion === 9;
   const beforeState = data?.version === 8 && data?.schemaVersion === 10;
-  const current = data?.version === 9 && data?.schemaVersion === 11;
+  const current =
+    (data?.version === 9 && data?.schemaVersion === 11) ||
+    (data?.version === 10 && data?.schemaVersion === 12);
   const compatibleTables = backupTables.filter(
     (t) =>
+      (data?.version === 10 || t !== "bible_exports") &&
       (current || t !== "state_changes") &&
       (current || beforeState || t !== "continuity_events") &&
       (current || beforeState || beforeEvents || t !== "questions") &&

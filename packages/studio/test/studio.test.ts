@@ -430,12 +430,12 @@ test("a failed revision append rolls back the document update atomically", async
 test("newer database schemas are refused without changing their version", async () => {
   const f = await fixture();
   try {
-    await f.store.db.query("UPDATE studio_schema SET version=12");
+    await f.store.db.query("UPDATE studio_schema SET version=13");
     await assert.rejects(() => f.store.migrate(), /newer/);
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      12,
+      13,
     );
   } finally {
     await f.pg.close();
