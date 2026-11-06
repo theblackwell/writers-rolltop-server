@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { migrateEvents, unlinkEvents } from "./events.ts";
 import { migrateQuestions, unlinkQuestions } from "./questions.ts";
 import { migrateFacts, unlinkFacts } from "./facts.ts";
 import { migrateRelationships } from "./relationships.ts";
@@ -92,12 +93,12 @@ export class StudioStore {
       );
       await q("LOCK TABLE studio_schema IN EXCLUSIVE MODE");
       const { rows } = await q("SELECT version FROM studio_schema");
-      if (rows[0]?.version > 9)
+      if (rows[0]?.version > 10)
         throw new Error(
           "This database is newer than this server; update Writers Rolltop.",
         );
       if (rows.length) {
-        if (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(rows[0].version))
+        if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(rows[0].version))
           throw new Error("Unsupported database schema version.");
         if (rows[0].version === 1) await this.migrateNotes(q);
         if (rows[0].version < 3) await this.migrateReferences(q);
@@ -107,6 +108,7 @@ export class StudioStore {
         if (rows[0].version < 7) await migrateRelationships(q);
         if (rows[0].version < 8) await migrateFacts(q);
         if (rows[0].version < 9) await migrateQuestions(q);
+        if (rows[0].version < 10) await migrateEvents(q);
         return;
       }
       await q(`CREATE TABLE libraries (id uuid PRIMARY KEY, data jsonb NOT NULL);
@@ -125,6 +127,7 @@ export class StudioStore {
       await migrateRelationships(q);
       await migrateFacts(q);
       await migrateQuestions(q);
+      await migrateEvents(q);
     });
   }
   private async migrateNotes(q: Query) {
@@ -1380,6 +1383,13 @@ export class StudioStore {
         type === "book" ? id : undefined,
       );
       await unlinkQuestions(
+        q,
+        ctx.libraryId,
+        purgedEntries,
+        ids,
+        type === "book" ? id : undefined,
+      );
+      await unlinkEvents(
         q,
         ctx.libraryId,
         purgedEntries,

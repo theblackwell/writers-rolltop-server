@@ -27,6 +27,7 @@ export async function fixture() {
 }
 
 export async function removeRelationshipSchema(store: StudioStore) {
+  await store.db.query("DROP TABLE continuity_events");
   await store.db.query("DROP TABLE questions");
   await store.db.query("DROP TABLE facts");
   await store.db.query(

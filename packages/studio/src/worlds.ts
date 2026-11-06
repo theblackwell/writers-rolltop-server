@@ -163,15 +163,22 @@ export async function editWorld(
           [libraryId, id],
         )
       ).rows;
+      const events = (
+        await q(
+          "SELECT id FROM continuity_events WHERE library_id=$1 AND data->'scope'->>'id'=$2 LIMIT 1",
+          [libraryId, id],
+        )
+      ).rows;
       if (
         members.length ||
         children.length ||
         entries.length ||
         facts.length ||
-        questions.length
+        questions.length ||
+        events.length
       )
         invalid(
-          "This item still has books, series, bible entries, facts or questions, including Trash. Move or clear those first.",
+          "This item still has books, series, bible entries, facts, questions or timeline events, including Trash. Move or clear those first.",
         );
       data.deletedAt = stamp(data.updatedAt);
     }
@@ -320,6 +327,24 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
       )
         invalid(
           "Clear this book's chapter/scene links in shared questions before leaving their scope.",
+        );
+    }
+    for (const { data: event } of (
+      await q("SELECT data FROM continuity_events WHERE library_id=$1", [
+        row.library_id,
+      ])
+    ).rows) {
+      if (!left.includes(event.scope.id)) continue;
+      if (
+        (
+          await q(
+            "SELECT id FROM manuscript_nodes WHERE book_id=$1 AND id::text=ANY($2::text[]) LIMIT 1",
+            [bookId, event.sceneIds],
+          )
+        ).rows.length
+      )
+        invalid(
+          "Clear this book's scene links in shared timeline events before leaving their scope.",
         );
     }
     const all = (

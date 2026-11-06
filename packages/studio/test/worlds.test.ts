@@ -30,7 +30,7 @@ test("world schema upgrades v4 without rewriting entries or manuscripts", async 
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      9,
+      10,
     );
   } finally {
     await f.pg.close();
@@ -92,7 +92,7 @@ test("world ownership, matching series, deletion restrictions and recovery conte
     const backup = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    assert.equal(backup.version, 7);
+    assert.equal(backup.version, 8);
     assert.deepEqual(
       backup.tables.universes.map((r) => r.data),
       [world],

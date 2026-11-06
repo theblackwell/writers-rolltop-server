@@ -67,6 +67,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B5b2b — Question and decision controls: implemented 2026-11-06.** Library → Questions and Decisions edits text/topic/status/optional answer/About/deadline with explicit shared consent, CAS draft retention and reversible Trash. 109 tests, TypeScript/build and focused scratch desktop browser creation/reopen/concurrent conflict/shared Trash/restore pass. Schema9/recovery7 unchanged. **B5b complete; next B6a timeline**, in a separate session.
 
+- **B6a1 — Internal timeline storage and recovery: implemented 2026-11-06.** B6a split before implementation. Schema10 scoped events with date/event-entry/scenes/participants validation, CAS/shared intent/Trash, recovery8 (legacy1–7) and safe purge/membership guards. 114 tests, TypeScript/build and real ARM64 PostgreSQL shared-CAS/restart/exact recovery pass. No public API/UI. **Next B6a2 authenticated timeline APIs, controls and story-date/reading-order views**, in a separate session; B6b state changes stays separate.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

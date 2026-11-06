@@ -22,6 +22,7 @@ test("question schema upgrade is atomic, repeatable and preserves existing recor
     const before = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
+    await f.store.db.query("DROP TABLE continuity_events");
     await f.store.db.query("DROP TABLE questions");
     await f.store.db.query("UPDATE studio_schema SET version=8");
     const broken = new StudioStore({
@@ -46,7 +47,7 @@ test("question schema upgrade is atomic, repeatable and preserves existing recor
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      9,
+      10,
     );
     assert.deepEqual(
       (await f.store.db.transaction((q) => captureBook(q, f.book.id))).tables,
@@ -255,7 +256,7 @@ test("questions join exact recovery/legacy restore, scope guards and backed entr
     const before = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    assert.equal(before.version, 7);
+    assert.equal(before.version, 8);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q(`DELETE FROM ${t}`);
       await restoreBookBackup(q, before);
