@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { sameFamilyName } from "../../../packages/studio/src/family-values.ts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EntryFields } from "./entry-fields.tsx";
 import type { Catalog } from "./entry-fields.tsx";
 import { api } from "./api.ts";
@@ -35,7 +35,9 @@ export function EntryList({
   onInspect,
   busy,
   action,
+  initialId,
 }: {
+  initialId?: string;
   bookId: string;
   catalog: Catalog;
   book: { id: string; universeId?: string; seriesId?: string };
@@ -47,6 +49,7 @@ export function EntryList({
   busy: boolean;
   action: (work: () => Promise<void>) => Promise<void>;
 }) {
+  const [namesOnly, setNamesOnly] = useState(false);
   const [filter, setFilter] = useState("");
   const [kind, setKind] = useState("");
   const [trash, setTrash] = useState(false);
@@ -54,12 +57,26 @@ export function EntryList({
   const [receipt, setReceipt] = useState("");
   const [editing, setEditing] = useState<string>();
   const [fieldsEditing, setFieldsEditing] = useState<string>();
+  const opened = useRef<string | undefined>(undefined);
+  const [navigationError, setNavigationError] = useState("");
+  useEffect(() => {
+    if (initialId && !busy && opened.current !== initialId) {
+      opened.current = initialId;
+      const target = entries.find((e) => e.id === initialId);
+      if (target && !target.deletedAt) setEditing(initialId);
+      else
+        setNavigationError(
+          "This entry is no longer live here. Review Trash or check names again.",
+        );
+    }
+  }, [initialId, entries, busy]);
   const fieldEntry = entries.find((e) => e.id === fieldsEditing);
   const selected = entries.find((e) => e.id === editing);
   const shown = entries
     .filter(
       (e) =>
         Boolean(e.deletedAt) === trash &&
+        (!namesOnly || e.toBeNamed === true) &&
         (!kind || e.entryType === kind) &&
         [e.name, ...e.aliases].some((s) =>
           s.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()),
@@ -93,6 +110,7 @@ export function EntryList({
   };
   return (
     <section aria-label="Bible entry details">
+      {navigationError && <p role="alert">{navigationError}</p>}
       <label>
         Find name or alias
         <input value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -109,6 +127,14 @@ export function EntryList({
             </option>
           ))}
         </select>
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={namesOnly}
+          onChange={(e) => setNamesOnly(e.target.checked)}
+        />
+        Only names still needed
       </label>
       <label className="entry-toggle">
         <input

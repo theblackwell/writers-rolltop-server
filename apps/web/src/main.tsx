@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { NamesNeeded } from "./names.tsx";
+import { prepareNamesPlace } from "./names-navigation.ts";
+import type { NameNeeded } from "../../../packages/studio/src/names.ts";
 import { Planning } from "./planning.tsx";
 import { Worlds } from "./worlds.tsx";
 import React, {
@@ -154,6 +157,8 @@ function App() {
     anchorId: string;
     requestId: string;
   } | null>(null);
+  const [namesOpen, setNamesOpen] = useState(false);
+  const [bibleTarget, setBibleTarget] = useState<string>();
   const [bibleOpen, setBibleOpen] = useState(false);
   const [planningOpen, setPlanningOpen] = useState(false);
   const [planningPoint, setPlanningPoint] = useState<string>();
@@ -254,6 +259,32 @@ function App() {
   function showWarnings(point?: string) {
     setContinuityPoint(point);
     setContinuityOpen(true);
+  }
+  async function openName(n: NameNeeded) {
+    if (!book) return;
+    if (n.source === "fact") await openWarningSubject("fact", n.sourceId);
+    else if (n.source === "manuscript") {
+      const data = await prepareNamesPlace(n.sourceId, leave, () =>
+        api("/books/" + book.id),
+      );
+      setBook(data.book);
+      setNodes(data.nodes);
+      setScene(data.target);
+      setView("manuscript");
+    } else {
+      if (!(await leave()))
+        throw new Error(
+          "Resolve the current scene's draft or save conflict before opening this entry.",
+        );
+      const entries = await api<any[]>("/books/" + book.id + "/entries");
+      if (!entries.some((e) => e.id === n.sourceId && !e.deletedAt))
+        throw new Error(
+          "This entry is no longer live here. Review Trash or check names again.",
+        );
+      setBibleTarget(n.sourceId);
+      setBibleOpen(true);
+    }
+    setNamesOpen(false);
   }
   async function openWarningSubject(
     kind: "fact" | "question" | "event",
@@ -525,6 +556,14 @@ function App() {
               <button
                 disabled={!book}
                 onClick={async () => {
+                  if (await leave()) setNamesOpen(true);
+                }}
+              >
+                Names Still Needed…
+              </button>
+              <button
+                disabled={!book}
+                onClick={async () => {
                   if (await leave()) {
                     setPlanningPoint(undefined);
                     setPlanningOpen(true);
@@ -547,7 +586,13 @@ function App() {
               <button disabled={!book} onClick={() => setNoting(true)}>
                 Quick Notes…
               </button>
-              <button disabled={!book} onClick={() => setBibleOpen(true)}>
+              <button
+                disabled={!book}
+                onClick={() => {
+                  setBibleTarget(undefined);
+                  setBibleOpen(true);
+                }}
+              >
                 Bible Entries…
               </button>
               <button disabled={!book} onClick={() => showWarnings()}>
@@ -952,6 +997,11 @@ function App() {
           <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
         </Dialog>
       )}
+      {book && namesOpen && (
+        <Dialog title="Names Still Needed" close={() => setNamesOpen(false)}>
+          <NamesNeeded bookId={book.id} onOpen={openName} />
+        </Dialog>
+      )}
       {book && planningOpen && (
         <Dialog
           title="Story Overview and Planning"
@@ -1059,6 +1109,8 @@ function App() {
       {bibleOpen && book && (
         <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
           <References
+            key={book.id + ":" + (bibleTarget ?? "list")}
+            initialEntryId={bibleTarget}
             bookId={book.id}
             onOpenAppearance={async (nodeId, anchorId) => {
               if (!(await leave()))

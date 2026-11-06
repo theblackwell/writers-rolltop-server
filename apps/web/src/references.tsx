@@ -20,7 +20,9 @@ export function References({
   nodeId,
   onReveal,
   onOpenAppearance,
+  initialEntryId,
 }: {
+  initialEntryId?: string;
   bookId: string;
   nodeId?: string;
   onReveal?: (id: string) => void;
@@ -244,6 +246,7 @@ export function References({
         </details>
         {!nodeId && (
           <EntryList
+            initialId={initialEntryId}
             bookId={bookId}
             catalog={catalog}
             book={book}

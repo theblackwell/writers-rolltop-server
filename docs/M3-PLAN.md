@@ -79,6 +79,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B8a — Story and manuscript planning: implemented 2026-11-06.** Native-compatible overview, part/chapter plans/targets, chapter/scene synopsis/status/POV/setting and saved-word comparisons, with bounded authenticated APIs, CAS, draft retention and optional clearing. 151 tests, TypeScript/build, scratch browser and ARM64 PostgreSQL CAS/read-only/restart/exact recovery pass. No schema/recovery change. **Next B8b names still needed**, in another session.
 
+- **B8b — Names still needed: implemented 2026-11-06.** Native-compatible read-only placeholder/flag catalog, in-window source/text filters and exact manuscript/fact/entry navigation; Bible Entries flagged-only filter and async direct editing. Existing shared flag CAS/consent preserved; no schema/recovery change. 157 tests, TypeScript/build, scratch browser and ARM64 PostgreSQL shared-CAS/read-only/restart/exact recovery pass. **Next B9a Word bible export**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

@@ -118,7 +118,11 @@ test("mounted Entry Trash requires exact name/shared consent, retains failed con
         (b) => b.textContent === name,
       )!;
     const click = async (el: HTMLElement) => React.act(async () => el.click());
-    await click(doc.querySelector('input[type="checkbox"]')!);
+    await click(
+      Array.from(doc.querySelectorAll("label"))
+        .find((l) => l.textContent?.includes("Show Entry Trash"))!
+        .querySelector("input")!,
+    );
     await click(button("Delete Entry Permanently…"));
     assert.equal(button("Delete Permanently").disabled, true);
     const input = doc.querySelector(

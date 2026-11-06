@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { namesCatalog } from "./names.ts";
 import { planningCatalog, savePlanning } from "./planning.ts";
 import { purgeEntry } from "./entry-purge.ts";
 import { factCatalog, saveFact } from "./facts.ts";
@@ -265,6 +266,13 @@ export function studioServer(
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
         );
       }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "names-needed" &&
+        parts.length === 3 &&
+        method === "GET"
+      )
+        return respond(res, 200, await namesCatalog(store.db, parts[1]));
       if (
         parts[0] === "books" &&
         parts[2] === "planning" &&
