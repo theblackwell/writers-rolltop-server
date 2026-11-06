@@ -73,6 +73,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B6b — Changing state: implemented 2026-11-06.** Owner requested all B6b together. Schema11 typed state history at events/chapter/scene nodes, recovery9 (legacy1–8), safe purge/template/membership guards, authenticated bounded APIs and Library → Changing State with typed editors, shared consent, CAS/draft retention and Trash/restore. Native cross-book/as-of precedence and stable event placement. 128 tests, TypeScript/build, scratch browser QA and real ARM64 PostgreSQL API/shared-CAS/as-of/restart/exact recovery pass. **Next B7a continuity checks**, in another session; attachments remain portable-library work.
 
+- **B7a — Continuity checks: implemented 2026-11-06.** Eight canonical deterministic checks, stable keys/order and existing-dismissal suppression; authenticated bounded read-only consistent-snapshot API and Library → Continuity Warnings with refresh. No prose inference, schema or recovery change. 138 tests, TypeScript/build, all-eight-kind scratch browser QA and ARM64 PostgreSQL read-only/restart/exact recovery pass. **Next B7b knowledge, warning navigation/badges and intentional-warning controls**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

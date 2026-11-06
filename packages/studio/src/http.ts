@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { purgeEntry } from "./entry-purge.ts";
 import { factCatalog, saveFact } from "./facts.ts";
+import { continuityCatalog } from "./continuity.ts";
 import { stateCatalog, saveStateChange } from "./state-changes.ts";
 import { eventCatalog, saveEvent } from "./events.ts";
 import { questionCatalog, saveQuestion } from "./questions.ts";
@@ -261,6 +262,13 @@ export function studioServer(
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
         );
       }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "continuity" &&
+        parts.length === 3 &&
+        method === "GET"
+      )
+        return respond(res, 200, await continuityCatalog(store.db, parts[1]));
       if (
         parts[0] === "books" &&
         parts[2] === "state-changes" &&

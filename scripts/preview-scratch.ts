@@ -238,6 +238,102 @@ if (process.env.STUDIO_FAMILY_PREVIEW === "1") {
     ];
   await store.save(missing.id, content.document, revision.revision);
 }
+// Optional B7a checker fixtures; confined to this volatile preview, never production.
+if (process.env.STUDIO_CONTINUITY_PREVIEW === "1") {
+  const { saveFact } = await import("../packages/studio/src/facts.ts");
+  const { saveQuestion } = await import("../packages/studio/src/questions.ts");
+  const { saveEvent } = await import("../packages/studio/src/events.ts");
+  const { saveStateChange } =
+    await import("../packages/studio/src/state-changes.ts");
+  const nodes = (
+    await store.db.query("SELECT data FROM manuscript_nodes WHERE book_id=$1", [
+      book.id,
+    ])
+  ).rows.map((r) => r.data);
+  const later = nodes.find((n) => n.title === "The road home");
+  await saveFact(store.db, book.id, {
+    text: "The letter names the keeper.",
+    nodeId: later.id,
+    knowledge: [{ knower: "reader", nodeId: scene.id }],
+  });
+  const lost = await store.createEntry(book.id, {
+    name: "The missing witness",
+    entryType: "character",
+  });
+  const trashed = await store.createNode(
+    book.id,
+    "An abandoned scene",
+    "scene",
+    chapter.id,
+  );
+  await saveFact(store.db, book.id, {
+    text: "The orchard key is hidden.",
+    truth: "undecided",
+    nodeId: trashed.id,
+    entryIds: [lost.id],
+    knowledge: [{ knower: lost.id, nodeId: trashed.id }],
+  });
+  await store.updateEntry(book.id, lost.id, {
+    deleted: true,
+    expectedUpdatedAt: lost.updatedAt,
+  });
+  await store.trashNode(trashed.id);
+  await saveQuestion(store.db, book.id, {
+    text: "Who sent the letter?",
+    nodeId: chapter.id,
+  });
+  const intentional = await saveFact(store.db, book.id, {
+    text: "The reader's deliberate uncertainty.",
+    truth: "undecided",
+    knowledge: [{ knower: "reader" }],
+  });
+  await store.db.query("UPDATE facts SET data=data || $2::jsonb WHERE id=$1", [
+    intentional.id,
+    {
+      dismissedWarnings: [
+        {
+          warning: "undecidedButKnown",
+          note: "Existing intentional fixture",
+          dismissedAt: intentional.updatedAt,
+        },
+      ],
+    },
+  ]);
+  let person = (await store.entries(book.id)).find(
+    (e) => e.name === "Orchard keeper",
+  );
+  if (!person) {
+    person = await store.createEntry(book.id, {
+      name: "Orchard keeper",
+      entryType: "character",
+    });
+    const t = (await store.templates(library.id)).templates.find(
+      (t) => t.entryType === "character",
+    )!;
+    person = await store.editEntryField(book.id, person.id, {
+      templateId: t.id,
+      expectedUpdatedAt: person.updatedAt,
+      expectedTemplateUpdatedAt: t.updatedAt,
+    });
+  }
+  const field = (await store.templates(library.id)).fields.find(
+    (f) => f.templateId === person.templateId && f.fieldType === "integer",
+  )!;
+  const event = await saveEvent(store.db, book.id, {
+    title: "The keeper's discovery",
+    sceneIds: [scene.id],
+  });
+  for (const value of [41, 42])
+    await saveStateChange(store.db, book.id, {
+      entryId: person.id,
+      fieldId: field.id,
+      eventId: event.id,
+      value,
+      expectedEntryUpdatedAt: person.updatedAt,
+      expectedFieldUpdatedAt: field.updatedAt,
+      editSharedCanon: true,
+    });
+}
 const server = studioServer(store, {
   origin: "http://localhost:4318",
   passwordHash: await passwordHash("scratch-preview-password"),
