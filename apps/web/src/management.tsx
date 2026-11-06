@@ -100,7 +100,9 @@ export function BinderTree({
     return children(live, parent).map((n) => (
       <div key={n.id} className={`binder-item kind-${n.kind}`}>
         <div className={"binder-row " + (selected === n.id ? "current" : "")}>
-          {["scene", "frontMatter", "backMatter"].includes(n.kind ?? "") ? (
+          {["part", "chapter", "scene", "frontMatter", "backMatter"].includes(
+            n.kind ?? "",
+          ) ? (
             <button
               className="binder-select"
               onClick={() => onSelect(n)}

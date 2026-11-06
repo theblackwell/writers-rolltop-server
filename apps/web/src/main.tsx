@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { Planning } from "./planning.tsx";
 import { Worlds } from "./worlds.tsx";
 import React, {
   useState,
@@ -154,6 +155,8 @@ function App() {
     requestId: string;
   } | null>(null);
   const [bibleOpen, setBibleOpen] = useState(false);
+  const [planningOpen, setPlanningOpen] = useState(false);
+  const [planningPoint, setPlanningPoint] = useState<string>();
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [continuityPoint, setContinuityPoint] = useState<string>();
   const [recordTarget, setRecordTarget] = useState<{
@@ -519,6 +522,17 @@ function App() {
               <button disabled={!library} onClick={() => setWorldsOpen(true)}>
                 Worlds and Series…
               </button>
+              <button
+                disabled={!book}
+                onClick={async () => {
+                  if (await leave()) {
+                    setPlanningPoint(undefined);
+                    setPlanningOpen(true);
+                  }
+                }}
+              >
+                Story Overview and Planning…
+              </button>
               <button disabled={!book} onClick={() => setDetails(book)}>
                 Book Details and Goals…
               </button>
@@ -732,6 +746,16 @@ function App() {
           <aside className="binder" aria-label="Manuscript binder">
             <p className="eyebrow">MANUSCRIPT</p>
             <h2>{book?.title}</h2>
+            <button
+              onClick={async () => {
+                if (await leave()) {
+                  setPlanningPoint(undefined);
+                  setPlanningOpen(true);
+                }
+              }}
+            >
+              Story Overview and Planning…
+            </button>
             <button onClick={() => setDetails(book)}>
               Book Details and Goals…
             </button>
@@ -837,6 +861,25 @@ function App() {
             )}
           </aside>
           <main className="manuscript-area">
+            {scene &&
+              ["part", "chapter", "scene"].includes(scene.kind ?? "") && (
+                <button
+                  onClick={async () => {
+                    if (await leave()) {
+                      setPlanningPoint(scene.id);
+                      setPlanningOpen(true);
+                    }
+                  }}
+                >
+                  Plan This{" "}
+                  {scene.kind === "part"
+                    ? "Part"
+                    : scene.kind === "chapter"
+                      ? "Chapter"
+                      : "Scene"}
+                  …
+                </button>
+              )}
             {scene && ["scene", "chapter"].includes(scene.kind ?? "") && (
               <div className="story-continuity-actions">
                 <button onClick={() => showWarnings(scene.id)}>
@@ -854,12 +897,12 @@ function App() {
                 Continuity badges could not be refreshed. {warningError}
               </p>
             )}
-            {scene?.kind === "chapter" ? (
-              <section aria-label="Chapter location">
+            {["chapter", "part"].includes(scene?.kind ?? "") && scene ? (
+              <section aria-label="Manuscript location">
                 <h1>{scene.title}</h1>
-                <p>Scenes in this chapter</p>
+                <p>Items in this {scene.kind}</p>
                 {children(liveNodes(nodes), scene.id)
-                  .filter((n) => n.kind === "scene")
+                  .filter((n) => ["chapter", "scene"].includes(n.kind ?? ""))
                   .map((n) => (
                     <button key={n.id} onClick={() => setScene(n)}>
                       {n.title}
@@ -907,6 +950,26 @@ function App() {
           close={() => setProgressOpen(false)}
         >
           <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
+        </Dialog>
+      )}
+      {book && planningOpen && (
+        <Dialog
+          title="Story Overview and Planning"
+          close={() => setPlanningOpen(false)}
+        >
+          <Planning
+            bookId={book.id}
+            initialId={planningPoint}
+            onSaved={(item, isBook) => {
+              if (isBook) {
+                setBook(item);
+                setBooks((bs) => bs.map((b) => (b.id === item.id ? item : b)));
+              } else {
+                setNodes((ns) => ns.map((n) => (n.id === item.id ? item : n)));
+                setScene((n) => (n?.id === item.id ? item : n));
+              }
+            }}
+          />
         </Dialog>
       )}
       {continuityOpen && book && (

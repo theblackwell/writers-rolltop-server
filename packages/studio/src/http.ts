@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { planningCatalog, savePlanning } from "./planning.ts";
 import { purgeEntry } from "./entry-purge.ts";
 import { factCatalog, saveFact } from "./facts.ts";
 import { knowledgeCatalog } from "./knowledge.ts";
@@ -262,6 +263,39 @@ export function studioServer(
           method === "GET"
             ? await eventCatalog(store.db, parts[1])
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
+        );
+      }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "planning" &&
+        parts.length === 3
+      ) {
+        if (method === "GET")
+          return respond(res, 200, await planningCatalog(store.db, parts[1]));
+        if (method === "PUT")
+          return respond(
+            res,
+            200,
+            await savePlanning(store.db, parts[1], await body(req)),
+          );
+      }
+      if (
+        parts[0] === "books" &&
+        parts[2] === "nodes" &&
+        parts[4] === "planning" &&
+        parts.length === 5 &&
+        method === "PUT"
+      ) {
+        if (!uuid.test(parts[3]))
+          throw new StudioError(
+            400,
+            "INVALID_ID",
+            "Choose a valid planning item.",
+          );
+        return respond(
+          res,
+          200,
+          await savePlanning(store.db, parts[1], await body(req), parts[3]),
         );
       }
       if (

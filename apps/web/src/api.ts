@@ -42,4 +42,14 @@ export type Item = {
   language?: string;
   targetWordCount?: number;
   targetDate?: string;
+  logline?: string;
+  premise?: string;
+  themes?: string;
+  arcs?: string;
+  principles?: string;
+  plan?: string;
+  synopsis?: string;
+  status?: string;
+  povEntryId?: string;
+  settingEntryId?: string;
 };

@@ -8,7 +8,7 @@ import { wordCount } from "../../document-adapter/src/text.ts";
 export async function readContinuitySnapshot(
   q: Query,
   bookId: string,
-  knowledgeOnly = false,
+  knowledgeOnly: boolean | "planning" = false,
 ): Promise<ContinuitySnapshot> {
   const book = (
     await q("SELECT data,library_id FROM books WHERE id=$1 FOR UPDATE", [
@@ -21,10 +21,16 @@ export async function readContinuitySnapshot(
     throw new StudioError(
       400,
       "INVALID_INPUT",
-      "Restore the book before checking continuity.",
+      knowledgeOnly === "planning"
+        ? "Restore the book before opening planning."
+        : "Restore the book before checking continuity.",
     );
   const sources = knowledgeOnly
-    ? ["books", "bible_entries", "facts"]
+    ? [
+        "books",
+        "bible_entries",
+        ...(knowledgeOnly === "planning" ? [] : ["facts"]),
+      ]
     : [
         "books",
         "bible_entries",
@@ -51,7 +57,7 @@ export async function readContinuitySnapshot(
     throw new StudioError(
       413,
       "CATALOG_TOO_LARGE",
-      "This library is too large for continuity checks. No records were omitted.",
+      "This library is too large for this view. No records were omitted.",
     );
   const snapshot: ContinuitySnapshot = {
     book: book.data,
@@ -59,7 +65,7 @@ export async function readContinuitySnapshot(
     nodes: row.nodes,
     entries: row.bible_entries,
     fields: row.bible_fields ?? [],
-    facts: row.facts,
+    facts: row.facts ?? [],
     questions: row.questions ?? [],
     events: row.continuity_events ?? [],
     stateChanges: row.state_changes ?? [],

@@ -77,6 +77,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B7b — Knowledge and intentional warnings: implemented 2026-11-06.** Reader-first as-of knowledge with native cross-book chronology, warning links/badges, exact-key intentional notes and Show Again, shared consent/CAS/draft retention and changed-place warning return. Schema11/recovery9 unchanged. 147 tests, TypeScript/build, focused scratch browser and ARM64 PostgreSQL shared-CAS/read-only/restart/exact recovery pass. **Next B8a story and manuscript planning**, in another session.
 
+- **B8a — Story and manuscript planning: implemented 2026-11-06.** Native-compatible overview, part/chapter plans/targets, chapter/scene synopsis/status/POV/setting and saved-word comparisons, with bounded authenticated APIs, CAS, draft retention and optional clearing. 151 tests, TypeScript/build, scratch browser and ARM64 PostgreSQL CAS/read-only/restart/exact recovery pass. No schema/recovery change. **Next B8b names still needed**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement
