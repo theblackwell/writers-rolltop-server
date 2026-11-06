@@ -69,6 +69,8 @@ This is the beginning of M3, not a complete web edition. Features in later slice
 
 - **B6a1 — Internal timeline storage and recovery: implemented 2026-11-06.** B6a split before implementation. Schema10 scoped events with date/event-entry/scenes/participants validation, CAS/shared intent/Trash, recovery8 (legacy1–7) and safe purge/membership guards. 114 tests, TypeScript/build and real ARM64 PostgreSQL shared-CAS/restart/exact recovery pass. No public API/UI. **Next B6a2 authenticated timeline APIs, controls and story-date/reading-order views**, in a separate session; B6b state changes stays separate.
 
+- **B6a2 — Timeline APIs and controls: implemented 2026-11-06.** Bounded independent catalog, authenticated scoped event writes, Library → Timeline fields/links/roles, explicit shared consent, complete failed-draft retention and reversible Trash. Native Story Date/Reading Order views with stable canonical ties. 117 tests, TypeScript/build, focused scratch desktop browser QA and ARM64 PostgreSQL API/shared-CAS/restart/exact recovery pass. Schema10/recovery8 unchanged. **B6a complete; next B6b changing state**, in another session.
+
 Continue delivery steps 3–5 above in separately sized sections after library editing.
 
 ## Final container delivery requirement

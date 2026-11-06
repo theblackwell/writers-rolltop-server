@@ -23,7 +23,155 @@ export async function migrateEvents(q: Query) {
  CREATE INDEX continuity_events_by_library ON continuity_events(library_id);
  UPDATE studio_schema SET version=10`);
 }
-/** Internal canonical event writes; public routes follow in B6a2. */
+/** Saved event catalog and choices; a single book→library lock gives a consistent view. */
+export async function eventCatalog(db: Database, bookId: string) {
+  return db.transaction(async (q) => {
+    const row = (
+      await q("SELECT data,library_id FROM books WHERE id=$1 FOR UPDATE", [
+        bookId,
+      ])
+    ).rows[0];
+    if (!row) throw new StudioError(404, "NOT_FOUND", "Book no longer exists.");
+    await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [
+      row.library_id,
+    ]);
+    if (row.data.deletedAt) invalid("Restore the book before opening events.");
+    const read = async (table: string) => {
+      const rows = (
+        await q(`SELECT data FROM ${table} WHERE library_id=$1 LIMIT 10001`, [
+          row.library_id,
+        ])
+      ).rows;
+      if (rows.length > 10000)
+        throw new StudioError(
+          413,
+          "CATALOG_TOO_LARGE",
+          "This library is too large for the events catalog. No records were omitted.",
+        );
+      return rows.map((r) => r.data);
+    };
+    const books = await read("books"),
+      entries = await read("bible_entries"),
+      events = await read("continuity_events");
+    const worlds = await read("universes"),
+      series = await read("series");
+    const allNodes = (
+      await q(
+        "SELECT n.data FROM manuscript_nodes n JOIN books b ON b.id=n.book_id WHERE b.library_id=$1 LIMIT 10001",
+        [row.library_id],
+      )
+    ).rows.map((r) => r.data);
+    if (allNodes.length > 10000)
+      throw new StudioError(
+        413,
+        "CATALOG_TOO_LARGE",
+        "This library has too many manuscript items for the events catalog. No records were omitted.",
+      );
+    const byId = new Map(allNodes.map((n) => [n.id, n]));
+    const isTrashed = (n: any): boolean => {
+      const seen = new Set();
+      while (n && !seen.has(n.id)) {
+        seen.add(n.id);
+        if (n.deletedAt) return true;
+        n = byId.get(n.parentId);
+      }
+      return false;
+    };
+    const positions: Record<string, number> = {};
+    const children = new Map<string | undefined, any[]>();
+    for (const n of allNodes) {
+      if (n.bookId !== bookId || isTrashed(n)) continue;
+      const parent = n.parentId ?? undefined;
+      const group = children.get(parent) ?? [];
+      group.push(n);
+      children.set(parent, group);
+    }
+    for (const group of children.values())
+      group.sort((a, b) =>
+        a.orderKey < b.orderKey
+          ? -1
+          : a.orderKey > b.orderKey
+            ? 1
+            : a.id < b.id
+              ? -1
+              : a.id > b.id
+                ? 1
+                : 0,
+      );
+    const seen = new Set<string>();
+    let rank = 0;
+    const pending = [...(children.get(undefined) ?? [])].reverse();
+    while (pending.length) {
+      const n = pending.pop()!;
+      if (seen.has(n.id)) continue;
+      seen.add(n.id);
+      if (n.kind === "chapter" || n.kind === "scene") positions[n.id] = rank++;
+      pending.push(...[...(children.get(n.id) ?? [])].reverse());
+    }
+    return {
+      readingPositions: positions,
+      book: row.data,
+      scopes: [
+        { kind: "book", id: bookId, title: "This book" },
+        ...worlds
+          .filter((w) => w.id === row.data.universeId && !w.deletedAt)
+          .map((w) => ({
+            kind: "universe",
+            id: w.id,
+            title: `Shared world: ${w.title}`,
+          })),
+        ...series
+          .filter((s) => s.id === row.data.seriesId && !s.deletedAt)
+          .map((s) => ({
+            kind: "series",
+            id: s.id,
+            title: `Shared series: ${s.title}`,
+          })),
+      ],
+      events: events
+        .filter((f) => eventVisible(f, row.data))
+        .sort((a, b) =>
+          a.orderKey < b.orderKey
+            ? -1
+            : a.orderKey > b.orderKey
+              ? 1
+              : a.id.localeCompare(b.id),
+        ),
+      entries: entries.map((e) => ({
+        id: e.id,
+        name: e.name,
+        entryType: e.entryType,
+        scope: e.scope,
+        scopeTitle:
+          e.scope.kind === "book"
+            ? `Book: ${books.find((b) => b.id === e.scope.id)?.title ?? e.scope.id}`
+            : e.scope.kind === "universe"
+              ? `World: ${worlds.find((w) => w.id === e.scope.id)?.title ?? e.scope.id}`
+              : `Series: ${series.find((s) => s.id === e.scope.id)?.title ?? e.scope.id}`,
+        deletedAt: e.deletedAt,
+      })),
+      books: books.map((b) => ({
+        id: b.id,
+        title: b.title,
+        universeId: b.universeId,
+        seriesId: b.seriesId,
+        deletedAt: b.deletedAt,
+      })),
+      nodes: allNodes
+        .filter((n) => ["chapter", "scene"].includes(n.kind))
+        .map((n) => ({
+          id: n.id,
+          bookId: n.bookId,
+          title: n.title,
+          kind: n.kind,
+          inTrash:
+            isTrashed(n) || !!books.find((b) => b.id === n.bookId)?.deletedAt,
+        })),
+    };
+  });
+}
+
+/** Canonical event writes shared by authenticated timeline routes. */
 export async function saveEvent(
   db: Database,
   bookId: string,
