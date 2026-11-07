@@ -6,6 +6,41 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
+let unauthorized: (() => void) | undefined;
+/** The app registers a handler that returns to the login screen on session expiry. */
+export function onUnauthorized(handler: (() => void) | undefined) {
+  unauthorized = handler;
+}
+/** Read a response defensively: proxies and crashes can return non-JSON bodies. */
+export async function readResponse<T = any>(
+  result: Response,
+  fallback = "The server could not finish.",
+  login = false,
+): Promise<T> {
+  const text = await result.text().catch(() => "");
+  let value: any;
+  let parsed = false;
+  try {
+    value = text ? JSON.parse(text) : undefined;
+    parsed = true;
+  } catch {
+    /* Not JSON; fall back to the HTTP status text. */
+  }
+  if (result.status === 401 && !login) unauthorized?.();
+  if (!result.ok)
+    throw new ApiError(
+      result.status,
+      (typeof value?.error?.message === "string" && value.error.message) ||
+        result.statusText ||
+        fallback,
+    );
+  if (!parsed && text)
+    throw new ApiError(
+      result.status,
+      "The server sent an unreadable response.",
+    );
+  return value as T;
+}
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -17,13 +52,11 @@ export async function api<T = any>(
     headers: data === undefined ? {} : { "Content-Type": "application/json" },
     body: data === undefined ? undefined : JSON.stringify(data),
   });
-  const value = await result.json();
-  if (!result.ok)
-    throw new ApiError(
-      result.status,
-      value.error?.message ?? "The server could not finish.",
-    );
-  return value;
+  return readResponse<T>(
+    result,
+    "The server could not finish.",
+    path === "/login" || path === "/session",
+  );
 }
 export type Item = {
   coverAttachment?: string;

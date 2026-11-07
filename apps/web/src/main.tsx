@@ -24,7 +24,7 @@ import { draftKey, writeDraft, readDrafts } from "./drafts.ts";
 import type { BrowserDraft } from "./drafts.ts";
 import type { CanonicalDocument } from "../../../packages/document-adapter/src/canonical.ts";
 import { extensions } from "./editor.ts";
-import { api, ApiError } from "./api.ts";
+import { api, ApiError, onUnauthorized } from "./api.ts";
 import type { Item } from "./api.ts";
 import { BinderTree, ItemActions, ManagementForm } from "./management.tsx";
 import type { Target } from "./management.tsx";
@@ -48,6 +48,7 @@ import "./style.css";
 
 type Layout = "desk" | "writing" | "focus";
 type Draft = BrowserDraft;
+type BlockKind = "" | "draft" | "conflict" | "conversion";
 type PaneHandle = { flush: () => Promise<boolean>; dirty: () => boolean };
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "The operation did not finish.";
@@ -101,6 +102,48 @@ function Dialog({
     </dialog>
   );
 }
+// Sign-in after a 401. A real modal <dialog> so it enters the browser top
+// layer above any open Dialog; it lives outside the app wrapper so the editor
+// stays mounted. Escape is swallowed: the user must sign in.
+function SessionDialog({
+  open,
+  onLogin,
+}: {
+  open: boolean;
+  onLogin: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dialog.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    else if (!open && d.open) d.close();
+  }, [open]);
+  return (
+    <dialog
+      ref={dialog}
+      className="session-overlay"
+      aria-label="Session ended"
+      onCancel={(e) => e.preventDefault()}
+      onClose={() => {
+        // Chromium can close the dialog on a second Escape even after cancel
+        // is prevented; reopen it while the session is still expired.
+        const d = dialog.current;
+        if (open && d && !d.open) d.showModal();
+      }}
+    >
+      {open && (
+        <>
+          <p role="status">
+            Your session ended. Your open scene stays here; sign in again to
+            keep saving.
+          </p>
+          <Login onLogin={onLogin} />
+        </>
+      )}
+    </dialog>
+  );
+}
 function Login({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -149,6 +192,10 @@ function Login({ onLogin }: { onLogin: () => void }) {
 }
 function App() {
   const [auth, setAuth] = useState<boolean | null>(null);
+  // A 401 after sign-in keeps the app (and any editor holding unsaved text)
+  // mounted behind a sign-in overlay instead of replacing it.
+  const [expired, setExpired] = useState(false);
+  const authRef = useRef(false);
   const [error, setError] = useState("");
   const [libraries, setLibraries] = useState<Item[]>([]);
   const [library, setLibrary] = useState<Item | null>(null);
@@ -327,6 +374,20 @@ function App() {
         setAuth(false);
       });
   }, []);
+  useEffect(() => {
+    // The editor stays mounted: edits that could not reach browser storage
+    // (full or unavailable) would be lost if the pane unmounted.
+    onUnauthorized(() => {
+      // Late 401s from in-flight requests after sign-out must not flag expiry.
+      if (!authRef.current) return;
+      setExpired(true);
+      setError("");
+    });
+    return () => onUnauthorized(undefined);
+  }, []);
+  useEffect(() => {
+    authRef.current = auth === true;
+  }, [auth]);
   useEffect(() => {
     if (auth) void loadLibraries();
   }, [auth]);
@@ -519,6 +580,8 @@ function App() {
         <Login
           onLogin={() => {
             setError("");
+            setExpired(false);
+            authRef.current = true;
             setAuth(true);
           }}
         />
@@ -535,63 +598,307 @@ function App() {
   const trashedBooks = books.filter((b) => b.deletedAt);
   const trashedNodes = nodes.filter((n) => n.deletedAt);
   return (
-    <div className={`app layout-${layout}`}>
-      <header className="app-header">
-        <a
-          className="brand"
-          href="#"
-          onClick={async (e) => {
-            e.preventDefault();
-            if (await leave()) setView("projects");
-          }}
-        >
-          <span aria-hidden="true">▤</span> Writers Rolltop
-        </a>
-        <span className="edition">SELF-HOSTED STUDIO</span>
-        <div className="header-actions">
-          <details className="action-menu">
-            <summary>Library ▾</summary>
-            <div>
-              <button
-                onClick={async () => {
-                  if (await leave()) setPortableOpen(true);
-                }}
+    <>
+      <div className={`app layout-${layout}`}>
+        <header className="app-header">
+          <a
+            className="brand"
+            href="#"
+            onClick={async (e) => {
+              e.preventDefault();
+              if (await leave()) setView("projects");
+            }}
+          >
+            <span aria-hidden="true">▤</span> Writers Rolltop
+          </a>
+          <span className="edition">SELF-HOSTED STUDIO</span>
+          <div className="header-actions">
+            <details className="action-menu">
+              <summary>Library ▾</summary>
+              <div>
+                <button
+                  onClick={async () => {
+                    if (await leave()) setPortableOpen(true);
+                  }}
+                >
+                  Portable Archives…
+                </button>
+                <button
+                  disabled={!library}
+                  onClick={async () => {
+                    if (await leave()) setAttachmentsOpen(true);
+                  }}
+                >
+                  Library Attachments…
+                </button>
+                <button onClick={() => newItem("library")}>New Library…</button>
+                <button disabled={!library} onClick={() => newItem("book")}>
+                  New Book…
+                </button>
+                <button disabled={!library} onClick={() => setWorldsOpen(true)}>
+                  Worlds and Series…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={async () => {
+                    if (await leave()) setExportOpen(true);
+                  }}
+                >
+                  Export Story Bible…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={async () => {
+                    if (await leave()) setNamesOpen(true);
+                  }}
+                >
+                  Names Still Needed…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={async () => {
+                    if (await leave()) {
+                      setPlanningPoint(undefined);
+                      setPlanningOpen(true);
+                    }
+                  }}
+                >
+                  Story Overview and Planning…
+                </button>
+                <button disabled={!book} onClick={() => setDetails(book)}>
+                  Book Details and Goals…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={async () => {
+                    if (await leave()) setSearching(true);
+                  }}
+                >
+                  Search Manuscript…
+                </button>
+                <button disabled={!book} onClick={() => setNoting(true)}>
+                  Quick Notes…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={() => {
+                    setBibleTarget(undefined);
+                    setBibleOpen(true);
+                  }}
+                >
+                  Bible Entries…
+                </button>
+                <button disabled={!book} onClick={() => showWarnings()}>
+                  Continuity Warnings…
+                </button>
+                <button disabled={!book} onClick={() => setKnowledgeOpen(true)}>
+                  Who Knows What…
+                </button>
+                <button disabled={!book} onClick={() => setStateOpen(true)}>
+                  Changing State…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={() => {
+                    setRecordTarget(undefined);
+                    setTimelineOpen(true);
+                  }}
+                >
+                  Timeline…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={() => {
+                    setRecordTarget(undefined);
+                    setQuestionsOpen(true);
+                  }}
+                >
+                  Questions and Decisions…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={() => {
+                    setRecordTarget(undefined);
+                    setFactsOpen(true);
+                  }}
+                >
+                  Facts and Knowledge…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={async () => {
+                    if (await leave()) setProgressOpen(true);
+                  }}
+                >
+                  Word Goals and Progress…
+                </button>
+                <hr />
+                {libraries.map((l) => (
+                  <button key={l.id} onClick={() => void openLibrary(l)}>
+                    {l.title}
+                  </button>
+                ))}
+                <hr />
+                <button
+                  onClick={async () => {
+                    if (await leave()) {
+                      try {
+                        try {
+                          await api("/logout", "POST", {});
+                        } catch (error) {
+                          // An expired session is already signed out on the server.
+                          if (!(
+                            error instanceof ApiError && error.status === 401
+                          ))
+                            throw error;
+                        }
+                        authRef.current = false;
+                        setExpired(false);
+                        setAuth(false);
+                      } catch (e) {
+                        setError(errorText(e));
+                      }
+                    }
+                  }}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </details>
+            <label className="layout-picker">
+              Layout
+              <select
+                aria-label="Writing layout"
+                value={layout}
+                onChange={(e) => setLayout(e.target.value as Layout)}
               >
-                Portable Archives…
-              </button>
+                <option value="desk">Desk</option>
+                <option value="writing">Writing</option>
+                <option value="focus">Focus</option>
+              </select>
+            </label>
+          </div>
+        </header>
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+            <button onClick={() => setError("")} aria-label="Dismiss message">
+              ×
+            </button>
+          </div>
+        )}
+        <nav className="workspace-nav" aria-label="Workspace">
+          <button
+            className={view === "projects" ? "selected" : ""}
+            onClick={async () => {
+              if (await leave()) setView("projects");
+            }}
+          >
+            Projects
+          </button>
+          <button
+            disabled={!book}
+            className={view === "manuscript" ? "selected" : ""}
+            onClick={() => setView("manuscript")}
+          >
+            Manuscript
+          </button>
+          <span>Private by design. Yours to write.</span>
+        </nav>
+        {view === "projects" ? (
+          <main className="projects">
+            <p className="eyebrow">YOUR BOOKSHELF</p>
+            <div className="section-heading">
+              <div>
+                <h1>{library?.title ?? "A place for your next story"}</h1>
+                <p>
+                  {library
+                    ? "Pick up where you left off, or begin something new."
+                    : "Create a library to hold your books."}
+                </p>
+              </div>
               <button
-                disabled={!library}
-                onClick={async () => {
-                  if (await leave()) setAttachmentsOpen(true);
-                }}
+                className="primary"
+                onClick={() => newItem(library ? "book" : "library")}
               >
-                Library Attachments…
+                ＋ New {library ? "Book" : "Library"}
               </button>
-              <button onClick={() => newItem("library")}>New Library…</button>
-              <button disabled={!library} onClick={() => newItem("book")}>
-                New Book…
-              </button>
-              <button disabled={!library} onClick={() => setWorldsOpen(true)}>
-                Worlds and Series…
-              </button>
+            </div>
+            <div className="book-grid">
+              {liveBooks.map((b, index) => (
+                <article className="book-card" key={b.id}>
+                  <button
+                    className="open-book"
+                    onClick={() => void openBook(b)}
+                    disabled={mutating}
+                  >
+                    <div className={`cover cover-${index % 3}`}>
+                      <span>WRITERS ROLLTOP</span>
+                      <h2>{b.title}</h2>
+                      <i aria-hidden="true">✧</i>
+                    </div>
+                    <footer>
+                      <strong>{b.title}</strong>
+                      <span>Open manuscript →</span>
+                    </footer>
+                  </button>
+                  <div className="book-card-actions">
+                    <ItemActions
+                      item={b}
+                      type="book"
+                      onAction={(t) => void manage(t)}
+                      disabled={mutating}
+                    />
+                  </div>
+                </article>
+              ))}
+              {library && !liveBooks.length && (
+                <div className="empty">
+                  <span aria-hidden="true">✧</span>
+                  <h2>Every book starts with a blank page.</h2>
+                  <p>Add your first book to begin.</p>
+                </div>
+              )}
+            </div>
+            {!!trashedBooks.length && (
+              <section className="book-trash">
+                <h2>Book Trash</h2>
+                {trashedBooks.map((b) => (
+                  <div className="trash-row" key={b.id}>
+                    <span>{b.title}</span>
+                    <button
+                      disabled={mutating}
+                      onClick={() =>
+                        void manage({
+                          item: b,
+                          type: "book",
+                          action: "restore",
+                        })
+                      }
+                      aria-label={`Restore book ${b.title}`}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      disabled={mutating}
+                      onClick={() =>
+                        void manage({ item: b, type: "book", action: "purge" })
+                      }
+                      aria-label={`Delete book ${b.title} permanently`}
+                    >
+                      Delete Permanently…
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+          </main>
+        ) : (
+          <div className="writing-workspace">
+            <aside className="binder" aria-label="Manuscript binder">
+              <p className="eyebrow">MANUSCRIPT</p>
+              <h2>{book?.title}</h2>
               <button
-                disabled={!book}
-                onClick={async () => {
-                  if (await leave()) setExportOpen(true);
-                }}
-              >
-                Export Story Bible…
-              </button>
-              <button
-                disabled={!book}
-                onClick={async () => {
-                  if (await leave()) setNamesOpen(true);
-                }}
-              >
-                Names Still Needed…
-              </button>
-              <button
-                disabled={!book}
                 onClick={async () => {
                   if (await leave()) {
                     setPlanningPoint(undefined);
@@ -601,725 +908,523 @@ function App() {
               >
                 Story Overview and Planning…
               </button>
-              <button disabled={!book} onClick={() => setDetails(book)}>
+              <button onClick={() => setDetails(book)}>
                 Book Details and Goals…
               </button>
-              <button
-                disabled={!book}
-                onClick={async () => {
-                  if (await leave()) setSearching(true);
-                }}
-              >
-                Search Manuscript…
-              </button>
-              <button disabled={!book} onClick={() => setNoting(true)}>
-                Quick Notes…
-              </button>
-              <button
-                disabled={!book}
-                onClick={() => {
-                  setBibleTarget(undefined);
-                  setBibleOpen(true);
-                }}
-              >
-                Bible Entries…
-              </button>
-              <button disabled={!book} onClick={() => showWarnings()}>
-                Continuity Warnings…
-              </button>
-              <button disabled={!book} onClick={() => setKnowledgeOpen(true)}>
-                Who Knows What…
-              </button>
-              <button disabled={!book} onClick={() => setStateOpen(true)}>
-                Changing State…
-              </button>
-              <button
-                disabled={!book}
-                onClick={() => {
-                  setRecordTarget(undefined);
-                  setTimelineOpen(true);
-                }}
-              >
-                Timeline…
-              </button>
-              <button
-                disabled={!book}
-                onClick={() => {
-                  setRecordTarget(undefined);
-                  setQuestionsOpen(true);
-                }}
-              >
-                Questions and Decisions…
-              </button>
-              <button
-                disabled={!book}
-                onClick={() => {
-                  setRecordTarget(undefined);
-                  setFactsOpen(true);
-                }}
-              >
-                Facts and Knowledge…
-              </button>
-              <button
-                disabled={!book}
-                onClick={async () => {
-                  if (await leave()) setProgressOpen(true);
-                }}
-              >
-                Word Goals and Progress…
-              </button>
-              <hr />
-              {libraries.map((l) => (
-                <button key={l.id} onClick={() => void openLibrary(l)}>
-                  {l.title}
-                </button>
-              ))}
-              <hr />
-              <button
-                onClick={async () => {
-                  if (await leave()) {
-                    try {
-                      await api("/logout", "POST", {});
-                      setAuth(false);
-                    } catch (e) {
-                      setError(errorText(e));
-                    }
-                  }
-                }}
-              >
-                Sign Out
-              </button>
-            </div>
-          </details>
-          <label className="layout-picker">
-            Layout
-            <select
-              aria-label="Writing layout"
-              value={layout}
-              onChange={(e) => setLayout(e.target.value as Layout)}
-            >
-              <option value="desk">Desk</option>
-              <option value="writing">Writing</option>
-              <option value="focus">Focus</option>
-            </select>
-          </label>
-        </div>
-      </header>
-      {error && (
-        <div className="error-banner" role="alert">
-          {error}
-          <button onClick={() => setError("")} aria-label="Dismiss message">
-            ×
-          </button>
-        </div>
-      )}
-      <nav className="workspace-nav" aria-label="Workspace">
-        <button
-          className={view === "projects" ? "selected" : ""}
-          onClick={async () => {
-            if (await leave()) setView("projects");
-          }}
-        >
-          Projects
-        </button>
-        <button
-          disabled={!book}
-          className={view === "manuscript" ? "selected" : ""}
-          onClick={() => setView("manuscript")}
-        >
-          Manuscript
-        </button>
-        <span>Private by design. Yours to write.</span>
-      </nav>
-      {view === "projects" ? (
-        <main className="projects">
-          <p className="eyebrow">YOUR BOOKSHELF</p>
-          <div className="section-heading">
-            <div>
-              <h1>{library?.title ?? "A place for your next story"}</h1>
-              <p>
-                {library
-                  ? "Pick up where you left off, or begin something new."
-                  : "Create a library to hold your books."}
-              </p>
-            </div>
-            <button
-              className="primary"
-              onClick={() => newItem(library ? "book" : "library")}
-            >
-              ＋ New {library ? "Book" : "Library"}
-            </button>
-          </div>
-          <div className="book-grid">
-            {liveBooks.map((b, index) => (
-              <article className="book-card" key={b.id}>
-                <button
-                  className="open-book"
-                  onClick={() => void openBook(b)}
-                  disabled={mutating}
-                >
-                  <div className={`cover cover-${index % 3}`}>
-                    <span>WRITERS ROLLTOP</span>
-                    <h2>{b.title}</h2>
-                    <i aria-hidden="true">✧</i>
+              {book?.targetWordCount && (
+                <p>
+                  Goal: {book.targetWordCount.toLocaleString()} words
+                  {book.targetDate ? ` by ${book.targetDate}` : ""}
+                </p>
+              )}
+              <div className="binder-actions">
+                <details className="action-menu">
+                  <summary>＋ Add</summary>
+                  <div>
+                    {(
+                      [
+                        "part",
+                        "chapter",
+                        "scene",
+                        "frontMatter",
+                        "backMatter",
+                      ] as const
+                    ).map((kind) => (
+                      <button
+                        key={kind}
+                        disabled={
+                          mutating || (kind === "scene" && !chapters.length)
+                        }
+                        aria-label={`New ${kind === "frontMatter" ? "Front Matter" : kind === "backMatter" ? "Back Matter" : kind[0].toUpperCase() + kind.slice(1)}`}
+                        onClick={(e) => {
+                          e.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                          newItem(kind);
+                        }}
+                      >
+                        New{" "}
+                        {kind === "frontMatter"
+                          ? "Front Matter"
+                          : kind === "backMatter"
+                            ? "Back Matter"
+                            : kind[0].toUpperCase() + kind.slice(1)}
+                        …
+                      </button>
+                    ))}
                   </div>
-                  <footer>
-                    <strong>{b.title}</strong>
-                    <span>Open manuscript →</span>
-                  </footer>
-                </button>
-                <div className="book-card-actions">
+                </details>
+                {book && (
                   <ItemActions
-                    item={b}
+                    item={book}
                     type="book"
                     onAction={(t) => void manage(t)}
                     disabled={mutating}
                   />
-                </div>
-              </article>
-            ))}
-            {library && !liveBooks.length && (
-              <div className="empty">
-                <span aria-hidden="true">✧</span>
-                <h2>Every book starts with a blank page.</h2>
-                <p>Add your first book to begin.</p>
-              </div>
-            )}
-          </div>
-          {!!trashedBooks.length && (
-            <section className="book-trash">
-              <h2>Book Trash</h2>
-              {trashedBooks.map((b) => (
-                <div className="trash-row" key={b.id}>
-                  <span>{b.title}</span>
-                  <button
-                    disabled={mutating}
-                    onClick={() =>
-                      void manage({ item: b, type: "book", action: "restore" })
-                    }
-                    aria-label={`Restore book ${b.title}`}
-                  >
-                    Restore
-                  </button>
-                  <button
-                    disabled={mutating}
-                    onClick={() =>
-                      void manage({ item: b, type: "book", action: "purge" })
-                    }
-                    aria-label={`Delete book ${b.title} permanently`}
-                  >
-                    Delete Permanently…
-                  </button>
-                </div>
-              ))}
-            </section>
-          )}
-        </main>
-      ) : (
-        <div className="writing-workspace">
-          <aside className="binder" aria-label="Manuscript binder">
-            <p className="eyebrow">MANUSCRIPT</p>
-            <h2>{book?.title}</h2>
-            <button
-              onClick={async () => {
-                if (await leave()) {
-                  setPlanningPoint(undefined);
-                  setPlanningOpen(true);
-                }
-              }}
-            >
-              Story Overview and Planning…
-            </button>
-            <button onClick={() => setDetails(book)}>
-              Book Details and Goals…
-            </button>
-            {book?.targetWordCount && (
-              <p>
-                Goal: {book.targetWordCount.toLocaleString()} words
-                {book.targetDate ? ` by ${book.targetDate}` : ""}
-              </p>
-            )}
-            <div className="binder-actions">
-              <details className="action-menu">
-                <summary>＋ Add</summary>
-                <div>
-                  {(
-                    [
-                      "part",
-                      "chapter",
-                      "scene",
-                      "frontMatter",
-                      "backMatter",
-                    ] as const
-                  ).map((kind) => (
-                    <button
-                      key={kind}
-                      disabled={
-                        mutating || (kind === "scene" && !chapters.length)
-                      }
-                      aria-label={`New ${kind === "frontMatter" ? "Front Matter" : kind === "backMatter" ? "Back Matter" : kind[0].toUpperCase() + kind.slice(1)}`}
-                      onClick={(e) => {
-                        e.currentTarget
-                          .closest("details")
-                          ?.removeAttribute("open");
-                        newItem(kind);
-                      }}
-                    >
-                      New{" "}
-                      {kind === "frontMatter"
-                        ? "Front Matter"
-                        : kind === "backMatter"
-                          ? "Back Matter"
-                          : kind[0].toUpperCase() + kind.slice(1)}
-                      …
-                    </button>
-                  ))}
-                </div>
-              </details>
-              {book && (
-                <ItemActions
-                  item={book}
-                  type="book"
-                  onAction={(t) => void manage(t)}
-                  disabled={mutating}
-                />
-              )}
-            </div>
-            <BinderTree
-              nodes={nodes}
-              selected={scene?.id}
-              onSelect={async (n) => {
-                if (await leave()) setScene(n);
-              }}
-              onAction={(t) => void manage(t)}
-              disabled={mutating}
-              warningCounts={warningCounts}
-              onWarnings={(id) => showWarnings(id)}
-            />
-            {!activeNodes.length && (
-              <p className="hint">
-                Add a chapter, then a scene. Your manuscript grows from here.
-              </p>
-            )}
-            {!!trashedNodes.length && (
-              <details className="node-trash">
-                <summary>Trash ({trashedNodes.length})</summary>
-                {trashedNodes.map((n) => (
-                  <div className="trash-row" key={n.id}>
-                    <span>{itemLabel(n)}</span>
-                    <button
-                      disabled={mutating}
-                      onClick={() =>
-                        void manage({
-                          item: n,
-                          type: "node",
-                          action: "restore",
-                        })
-                      }
-                      aria-label={`Restore ${itemLabel(n)}`}
-                    >
-                      Restore
-                    </button>
-                    <button
-                      disabled={mutating}
-                      onClick={() =>
-                        void manage({ item: n, type: "node", action: "purge" })
-                      }
-                      aria-label={`Delete ${itemLabel(n)} permanently`}
-                    >
-                      Delete Permanently…
-                    </button>
-                  </div>
-                ))}
-              </details>
-            )}
-          </aside>
-          <main className="manuscript-area">
-            {scene &&
-              ["part", "chapter", "scene"].includes(scene.kind ?? "") && (
-                <button
-                  onClick={async () => {
-                    if (await leave()) {
-                      setPlanningPoint(scene.id);
-                      setPlanningOpen(true);
-                    }
-                  }}
-                >
-                  Plan This{" "}
-                  {scene.kind === "part"
-                    ? "Part"
-                    : scene.kind === "chapter"
-                      ? "Chapter"
-                      : "Scene"}
-                  …
-                </button>
-              )}
-            {scene && ["scene", "chapter"].includes(scene.kind ?? "") && (
-              <div className="story-continuity-actions">
-                <button onClick={() => showWarnings(scene.id)}>
-                  {warningSnapshot?.bookId === book?.id
-                    ? `${warningCounts[scene.id] ?? 0} continuity warnings here`
-                    : "Check Continuity Here"}
-                </button>
-                <button onClick={() => setKnowledgeOpen(true)}>
-                  Who Knows What Here
-                </button>
-              </div>
-            )}
-            {warningError && (
-              <p role="alert">
-                Continuity badges could not be refreshed. {warningError}
-              </p>
-            )}
-            {["chapter", "part"].includes(scene?.kind ?? "") && scene ? (
-              <section aria-label="Manuscript location">
-                <h1>{scene.title}</h1>
-                <p>Items in this {scene.kind}</p>
-                {children(liveNodes(nodes), scene.id)
-                  .filter((n) => ["chapter", "scene"].includes(n.kind ?? ""))
-                  .map((n) => (
-                    <button key={n.id} onClick={() => setScene(n)}>
-                      {n.title}
-                    </button>
-                  ))}
-              </section>
-            ) : scene ? (
-              <EditorPane
-                key={scene.id}
-                ref={pane}
-                reveal={
-                  appearance?.nodeId === scene.id ? appearance : undefined
-                }
-                onRevealed={() => setAppearance(null)}
-                onSaved={() => setProgressVersion((v) => v + 1)}
-                layout={layout}
-                node={scene}
-                chapter={
-                  nodes.find((n) => n.id === scene.parentId)?.title ?? ""
-                }
-              />
-            ) : (
-              <div className="empty">
-                <p className="eyebrow">THE PAGE IS YOURS</p>
-                <h1>Make room for the first words.</h1>
-                <p>Add a chapter and a scene using the binder.</p>
-                {layout !== "desk" && (
-                  <button onClick={() => setLayout("desk")}>
-                    Show Desk and binder
-                  </button>
                 )}
               </div>
-            )}
-          </main>
-        </div>
-      )}
-      <footer className="app-footer">
-        <span>Writers Rolltop</span>
-        <span>M3 in development · Manuscript foundation</span>
-        <span>Your server · Your work</span>
-      </footer>
-      {portableOpen && (
-        <Dialog title="Portable Archives" close={() => setPortableOpen(false)}>
-          <PortableLibraries
-            library={library}
-            onImported={async (item) => {
-              setLibraries(await api("/libraries"));
-              await openLibrary(item);
-            }}
-          />
-        </Dialog>
-      )}
-      {attachmentsOpen && library && (
-        <Dialog
-          title="Library Attachments"
-          close={() => setAttachmentsOpen(false)}
-        >
-          <LibraryAttachments
-            library={library}
-            book={book}
-            onBookSaved={(b) => {
-              setBook(b);
-              setBooks((bs) => bs.map((x) => (x.id === b.id ? b : x)));
-            }}
-          />
-        </Dialog>
-      )}
-      {progressOpen && book && (
-        <Dialog
-          title="Word Goals and Progress"
-          close={() => setProgressOpen(false)}
-        >
-          <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
-        </Dialog>
-      )}
-      {book && exportOpen && (
-        <Dialog title="Export Story Bible" close={() => setExportOpen(false)}>
-          <BibleExports
-            key={book.id}
-            bookId={book.id}
-            onSaved={(b) => {
-              setBook(b);
-              setBooks((bs) => bs.map((x) => (x.id === b.id ? b : x)));
-            }}
-          />
-        </Dialog>
-      )}
-      {book && namesOpen && (
-        <Dialog title="Names Still Needed" close={() => setNamesOpen(false)}>
-          <NamesNeeded bookId={book.id} onOpen={openName} />
-        </Dialog>
-      )}
-      {book && planningOpen && (
-        <Dialog
-          title="Story Overview and Planning"
-          close={() => setPlanningOpen(false)}
-        >
-          <Planning
-            bookId={book.id}
-            initialId={planningPoint}
-            onSaved={(item, isBook) => {
-              if (isBook) {
-                setBook(item);
-                setBooks((bs) => bs.map((b) => (b.id === item.id ? item : b)));
-              } else {
-                setNodes((ns) => ns.map((n) => (n.id === item.id ? item : n)));
-                setScene((n) => (n?.id === item.id ? item : n));
-              }
-            }}
-          />
-        </Dialog>
-      )}
-      {continuityOpen && book && (
-        <Dialog
-          title="Continuity Warnings"
-          close={() => setContinuityOpen(false)}
-        >
-          <Continuity
-            key={book.id + ":" + (continuityPoint ?? "all")}
-            bookId={book.id}
-            nodeFilter={continuityPoint}
-            onCatalog={(c) =>
-              setWarningSnapshot({ bookId: book.id, catalog: c })
-            }
-            onOpenSubject={openWarningSubject}
-            onOpenPlace={openWarningPlace}
-          />
-        </Dialog>
-      )}
-      {knowledgeOpen && book && (
-        <Dialog title="Who Knows What" close={() => setKnowledgeOpen(false)}>
-          <Knowledge
-            key={book.id}
-            bookId={book.id}
-            initialPoint={
-              scene && ["chapter", "scene"].includes(scene.kind ?? "")
-                ? scene.id
-                : undefined
-            }
-            onOpenFact={(id) => openWarningSubject("fact", id)}
-          />
-        </Dialog>
-      )}
-      {stateOpen && book && (
-        <Dialog title="Changing State" close={() => setStateOpen(false)}>
-          <StateChanges key={book.id} bookId={book.id} />
-        </Dialog>
-      )}
-      {timelineOpen && book && (
-        <Dialog title="Timeline" close={() => setTimelineOpen(false)}>
-          <Timeline
-            key={
-              book.id +
-              ":" +
-              (recordTarget?.kind === "event" ? recordTarget.id : "list")
-            }
-            bookId={book.id}
-            initialId={
-              recordTarget?.kind === "event" ? recordTarget.id : undefined
-            }
-          />
-        </Dialog>
-      )}
-      {questionsOpen && book && (
-        <Dialog
-          title="Questions and Decisions"
-          close={() => setQuestionsOpen(false)}
-        >
-          <Questions
-            key={
-              book.id +
-              ":" +
-              (recordTarget?.kind === "question" ? recordTarget.id : "list")
-            }
-            bookId={book.id}
-            initialId={
-              recordTarget?.kind === "question" ? recordTarget.id : undefined
-            }
-          />
-        </Dialog>
-      )}
-      {factsOpen && book && (
-        <Dialog title="Facts and Knowledge" close={() => setFactsOpen(false)}>
-          <Facts
-            key={
-              book.id +
-              ":" +
-              (recordTarget?.kind === "fact" ? recordTarget.id : "list")
-            }
-            bookId={book.id}
-            initialId={
-              recordTarget?.kind === "fact" ? recordTarget.id : undefined
-            }
-          />
-        </Dialog>
-      )}
-      {bibleOpen && book && (
-        <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
-          <References
-            key={book.id + ":" + (bibleTarget ?? "list")}
-            initialEntryId={bibleTarget}
-            bookId={book.id}
-            onOpenAppearance={async (nodeId, anchorId) => {
-              if (!(await leave()))
-                throw new Error(
-                  "Resolve the current scene's draft or save conflict before opening another passage.",
-                );
-              const data = await api(`/books/${book.id}`);
-              const target = liveNodes(data.nodes).find((n) => n.id === nodeId);
-              if (!target || data.book.deletedAt)
-                throw new Error(
-                  "This scene is no longer available. Restore it from Trash before opening it.",
-                );
-              setBook(data.book);
-              setNodes(data.nodes);
-              setScene(target);
-              setView("manuscript");
-              setAppearance({
-                nodeId,
-                anchorId,
-                requestId: crypto.randomUUID(),
-              });
-              setBibleOpen(false);
-            }}
-          />
-        </Dialog>
-      )}
-      {noting && book && (
-        <Dialog title="Quick Notes" close={() => setNoting(false)}>
-          <QuickNotes book={book} nodes={nodes} />
-        </Dialog>
-      )}
-      {searching && book && (
-        <Dialog title="Search Manuscript" close={() => setSearching(false)}>
-          <ManuscriptSearch
-            book={book}
-            onOpen={async (id) => {
-              if (!(await leave())) return;
-              const node = nodes.find((n) => n.id === id);
-              if (node) {
-                setScene(node);
-                setView("manuscript");
-                setSearching(false);
-              }
-            }}
-          />
-        </Dialog>
-      )}
-      {worldsOpen && library && (
-        <Dialog title="Worlds and Series" close={() => setWorldsOpen(false)}>
-          <Worlds
-            libraryId={library.id}
-            onBookSaved={(updated) => {
-              setBooks((items) =>
-                items.map((item) => (item.id === updated.id ? updated : item)),
-              );
-              setBook((current) =>
-                current?.id === updated.id ? updated : current,
-              );
-            }}
-          />
-        </Dialog>
-      )}
-      {details && (
-        <Dialog title="Book Details and Goals" close={() => setDetails(null)}>
-          <BookDetails
-            book={details}
-            onCancel={() => setDetails(null)}
-            onSaved={(updated) => {
-              setBooks((items) =>
-                items.map((item) => (item.id === updated.id ? updated : item)),
-              );
-              setBook((current) =>
-                current?.id === updated.id ? updated : current,
-              );
-              setDetails(null);
-            }}
-          />
-        </Dialog>
-      )}
-      {management && (
-        <Dialog
-          title={`${management.action === "purge" ? "Delete Permanently" : management.action === "rename" ? "Rename" : management.action === "trash" ? "Move to Trash" : "Move"} ${management.item.title}`}
-          close={() => {
-            if (!mutating) setManagement(null);
-          }}
-        >
-          <ManagementForm
-            target={management}
-            nodes={nodes}
-            onCancel={() => setManagement(null)}
-            onApply={(payload) => applyManagement(management, payload)}
-          />
-        </Dialog>
-      )}
-      {dialog && (
-        <Dialog
-          title={`New ${dialog === "frontMatter" ? "Front Matter" : dialog === "backMatter" ? "Back Matter" : dialog[0].toUpperCase() + dialog.slice(1)}`}
-          close={() => setDialog(null)}
-        >
-          <form onSubmit={create}>
-            <label>
-              Title
-              <input
-                autoFocus
-                required
-                maxLength={500}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+              <BinderTree
+                nodes={nodes}
+                selected={scene?.id}
+                onSelect={async (n) => {
+                  if (await leave()) setScene(n);
+                }}
+                onAction={(t) => void manage(t)}
+                disabled={mutating}
+                warningCounts={warningCounts}
+                onWarnings={(id) => showWarnings(id)}
               />
-            </label>
-            {(dialog === "scene" || dialog === "chapter") && (
-              <label>
-                {dialog === "scene" ? "Chapter" : "Part (optional)"}
-                <select
-                  required={dialog === "scene"}
-                  value={parent}
-                  onChange={(e) => setParent(e.target.value)}
-                >
-                  {dialog === "chapter" && <option value="">Book root</option>}
-                  {(dialog === "scene"
-                    ? chapters
-                    : activeNodes.filter((n) => n.kind === "part")
-                  ).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
-                    </option>
+              {!activeNodes.length && (
+                <p className="hint">
+                  Add a chapter, then a scene. Your manuscript grows from here.
+                </p>
+              )}
+              {!!trashedNodes.length && (
+                <details className="node-trash">
+                  <summary>Trash ({trashedNodes.length})</summary>
+                  {trashedNodes.map((n) => (
+                    <div className="trash-row" key={n.id}>
+                      <span>{itemLabel(n)}</span>
+                      <button
+                        disabled={mutating}
+                        onClick={() =>
+                          void manage({
+                            item: n,
+                            type: "node",
+                            action: "restore",
+                          })
+                        }
+                        aria-label={`Restore ${itemLabel(n)}`}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        disabled={mutating}
+                        onClick={() =>
+                          void manage({
+                            item: n,
+                            type: "node",
+                            action: "purge",
+                          })
+                        }
+                        aria-label={`Delete ${itemLabel(n)} permanently`}
+                      >
+                        Delete Permanently…
+                      </button>
+                    </div>
                   ))}
-                </select>
+                </details>
+              )}
+            </aside>
+            <main className="manuscript-area">
+              {scene &&
+                ["part", "chapter", "scene"].includes(scene.kind ?? "") && (
+                  <button
+                    onClick={async () => {
+                      if (await leave()) {
+                        setPlanningPoint(scene.id);
+                        setPlanningOpen(true);
+                      }
+                    }}
+                  >
+                    Plan This{" "}
+                    {scene.kind === "part"
+                      ? "Part"
+                      : scene.kind === "chapter"
+                        ? "Chapter"
+                        : "Scene"}
+                    …
+                  </button>
+                )}
+              {scene && ["scene", "chapter"].includes(scene.kind ?? "") && (
+                <div className="story-continuity-actions">
+                  <button onClick={() => showWarnings(scene.id)}>
+                    {warningSnapshot?.bookId === book?.id
+                      ? `${warningCounts[scene.id] ?? 0} continuity warnings here`
+                      : "Check Continuity Here"}
+                  </button>
+                  <button onClick={() => setKnowledgeOpen(true)}>
+                    Who Knows What Here
+                  </button>
+                </div>
+              )}
+              {warningError && (
+                <p role="alert">
+                  Continuity badges could not be refreshed. {warningError}
+                </p>
+              )}
+              {["chapter", "part"].includes(scene?.kind ?? "") && scene ? (
+                <section aria-label="Manuscript location">
+                  <h1>{scene.title}</h1>
+                  <p>Items in this {scene.kind}</p>
+                  {children(liveNodes(nodes), scene.id)
+                    .filter((n) => ["chapter", "scene"].includes(n.kind ?? ""))
+                    .map((n) => (
+                      <button key={n.id} onClick={() => setScene(n)}>
+                        {n.title}
+                      </button>
+                    ))}
+                </section>
+              ) : scene ? (
+                <EditorPane
+                  key={scene.id}
+                  ref={pane}
+                  reveal={
+                    appearance?.nodeId === scene.id ? appearance : undefined
+                  }
+                  onRevealed={() => setAppearance(null)}
+                  onSaved={() => setProgressVersion((v) => v + 1)}
+                  layout={layout}
+                  node={scene}
+                  chapter={
+                    nodes.find((n) => n.id === scene.parentId)?.title ?? ""
+                  }
+                />
+              ) : (
+                <div className="empty">
+                  <p className="eyebrow">THE PAGE IS YOURS</p>
+                  <h1>Make room for the first words.</h1>
+                  <p>Add a chapter and a scene using the binder.</p>
+                  {layout !== "desk" && (
+                    <button onClick={() => setLayout("desk")}>
+                      Show Desk and binder
+                    </button>
+                  )}
+                </div>
+              )}
+            </main>
+          </div>
+        )}
+        <footer className="app-footer">
+          <span>Writers Rolltop</span>
+          <span>M3 in development · Manuscript foundation</span>
+          <span>Your server · Your work</span>
+        </footer>
+        {portableOpen && (
+          <Dialog
+            title="Portable Archives"
+            close={() => setPortableOpen(false)}
+          >
+            <PortableLibraries
+              library={library}
+              onImported={async (item) => {
+                setLibraries(await api("/libraries"));
+                await openLibrary(item);
+              }}
+            />
+          </Dialog>
+        )}
+        {attachmentsOpen && library && (
+          <Dialog
+            title="Library Attachments"
+            close={() => setAttachmentsOpen(false)}
+          >
+            <LibraryAttachments
+              library={library}
+              book={book}
+              onBookSaved={(b) => {
+                setBook(b);
+                setBooks((bs) => bs.map((x) => (x.id === b.id ? b : x)));
+              }}
+            />
+          </Dialog>
+        )}
+        {progressOpen && book && (
+          <Dialog
+            title="Word Goals and Progress"
+            close={() => setProgressOpen(false)}
+          >
+            <BookProgress book={book} nodes={nodes} refresh={progressVersion} />
+          </Dialog>
+        )}
+        {book && exportOpen && (
+          <Dialog title="Export Story Bible" close={() => setExportOpen(false)}>
+            <BibleExports
+              key={book.id}
+              bookId={book.id}
+              onSaved={(b) => {
+                setBook(b);
+                setBooks((bs) => bs.map((x) => (x.id === b.id ? b : x)));
+              }}
+            />
+          </Dialog>
+        )}
+        {book && namesOpen && (
+          <Dialog title="Names Still Needed" close={() => setNamesOpen(false)}>
+            <NamesNeeded bookId={book.id} onOpen={openName} />
+          </Dialog>
+        )}
+        {book && planningOpen && (
+          <Dialog
+            title="Story Overview and Planning"
+            close={() => setPlanningOpen(false)}
+          >
+            <Planning
+              bookId={book.id}
+              initialId={planningPoint}
+              onSaved={(item, isBook) => {
+                if (isBook) {
+                  setBook(item);
+                  setBooks((bs) =>
+                    bs.map((b) => (b.id === item.id ? item : b)),
+                  );
+                } else {
+                  setNodes((ns) =>
+                    ns.map((n) => (n.id === item.id ? item : n)),
+                  );
+                  setScene((n) => (n?.id === item.id ? item : n));
+                }
+              }}
+            />
+          </Dialog>
+        )}
+        {continuityOpen && book && (
+          <Dialog
+            title="Continuity Warnings"
+            close={() => setContinuityOpen(false)}
+          >
+            <Continuity
+              key={book.id + ":" + (continuityPoint ?? "all")}
+              bookId={book.id}
+              nodeFilter={continuityPoint}
+              onCatalog={(c) =>
+                setWarningSnapshot({ bookId: book.id, catalog: c })
+              }
+              onOpenSubject={openWarningSubject}
+              onOpenPlace={openWarningPlace}
+            />
+          </Dialog>
+        )}
+        {knowledgeOpen && book && (
+          <Dialog title="Who Knows What" close={() => setKnowledgeOpen(false)}>
+            <Knowledge
+              key={book.id}
+              bookId={book.id}
+              initialPoint={
+                scene && ["chapter", "scene"].includes(scene.kind ?? "")
+                  ? scene.id
+                  : undefined
+              }
+              onOpenFact={(id) => openWarningSubject("fact", id)}
+            />
+          </Dialog>
+        )}
+        {stateOpen && book && (
+          <Dialog title="Changing State" close={() => setStateOpen(false)}>
+            <StateChanges key={book.id} bookId={book.id} />
+          </Dialog>
+        )}
+        {timelineOpen && book && (
+          <Dialog title="Timeline" close={() => setTimelineOpen(false)}>
+            <Timeline
+              key={
+                book.id +
+                ":" +
+                (recordTarget?.kind === "event" ? recordTarget.id : "list")
+              }
+              bookId={book.id}
+              initialId={
+                recordTarget?.kind === "event" ? recordTarget.id : undefined
+              }
+            />
+          </Dialog>
+        )}
+        {questionsOpen && book && (
+          <Dialog
+            title="Questions and Decisions"
+            close={() => setQuestionsOpen(false)}
+          >
+            <Questions
+              key={
+                book.id +
+                ":" +
+                (recordTarget?.kind === "question" ? recordTarget.id : "list")
+              }
+              bookId={book.id}
+              initialId={
+                recordTarget?.kind === "question" ? recordTarget.id : undefined
+              }
+            />
+          </Dialog>
+        )}
+        {factsOpen && book && (
+          <Dialog title="Facts and Knowledge" close={() => setFactsOpen(false)}>
+            <Facts
+              key={
+                book.id +
+                ":" +
+                (recordTarget?.kind === "fact" ? recordTarget.id : "list")
+              }
+              bookId={book.id}
+              initialId={
+                recordTarget?.kind === "fact" ? recordTarget.id : undefined
+              }
+            />
+          </Dialog>
+        )}
+        {bibleOpen && book && (
+          <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
+            <References
+              key={book.id + ":" + (bibleTarget ?? "list")}
+              initialEntryId={bibleTarget}
+              bookId={book.id}
+              onOpenAppearance={async (nodeId, anchorId) => {
+                if (!(await leave()))
+                  throw new Error(
+                    "Resolve the current scene's draft or save conflict before opening another passage.",
+                  );
+                const data = await api(`/books/${book.id}`);
+                const target = liveNodes(data.nodes).find(
+                  (n) => n.id === nodeId,
+                );
+                if (!target || data.book.deletedAt)
+                  throw new Error(
+                    "This scene is no longer available. Restore it from Trash before opening it.",
+                  );
+                setBook(data.book);
+                setNodes(data.nodes);
+                setScene(target);
+                setView("manuscript");
+                setAppearance({
+                  nodeId,
+                  anchorId,
+                  requestId: crypto.randomUUID(),
+                });
+                setBibleOpen(false);
+              }}
+            />
+          </Dialog>
+        )}
+        {noting && book && (
+          <Dialog title="Quick Notes" close={() => setNoting(false)}>
+            <QuickNotes book={book} nodes={nodes} />
+          </Dialog>
+        )}
+        {searching && book && (
+          <Dialog title="Search Manuscript" close={() => setSearching(false)}>
+            <ManuscriptSearch
+              book={book}
+              onOpen={async (id) => {
+                if (!(await leave())) return;
+                const node = nodes.find((n) => n.id === id);
+                if (node) {
+                  setScene(node);
+                  setView("manuscript");
+                  setSearching(false);
+                }
+              }}
+            />
+          </Dialog>
+        )}
+        {worldsOpen && library && (
+          <Dialog title="Worlds and Series" close={() => setWorldsOpen(false)}>
+            <Worlds
+              libraryId={library.id}
+              onBookSaved={(updated) => {
+                setBooks((items) =>
+                  items.map((item) =>
+                    item.id === updated.id ? updated : item,
+                  ),
+                );
+                setBook((current) =>
+                  current?.id === updated.id ? updated : current,
+                );
+              }}
+            />
+          </Dialog>
+        )}
+        {details && (
+          <Dialog title="Book Details and Goals" close={() => setDetails(null)}>
+            <BookDetails
+              book={details}
+              onCancel={() => setDetails(null)}
+              onSaved={(updated) => {
+                setBooks((items) =>
+                  items.map((item) =>
+                    item.id === updated.id ? updated : item,
+                  ),
+                );
+                setBook((current) =>
+                  current?.id === updated.id ? updated : current,
+                );
+                setDetails(null);
+              }}
+            />
+          </Dialog>
+        )}
+        {management && (
+          <Dialog
+            title={`${management.action === "purge" ? "Delete Permanently" : management.action === "rename" ? "Rename" : management.action === "trash" ? "Move to Trash" : "Move"} ${management.item.title}`}
+            close={() => {
+              if (!mutating) setManagement(null);
+            }}
+          >
+            <ManagementForm
+              target={management}
+              nodes={nodes}
+              onCancel={() => setManagement(null)}
+              onApply={(payload) => applyManagement(management, payload)}
+            />
+          </Dialog>
+        )}
+        {dialog && (
+          <Dialog
+            title={`New ${dialog === "frontMatter" ? "Front Matter" : dialog === "backMatter" ? "Back Matter" : dialog[0].toUpperCase() + dialog.slice(1)}`}
+            close={() => setDialog(null)}
+          >
+            <form onSubmit={create}>
+              <label>
+                Title
+                <input
+                  autoFocus
+                  required
+                  maxLength={500}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
               </label>
-            )}
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setDialog(null)}>
-                Cancel
-              </button>
-              <button className="primary" disabled={creating || !name.trim()}>
-                {creating ? "Creating…" : "Create"}
-              </button>
-            </div>
-          </form>
-        </Dialog>
-      )}
-    </div>
+              {(dialog === "scene" || dialog === "chapter") && (
+                <label>
+                  {dialog === "scene" ? "Chapter" : "Part (optional)"}
+                  <select
+                    required={dialog === "scene"}
+                    value={parent}
+                    onChange={(e) => setParent(e.target.value)}
+                  >
+                    {dialog === "chapter" && (
+                      <option value="">Book root</option>
+                    )}
+                    {(dialog === "scene"
+                      ? chapters
+                      : activeNodes.filter((n) => n.kind === "part")
+                    ).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <div className="dialog-actions">
+                <button type="button" onClick={() => setDialog(null)}>
+                  Cancel
+                </button>
+                <button className="primary" disabled={creating || !name.trim()}>
+                  {creating ? "Creating…" : "Create"}
+                </button>
+              </div>
+            </form>
+          </Dialog>
+        )}
+      </div>
+      <SessionDialog
+        open={expired}
+        onLogin={() => {
+          setError("");
+          setExpired(false);
+        }}
+      />
+    </>
   );
 }
 
@@ -1350,6 +1455,10 @@ const EditorPane = forwardRef<
   const revision = useRef(0);
   const dirty = useRef(false);
   const blocked = useRef(false);
+  const blockKind = useRef<BlockKind>("");
+  const [blockState, setBlockState] = useState<BlockKind>("");
+  const [loadTick, setLoadTick] = useState(0);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const pending = useRef<CanonicalDocument | null>(null);
   const running = useRef<Promise<boolean> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1382,13 +1491,36 @@ const EditorPane = forwardRef<
         }
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => void flush(), 700);
+        if (blockKind.current === "conversion") {
+          // The edit now converts again, so the whole current text is saveable.
+          unblock();
+          setMessage("");
+        }
       } catch (e) {
-        blocked.current = true;
-        setMessage(errorText(e));
+        // Keep the editor editable so a later edit can clear this block.
+        block("conversion");
+        setMessage(
+          "The last edit could not be prepared for saving, so it is not saved. " +
+            errorText(e),
+        );
         setStatus("Not saved");
       }
     },
   });
+  editorRef.current = editor;
+  function block(kind: Exclude<BlockKind, "">) {
+    blocked.current = true;
+    blockKind.current = kind;
+    setBlockState(kind);
+    // Draft and conflict states must not accept edits that cannot be saved.
+    if (kind !== "conversion") editorRef.current?.setEditable(false, false);
+  }
+  function unblock() {
+    blocked.current = false;
+    blockKind.current = "";
+    setBlockState("");
+    if (ready.current) editorRef.current?.setEditable(true, false);
+  }
   useEffect(() => {
     let live = true;
     api(`/documents/${node.id}`)
@@ -1410,7 +1542,8 @@ const EditorPane = forwardRef<
           );
           if (drafts.length) {
             setBrowserDraft(drafts[0]);
-            blocked.current = true;
+            block("draft");
+            setStatus("Browser draft waiting");
           }
           if (unreadable)
             setMessage(
@@ -1433,7 +1566,7 @@ const EditorPane = forwardRef<
       ready.current = false;
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [editor, node.id]);
+  }, [editor, node.id, loadTick]);
   useEffect(() => {
     const guard = (e: BeforeUnloadEvent) => {
       if (dirty.current) {
@@ -1483,8 +1616,11 @@ const EditorPane = forwardRef<
     if (timer.current) clearTimeout(timer.current);
     if (blocked.current) {
       setMessage(
-        "Review the recovered draft or save conflict before leaving this scene.",
+        blockKind.current === "conversion"
+          ? "The last edit could not be prepared for saving. Change or undo it before leaving this scene."
+          : "Review the recovered draft or save conflict before leaving this scene.",
       );
+      setStatus("Not saved");
       return false;
     }
     if (running.current) return running.current;
@@ -1515,7 +1651,7 @@ const EditorPane = forwardRef<
           } else
             writeDraft(localStorage, key, revision.current, pending.current);
         } catch (e) {
-          if (e instanceof ApiError && e.status === 409) blocked.current = true;
+          if (e instanceof ApiError && e.status === 409) block("conflict");
           setStatus(
             e instanceof ApiError && e.status === 409
               ? "Needs review"
@@ -1550,9 +1686,51 @@ const EditorPane = forwardRef<
     pending.current = browserDraft.document;
     dirty.current = true;
     change.current++;
-    blocked.current = false;
+    unblock();
     setBrowserDraft(null);
     await flush();
+  }
+  function applyServerVersion(latest: Draft) {
+    let kept = false;
+    try {
+      kept = localStorage.getItem(key) !== null;
+    } catch {
+      /* Storage unavailable. */
+    }
+    revision.current = latest.revision;
+    editor?.commands.setContent(toProseMirror(latest.document), {
+      emitUpdate: false,
+    });
+    if (timer.current) clearTimeout(timer.current);
+    pending.current = latest.document;
+    dirty.current = false;
+    change.current++;
+    unblock();
+    setPreview(null);
+    setBrowserDraft(null);
+    setMessage(
+      browserDraft?.storageKey || kept
+        ? "Using the server version. The previous browser draft remains separately in storage."
+        : "Using the server version. Your unsaved text on this page was replaced and was not kept in browser storage.",
+    );
+    setStatus("Saved on your server");
+  }
+  async function useServerVersion() {
+    if (browserDraft?.storageKey) {
+      // The editor already shows the server's copy; the stored draft stays put.
+      unblock();
+      setBrowserDraft(null);
+      setMessage(
+        "Browser draft kept separately in storage. It remains available for recovery.",
+      );
+      setStatus("Saved on your server");
+      return;
+    }
+    try {
+      applyServerVersion(await api(`/documents/${node.id}`));
+    } catch (e) {
+      setMessage(errorText(e));
+    }
   }
   async function openReferences(markSelection = false) {
     if (!editor || blocked.current) {
@@ -1640,7 +1818,7 @@ const EditorPane = forwardRef<
           title="Passage References"
           close={() => {
             setReferencesOpen(false);
-            editor?.setEditable(true);
+            editor?.setEditable(!blocked.current);
           }}
         >
           <References
@@ -1662,7 +1840,7 @@ const EditorPane = forwardRef<
                 }
               });
               setReferencesOpen(false);
-              editor.setEditable(true);
+              editor.setEditable(!blocked.current);
               if (start !== undefined)
                 editor
                   .chain()
@@ -1695,15 +1873,7 @@ const EditorPane = forwardRef<
           <button onClick={() => download(browserDraft.document)}>
             Download draft JSON
           </button>
-          <button
-            onClick={() => {
-              blocked.current = false;
-              setBrowserDraft(null);
-              setMessage(
-                "Browser draft kept separately in storage. It remains available for recovery.",
-              );
-            }}
-          >
+          <button onClick={() => void useServerVersion()}>
             Use server version
           </button>
         </div>
@@ -1711,31 +1881,49 @@ const EditorPane = forwardRef<
       {message && (
         <div className="recovery" role="alert">
           <p>{message}</p>
-          <button onClick={() => void flush()}>Retry Save</button>
+          {!loaded ? (
+            <button
+              onClick={() => {
+                setMessage("");
+                setStatus("Loading…");
+                setLoadTick((n) => n + 1);
+              }}
+            >
+              Retry loading
+            </button>
+          ) : (
+            blockState !== "conversion" && (
+              <button onClick={() => void flush()}>Retry Save</button>
+            )
+          )}
           <button
-            disabled={!pending.current}
+            disabled={
+              !loaded || !pending.current || blockState === "conversion"
+            }
             onClick={() => pending.current && download(pending.current)}
           >
             Download current draft
           </button>
-          {blocked.current && !browserDraft && (
-            <button
-              onClick={async () => {
-                try {
-                  const latest = await api(`/documents/${node.id}`);
-                  setBrowserDraft({
-                    revision: revision.current,
-                    document: pending.current!,
-                  });
-                  setPreview(latest);
-                } catch (e) {
-                  setMessage(errorText(e));
-                }
-              }}
-            >
-              Compare server version
-            </button>
-          )}
+          {blockState !== "" &&
+            blockState !== "conversion" &&
+            !browserDraft && (
+              <button
+                onClick={async () => {
+                  try {
+                    const latest = await api(`/documents/${node.id}`);
+                    setBrowserDraft({
+                      revision: revision.current,
+                      document: pending.current!,
+                    });
+                    setPreview(latest);
+                  } catch (e) {
+                    setMessage(errorText(e));
+                  }
+                }}
+              >
+                Compare server version
+              </button>
+            )}
         </div>
       )}
       <details className="writing-tools" open={layout !== "focus"}>
@@ -1987,21 +2175,7 @@ const EditorPane = forwardRef<
           <p>Your browser draft remains available to download.</p>
           <button
             className="primary"
-            onClick={() => {
-              revision.current = preview.revision;
-              editor?.commands.setContent(toProseMirror(preview.document), {
-                emitUpdate: false,
-              });
-              pending.current = preview.document;
-              dirty.current = false;
-              blocked.current = false;
-              setPreview(null);
-              setBrowserDraft(null);
-              setMessage(
-                "Using the server version. The previous browser draft remains separately in storage.",
-              );
-              setStatus("Saved on your server");
-            }}
+            onClick={() => applyServerVersion(preview)}
           >
             Use this server version
           </button>

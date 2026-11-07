@@ -31,14 +31,19 @@ function cas(old: any, expected: unknown) {
       "This item changed. Your form is kept. Close and reopen Worlds and Series to review it.",
     );
 }
-async function libraryLock(q: Query, id: string) {
+async function libraryLock(q: Query, id: string, shared = false) {
   found(
-    (await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [id])).rows[0],
+    (
+      await q(
+        `SELECT id FROM libraries WHERE id=$1 ${shared ? "FOR SHARE" : "FOR UPDATE"}`,
+        [id],
+      )
+    ).rows[0],
   );
 }
 export async function worlds(db: Database, libraryId: string) {
   return db.transaction(async (q) => {
-    await libraryLock(q, libraryId);
+    await libraryLock(q, libraryId, true);
     const universes = (
       await q(
         "SELECT data FROM universes WHERE library_id=$1 ORDER BY (data->>'orderKey') COLLATE \"C\",id",

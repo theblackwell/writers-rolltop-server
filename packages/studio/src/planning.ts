@@ -13,7 +13,7 @@ const invalid = (message: string): never => {
 const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 export async function planningCatalog(db: Database, bookId: string) {
   return db.transaction(async (q) => {
-    const s = await readContinuitySnapshot(q, bookId, "planning");
+    const s = await readContinuitySnapshot(q, bookId, "planning", true, true);
     // Parts are not story points; include every live ancestor in the planning outline.
     const byId = new Map(
       s.nodes.filter((n) => n.bookId === bookId).map((n) => [n.id, n]),

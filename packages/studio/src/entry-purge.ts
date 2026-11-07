@@ -96,7 +96,8 @@ export async function purgeEntry(
     let snapshot;
     try {
       snapshot = await captureBook(q, bookId);
-    } catch {
+    } catch (e) {
+      if (e instanceof StudioError) throw e;
       throw new StudioError(
         503,
         "BACKUP_FAILED",
@@ -175,7 +176,8 @@ export async function purgeEntry(
     let path: string;
     try {
       path = await writeBookBackup(store.backupDirectory, snapshot);
-    } catch {
+    } catch (e) {
+      if (e instanceof StudioError) throw e;
       throw new StudioError(
         503,
         "BACKUP_FAILED",

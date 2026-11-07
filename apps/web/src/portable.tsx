@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
-import { api, type Item } from "./api.ts";
+import { api, readResponse, type Item } from "./api.ts";
 export async function upload(path: string, file: File) {
   const r = await fetch("/api" + path, {
     method: "POST",
     credentials: "same-origin",
     body: file,
   });
-  const v = await r.json();
-  if (!r.ok) throw new Error(v.error?.message ?? "Upload failed.");
-  return v;
+  return readResponse(r, "Upload failed.");
 }
 export function PortableLibraries({
   library,
@@ -160,7 +158,17 @@ export function PortableLibraries({
             disabled={busy}
             onClick={() =>
               void run(async () => {
-                await api(`/archive-imports/${preview.id}/cancel`, "POST", {});
+                const r = await api<{ cancelled?: boolean }>(
+                  `/archive-imports/${preview.id}/cancel`,
+                  "POST",
+                  {},
+                );
+                if (r?.cancelled === false) {
+                  setReceipt(
+                    "This import is already being installed and could not be cancelled.",
+                  );
+                  return;
+                }
                 setPreview(undefined);
               })
             }

@@ -232,7 +232,7 @@ export class StudioStore {
     );
     return this.db.transaction(async (q) => {
       // A consistent pair, also serialized with future template writes/initialization.
-      await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [libraryId]);
+      await q("SELECT id FROM libraries WHERE id=$1 FOR SHARE", [libraryId]);
       const templates = (
         await q(
           "SELECT data FROM bible_templates WHERE library_id=$1 ORDER BY (data->>'orderKey') COLLATE \"C\", id",
@@ -1319,7 +1319,8 @@ export class StudioStore {
       let snapshot;
       try {
         snapshot = await captureBook(q, ctx.book.id);
-      } catch {
+      } catch (e) {
+        if (e instanceof StudioError) throw e;
         throw new StudioError(
           503,
           "BACKUP_FAILED",
@@ -1381,7 +1382,8 @@ export class StudioStore {
       let path: string;
       try {
         path = await writeBookBackup(this.backupDirectory, snapshot);
-      } catch {
+      } catch (e) {
+        if (e instanceof StudioError) throw e;
         throw new StudioError(
           503,
           "BACKUP_FAILED",

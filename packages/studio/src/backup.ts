@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { initializeTemplates } from "./templates.ts";
+import { StudioError } from "./store.ts";
 import type { Query } from "./store.ts";
 
 // Explicit table order is also the foreign-key-safe restore order. No sessions.
@@ -55,21 +56,24 @@ export async function captureLibrary(
   q: Query,
   libraryId: string,
   receiptId = libraryId,
+  /** Read-only captures (export, import preview) share locks; recovery writes stay exclusive. */
+  shared = false,
 ): Promise<BookBackup> {
+  const lock = shared ? "FOR SHARE" : "FOR UPDATE";
   // Existing writers lock book before library. NOWAIT avoids a cycle with a
   // writer already holding another book while waiting for this library.
   await q(
-    "SELECT id FROM books WHERE library_id=$1 ORDER BY id FOR UPDATE NOWAIT",
+    `SELECT id FROM books WHERE library_id=$1 ORDER BY id ${lock} NOWAIT`,
     [libraryId],
   );
   const tables: Record<string, any[]> = {};
   tables.libraries = (
-    await q("SELECT * FROM libraries WHERE id=$1 FOR UPDATE", [libraryId])
+    await q(`SELECT * FROM libraries WHERE id=$1 ${lock}`, [libraryId])
   ).rows;
   // A book could have been created between the first sweep and library lock.
   tables.books = (
     await q(
-      "SELECT * FROM books WHERE library_id=$1 ORDER BY id FOR UPDATE NOWAIT",
+      `SELECT * FROM books WHERE library_id=$1 ORDER BY id ${lock} NOWAIT`,
       [libraryId],
     )
   ).rows;
@@ -193,19 +197,45 @@ function validateBackup(data: BookBackup) {
 }
 
 /** Resolves only after file + directory fsync and read-back verification. */
+const tooLarge = () =>
+  new StudioError(
+    413,
+    "BACKUP_TOO_LARGE",
+    "The recovery backup is larger than this server can write in one piece. Nothing was changed. See the backup size limit in docs/SETUP.md.",
+  );
+const isTooLarge = (e: any) =>
+  (e instanceof RangeError &&
+    /Invalid (string|array|typed array) length|allocation failed/i.test(
+      e.message,
+    )) ||
+  [
+    "ERR_STRING_TOO_LONG",
+    "ERR_BUFFER_TOO_LARGE",
+    "ERR_FS_FILE_TOO_LARGE",
+  ].includes(e?.code);
 export async function writeBookBackup(directory: string, backup: BookBackup) {
+  try {
+    return await writeBookBackupUnchecked(directory, backup);
+  } catch (e) {
+    throw isTooLarge(e) ? tooLarge() : e;
+  }
+}
+async function writeBookBackupUnchecked(directory: string, backup: BookBackup) {
   // Require pre-provisioned storage: syncing a new nested directory alone does
   // not make its parent directory entries durable. Missing mounts fail closed.
   const path = join(directory, `${randomUUID()}.book-recovery.json`);
   const payload = JSON.stringify(backup);
+  // Build the wrapped body before creating the file so a size failure here
+  // cannot leave an empty recovery file behind.
+  const body = JSON.stringify({ sha256: digest(payload), payload });
   const file = await open(path, "wx", 0o600);
   try {
-    await file.writeFile(JSON.stringify({ sha256: digest(payload), payload }));
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  try {
+    try {
+      await file.writeFile(body);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     const dir = await open(directory, "r");
     try {
       await dir.sync();

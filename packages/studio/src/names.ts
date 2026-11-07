@@ -116,7 +116,7 @@ export function namesFrom(
 }
 export async function namesCatalog(db: Database, bookId: string) {
   return db.transaction(async (q) => {
-    const s = await readContinuitySnapshot(q, bookId, true);
+    const s = await readContinuitySnapshot(q, bookId, true, true, true);
     const documents = (
       await q(
         "SELECT d.node_id,d.document FROM documents d JOIN manuscript_nodes n ON n.id=d.node_id WHERE n.book_id=$1 LIMIT 10001",

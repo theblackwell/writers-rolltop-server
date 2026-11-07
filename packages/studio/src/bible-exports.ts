@@ -13,7 +13,7 @@ const metadata = (data: any) => {
 export async function bibleExports(db: Database, bookId: string) {
   return db.transaction(async (q) => {
     const book = (
-      await q("SELECT data FROM books WHERE id=$1 FOR UPDATE", [bookId])
+      await q("SELECT data FROM books WHERE id=$1 FOR SHARE", [bookId])
     ).rows[0]?.data;
     if (!book)
       throw new StudioError(404, "NOT_FOUND", "Book no longer exists.");

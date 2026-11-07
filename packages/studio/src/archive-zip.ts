@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { inflateRawSync } from "node:zlib";
+import { crc32, inflateRawSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { zipSync } from "fflate";
 import { StudioError } from "./store.ts";
@@ -24,16 +24,7 @@ export const archiveFail = (code: string, message: string): never => {
 };
 export const hash = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
-const crcTable = Array.from({ length: 256 }, (_, i) => {
-  let x = i;
-  for (let j = 0; j < 8; j++) x = x & 1 ? 0xedb88320 ^ (x >>> 1) : x >>> 1;
-  return x >>> 0;
-});
-const crc = (bytes: Uint8Array) => {
-  let c = 0xffffffff;
-  for (const b of bytes) c = crcTable[(c ^ b) & 255] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-};
+const crc = (bytes: Uint8Array) => crc32(bytes) >>> 0;
 const dirs = new Set(["manuscript", "bible", "continuity", "attachments"]);
 const fatal = new TextDecoder("utf-8", { fatal: true });
 export function archiveJSON(bytes: Uint8Array, path: string): any {

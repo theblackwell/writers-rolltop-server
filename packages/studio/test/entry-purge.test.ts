@@ -556,3 +556,41 @@ test("entry purge HTTP enforces login, origin, IDs, allowlist and CAS before ret
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("permanent deletion surfaces BACKUP_TOO_LARGE (413), not BACKUP_FAILED, and deletes nothing", async (t) => {
+  const f = await fixture(),
+    dir = await mkdtemp(join(tmpdir(), "rolltop-purge-large-"));
+  try {
+    f.store.backupDirectory = dir;
+    const dead = await trashed(f);
+    await f.store.trashNode(f.scene.id);
+    const scene = (await f.store.book(f.book.id)).nodes.find(
+      (n: any) => n.id === f.scene.id,
+    );
+    const before = await snapshot(f.store, f.book.id);
+    const realStringify = JSON.stringify;
+    t.mock.method(JSON, "stringify", (...args: any[]) => {
+      const v = args[0];
+      if (v && typeof v === "object" && "tables" in v && "bookId" in v)
+        throw new RangeError("Invalid string length");
+      return (realStringify as any)(...args);
+    });
+    await assert.rejects(
+      () => purgeEntry(f.store, f.book.id, dead.id, confirm(dead)),
+      { code: "BACKUP_TOO_LARGE", status: 413 },
+    );
+    await assert.rejects(
+      () =>
+        f.store.purge("node", f.scene.id, {
+          confirmTitle: scene.title,
+          expectedDeletedAt: scene.deletedAt,
+        }),
+      { code: "BACKUP_TOO_LARGE", status: 413 },
+    );
+    t.mock.restoreAll();
+    assert.deepEqual(await snapshot(f.store, f.book.id), before);
+    assert.deepEqual(await readdir(dir), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

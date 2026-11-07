@@ -45,17 +45,25 @@ const canonical = (v: any): string =>
         )
       : x,
   );
-const digest = (b: BookBackup) =>
+/** Same bytes as canonical() of the sorted tables, but each row is serialized once. */
+export const digest = (b: BookBackup) =>
   hash(
     Buffer.from(
-      canonical(
-        Object.fromEntries(
-          Object.entries(b.tables).map(([k, rows]) => [
-            k,
-            [...rows].sort((a, b) => canonical(a).localeCompare(canonical(b))),
-          ]),
-        ),
-      ),
+      "{" +
+        Object.keys(b.tables)
+          .sort()
+          .map(
+            (k) =>
+              JSON.stringify(k) +
+              ":[" +
+              b.tables[k]
+                .map((r) => canonical(r))
+                .sort((x, y) => x.localeCompare(y))
+                .join(",") +
+              "]",
+          )
+          .join(",") +
+        "}",
     ),
   );
 export function portableFromBackup(b: BookBackup): Portable {
@@ -154,7 +162,7 @@ export async function exportPortable(store: StudioStore, libraryId: string) {
     )
       throw new StudioError(404, "NOT_FOUND", "Library no longer exists.");
     return encodePortable(
-      portableFromBackup(await captureLibrary(q, libraryId)),
+      portableFromBackup(await captureLibrary(q, libraryId, libraryId, true)),
     );
   });
 }
@@ -262,7 +270,13 @@ async function deleteLibrary(q: Query, b: BookBackup) {
 export class PortableImports {
   private pending = new Map<
     string,
-    { source: Portable; expires: number; targetDigest?: string; result?: any }
+    {
+      source: Portable;
+      expires: number;
+      targetDigest?: string;
+      result?: any;
+      committing?: Promise<any>;
+    }
   >();
   private store: StudioStore;
   constructor(store: StudioStore) {
@@ -270,9 +284,11 @@ export class PortableImports {
   }
   private sweep() {
     for (const [id, p] of this.pending)
-      if (p.expires < Date.now()) this.pending.delete(id);
+      if (p.expires < Date.now() && !p.committing) this.pending.delete(id);
   }
   cancel(id: string) {
+    // A commit in flight cannot be recalled; deleting would let a retry see "expired".
+    if (this.pending.get(id)?.committing) return { cancelled: false };
     this.pending.delete(id);
     return { cancelled: true };
   }
@@ -291,7 +307,7 @@ export class PortableImports {
         (await q("SELECT id FROM libraries WHERE id=$1", [s.library.id])).rows
           .length > 0;
       const captured = exists
-        ? await captureLibrary(q, s.library.id)
+        ? await captureLibrary(q, s.library.id, s.library.id, true)
         : undefined;
       return {
         exists,
@@ -331,6 +347,8 @@ export class PortableImports {
         "Preview expired. Upload the original archive again.",
       );
     if (pending.result) return pending.result;
+    // A duplicate request while the first is installing shares its outcome.
+    if (pending.committing) return pending.committing;
     if (
       !input ||
       typeof input !== "object" ||
@@ -345,8 +363,23 @@ export class PortableImports {
         "INVALID_INPUT",
         "Choose new library or explicitly confirmed replacement.",
       );
+    const run = this.install(pending, input);
+    pending.committing = run;
+    try {
+      const result = await run;
+      pending.result = result;
+      pending.source = undefined as any;
+      return result;
+    } finally {
+      pending.committing = undefined;
+    }
+  }
+  private install(
+    pending: { source: Portable; targetDigest?: string },
+    input: any,
+  ) {
     const s = pending.source;
-    const result = await this.store.db.transaction(async (q) => {
+    return this.store.db.transaction(async (q) => {
       // Serializes installers without taking an exclusive content-table lock (ordinary writers retain book→library ordering).
       await q("SELECT pg_advisory_xact_lock(1801163361)");
       const exists =
@@ -422,8 +455,5 @@ export class PortableImports {
         );
       return { library: s.library, backup, warnings: s.warnings };
     });
-    pending.result = result;
-    pending.source = undefined as any;
-    return result;
   }
 }

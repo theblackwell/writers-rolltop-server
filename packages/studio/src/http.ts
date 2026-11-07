@@ -36,6 +36,7 @@ import {
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
+import { isIPv6 } from "node:net";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, sep } from "node:path";
 import { StudioStore, StudioError } from "./store.ts";
@@ -85,9 +86,58 @@ const respond = (res: ServerResponse, status: number, value: unknown) => {
   });
   res.end(JSON.stringify(value));
 };
+// IPv6 clients usually control a whole /64, so key them by that prefix.
+// Addresses in ::ffff:0:0/96 or ::/96 are IPv4 in IPv6 form and key as IPv4.
+export function ipKey(address: string): string {
+  const a = address.replace(/^\[|\]$/g, "").split("%")[0];
+  if (!isIPv6(a)) return a;
+  const dotted = a.match(/^(.*:)(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  const text = dotted
+    ? dotted[1] +
+      ((+dotted[2] << 8) | +dotted[3]).toString(16) +
+      ":" +
+      ((+dotted[4] << 8) | +dotted[5]).toString(16)
+    : a;
+  const [head, tail = ""] = text.split("::");
+  const h = head ? head.split(":") : [];
+  const t = text.includes("::") && tail ? tail.split(":") : [];
+  const groups = (
+    text.includes("::")
+      ? [...h, ...Array(8 - h.length - t.length).fill("0"), ...t]
+      : h
+  ).map((g) => parseInt(g || "0", 16));
+  if (
+    groups.slice(0, 5).every((g) => g === 0) &&
+    (groups[5] === 0 || groups[5] === 0xffff)
+  )
+    return [
+      groups[6] >> 8,
+      groups[6] & 255,
+      groups[7] >> 8,
+      groups[7] & 255,
+    ].join(".");
+  return (
+    groups
+      .slice(0, 4)
+      .map((g) => g.toString(16))
+      .join(":") + "::/64"
+  );
+}
+// Forwarded entries may carry a port: 1.2.3.4:5678 or [2001:db8::1]:443.
+export function stripPort(entry: string): string {
+  const bracketed = entry.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracketed) return bracketed[1];
+  return entry.replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, "$1");
+}
 export function studioServer(
   store: StudioStore,
-  config: { origin: string; passwordHash: string; staticDir?: string },
+  config: {
+    origin: string;
+    passwordHash: string;
+    staticDir?: string;
+    /** Number of trusted reverse proxies in front of the studio; 0 ignores X-Forwarded-For. */
+    trustProxy?: number;
+  },
 ) {
   const origin = new URL(config.origin);
   if (origin.origin !== config.origin)
@@ -106,8 +156,28 @@ export function studioServer(
     );
   if (!validPasswordHash(config.passwordHash))
     throw new Error("Set STUDIO_PASSWORD_HASH using npm run password.");
+  const trustProxy = config.trustProxy ?? 0;
+  if (!Number.isInteger(trustProxy) || trustProxy < 0 || trustProxy > 10)
+    throw new Error("STUDIO_TRUST_PROXY must be a whole number from 0 to 10.");
+  // The Nth address from the right was appended by our outermost trusted proxy;
+  // anything further left is client-supplied and spoofable.
+  const clientKey = (req: IncomingMessage) => {
+    const socket = req.socket.remoteAddress ?? "unknown";
+    if (!trustProxy) return ipKey(socket);
+    const forwarded = String(req.headers["x-forwarded-for"] ?? "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    return forwarded.length >= trustProxy
+      ? ipKey(stripPort(forwarded[forwarded.length - trustProxy].slice(0, 64)))
+      : ipKey(socket);
+  };
   const secure = origin.protocol === "https:";
   const failures = new Map<string, { count: number; until: number }>();
+  // Ceiling across all keys, so many client addresses cannot multiply the
+  // guess budget against the single owner password.
+  const globalFailures = { count: 0, until: 0 };
+  const globalCeiling = 100;
   const cookie = (token: string, age: number) =>
     `rolltop_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? "; Secure" : ""}`;
   const portableImports = new PortableImports(store);
@@ -159,16 +229,21 @@ export function studioServer(
         return respond(res, 200, { status: "ok" });
       }
       if (url.pathname === "/api/login" && req.method === "POST") {
-        const key = req.socket.remoteAddress ?? "unknown";
+        const key = clientKey(req);
         const now = Date.now();
         for (const [ip, attempt] of failures)
           if (attempt.until < now) failures.delete(ip);
+        if (globalFailures.until < now) {
+          globalFailures.count = 0;
+          globalFailures.until = now + 15 * 60 * 1000;
+        }
         const attempts = failures.get(key) ?? {
           count: 0,
           until: now + 15 * 60 * 1000,
         };
         if (
           attempts.count >= 10 ||
+          globalFailures.count >= globalCeiling ||
           (failures.size >= 1000 && !failures.has(key))
         )
           throw new StudioError(
@@ -177,6 +252,7 @@ export function studioServer(
             "Too many attempts. Try again in 15 minutes.",
           );
         attempts.count++;
+        globalFailures.count++;
         failures.set(key, attempts);
         if (!(await verify((await body(req)).password, config.passwordHash)))
           throw new StudioError(
@@ -185,6 +261,7 @@ export function studioServer(
             "That password did not match.",
           );
         failures.delete(key);
+        globalFailures.count = Math.max(0, globalFailures.count - 1);
         const token = randomBytes(32).toString("hex");
         await store.db.query(
           "DELETE FROM studio_sessions WHERE expires_at < now()",

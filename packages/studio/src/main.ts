@@ -8,6 +8,7 @@ const {
   STUDIO_ORIGIN = "http://localhost:4317",
   HOST = "127.0.0.1",
   PORT = "4317",
+  STUDIO_TRUST_PROXY = "0",
 } = process.env;
 if (!DATABASE_URL || !STUDIO_PASSWORD_HASH)
   throw new Error(
@@ -19,6 +20,7 @@ const store = new StudioStore(db, process.env.STUDIO_BACKUP_DIRECTORY);
 const server = studioServer(store, {
   origin: STUDIO_ORIGIN,
   passwordHash: STUDIO_PASSWORD_HASH,
+  trustProxy: Number(STUDIO_TRUST_PROXY),
 });
 await store.migrate();
 server.listen(Number(PORT), HOST, () =>

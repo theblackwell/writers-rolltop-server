@@ -8,6 +8,7 @@ services:
       STUDIO_PASSWORD_HASH: ${STUDIO_PASSWORD_HASH:?Set STUDIO_PASSWORD_HASH in .env}
       STUDIO_BACKUP_DIRECTORY: /studio/backups
       STUDIO_ORIGIN: ${STUDIO_ORIGIN:-http://localhost:4317}
+      STUDIO_TRUST_PROXY: ${STUDIO_TRUST_PROXY:-0}
     volumes:
       - recovery-backups:/studio/backups
     depends_on:

@@ -10,7 +10,7 @@ export async function knowledgeCatalog(
   asOf?: string,
 ) {
   return db.transaction(async (q) => {
-    const s = await readContinuitySnapshot(q, bookId, true),
+    const s = await readContinuitySnapshot(q, bookId, true, true, true),
       positions = manuscriptPositions(s.nodes, bookId);
     const nodes = s.nodes
       .filter((n) => n.bookId === bookId && positions[n.id] !== undefined)

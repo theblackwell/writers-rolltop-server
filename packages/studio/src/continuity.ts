@@ -10,14 +10,15 @@ export async function readContinuitySnapshot(
   bookId: string,
   knowledgeOnly: boolean | "planning" = false,
   includeDocuments = true,
+  /** Read-only callers share the locks; writers keep exclusive ones (book then library). */
+  shared = false,
 ): Promise<ContinuitySnapshot> {
+  const lock = shared ? "FOR SHARE" : "FOR UPDATE";
   const book = (
-    await q("SELECT data,library_id FROM books WHERE id=$1 FOR UPDATE", [
-      bookId,
-    ])
+    await q(`SELECT data,library_id FROM books WHERE id=$1 ${lock}`, [bookId])
   ).rows[0];
   if (!book) throw new StudioError(404, "NOT_FOUND", "Book no longer exists.");
-  await q("SELECT id FROM libraries WHERE id=$1 FOR UPDATE", [book.library_id]);
+  await q(`SELECT id FROM libraries WHERE id=$1 ${lock}`, [book.library_id]);
   if (book.data.deletedAt)
     throw new StudioError(
       400,
@@ -79,7 +80,9 @@ export async function readContinuitySnapshot(
 
 export async function continuityCatalog(db: Database, bookId: string) {
   return db.transaction(async (q) =>
-    continuityResult(await readContinuitySnapshot(q, bookId)),
+    continuityResult(
+      await readContinuitySnapshot(q, bookId, false, true, true),
+    ),
   );
 }
 
