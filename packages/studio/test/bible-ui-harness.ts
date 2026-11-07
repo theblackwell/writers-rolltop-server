@@ -13,6 +13,10 @@ export type Fake = {
   catalog: { templates: any[]; fields: any[] };
   worlds: { universes: any[]; series: any[] };
   book: { id: string; universeId?: string; seriesId?: string };
+  relationshipTypes: any[];
+  relationships: any[];
+  stateChanges: any[];
+  nodes: any[];
   calls: Call[];
   version: number;
   /** Return a Response to fail a call, or undefined to let the fake handle it. */
@@ -90,6 +94,10 @@ export async function setup() {
     catalog: { templates: [], fields: [] },
     worlds: { universes: [], series: [] },
     book: { id: "book" },
+    relationshipTypes: [],
+    relationships: [],
+    stateChanges: [],
+    nodes: [],
     calls: [],
     version: 0,
     puts: () => fake.calls.filter((c) => c.method === "PUT"),
@@ -180,8 +188,84 @@ export async function setup() {
         return json(next);
       }
       if (path === "/books/book/entries") return json(fake.entries);
-      if (path.endsWith("/relationships"))
-        return json({ relationshipTypes: [], relationships: [] });
+      if (path === "/books/book/relationships" && method === "GET")
+        return json({
+          relationshipTypes: fake.relationshipTypes,
+          relationships: fake.relationships,
+        });
+      if (path === "/books/book/relationships" && method === "POST") {
+        if (body.bookSpecific === false && body.editSharedCanon !== true)
+          return jsonError(400, "Confirm editing shared canon.");
+        const made: any = {
+          id: `link-${fake.relationships.length + 1}`,
+          typeId: body.typeId,
+          fromEntryId: body.fromEntryId,
+          toEntryId: body.toEntryId,
+          ...(body.bookSpecific === false ? {} : { bookId: "book" }),
+          ...(body.note ? { note: body.note } : {}),
+          updatedAt: bump(),
+        };
+        fake.relationships = [...fake.relationships, made];
+        return json(made, 201);
+      }
+      const link = path.match(/^\/books\/book\/relationships\/([^/]+)$/);
+      if (link && method === "PUT") {
+        const old = fake.relationships.find((r) => r.id === link[1]);
+        if (!old) return jsonError(404, "Not found");
+        if (body.expectedUpdatedAt !== old.updatedAt)
+          return jsonError(409, "This relationship changed.");
+        if (!old.bookId && body.editSharedCanon !== true)
+          return jsonError(400, "Confirm editing shared canon.");
+        const next: any = { ...old, updatedAt: bump() };
+        if (body.deleted === true) next.deletedAt = next.updatedAt;
+        if (body.deleted === false) delete next.deletedAt;
+        if (body.note !== undefined) next.note = body.note;
+        fake.relationships = fake.relationships.map((r) =>
+          r.id === next.id ? next : r,
+        );
+        return json(next);
+      }
+      if (path === "/books/book/state-changes" && method === "GET")
+        return json({
+          book: fake.book,
+          books: [{ title: "Book", orderKey: "a", ...fake.book }],
+          entries: fake.entries,
+          fields: fake.catalog.fields,
+          events: [],
+          nodes: fake.nodes,
+          stateChanges: fake.stateChanges,
+        });
+      if (path.startsWith("/books/book/state-changes") && method !== "GET") {
+        const id = path.split("/")[4];
+        const old = id && fake.stateChanges.find((c) => c.id === id);
+        const target = fake.entries.find(
+          (e) => e.id === (old ? old.entryId : body.entryId),
+        );
+        if (!target) return jsonError(404, "Not found");
+        if (old && body.expectedUpdatedAt !== old.updatedAt)
+          return jsonError(409, "This change changed.");
+        if (!old && body.expectedEntryUpdatedAt !== target.updatedAt)
+          return jsonError(409, "This entry changed.");
+        if (target.scope.kind !== "book" && body.editSharedCanon !== true)
+          return jsonError(400, "Confirm editing shared canon.");
+        const next: any = {
+          ...(old || { id: `change-${fake.stateChanges.length + 1}` }),
+          ...body,
+          updatedAt: bump(),
+          createdAt: old?.createdAt ?? "2026-01-01",
+        };
+        delete next.expectedUpdatedAt;
+        delete next.expectedEntryUpdatedAt;
+        delete next.expectedFieldUpdatedAt;
+        delete next.editSharedCanon;
+        if (body.deleted === true) next.deletedAt = next.updatedAt;
+        if (body.deleted === false) delete next.deletedAt;
+        delete next.deleted;
+        fake.stateChanges = old
+          ? fake.stateChanges.map((c) => (c.id === next.id ? next : c))
+          : [...fake.stateChanges, next];
+        return json(next, old ? 200 : 201);
+      }
       if (path.endsWith("/appearances")) return json({ appearances: [] });
       if (path.endsWith("/family")) return json({ matches: [] });
       if (path.endsWith("/templates")) return json(fake.catalog);

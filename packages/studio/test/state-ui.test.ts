@@ -51,8 +51,10 @@ test("mounted state controls preserve typed false/note/point drafts through conf
   try {
     const React = await import("react"),
       { createRoot } = await import("react-dom/client");
-    const { StateChanges, StateChangeForm } =
+    const { StateChangeForm } =
       await import("../../../apps/web/src/state-changes.tsx");
+    const { EntryChanges } =
+      await import("../../../apps/web/src/entry-changes.tsx");
     root = createRoot(dom.window.document.getElementById("root")!);
     const entry: any = {
       id: "entry",
@@ -170,20 +172,38 @@ test("mounted state controls preserve typed false/note/point drafts through conf
           }),
         );
       });
-    await React.act(async () =>
-      root.render(React.createElement(StateChanges, { bookId: "book" })),
-    );
+    const rel: any = {
+      data: { relationshipTypes: [], relationships: [] },
+      loaded: true,
+      error: "",
+      reload: async () => {},
+      setError: () => {},
+    };
+    const page = (canon: boolean) =>
+      React.createElement(EntryChanges, {
+        entry,
+        bookId: "book",
+        canon,
+        rel,
+        flush: async () => true,
+      } as any);
+    // A shared entry's changes are locked until the page is in canon mode.
+    await React.act(async () => root.render(page(false)));
     assert.match(doc.body.textContent!, /Shared canon/);
+    assert.equal(button("Add Change…").matches(":disabled"), true);
+    await React.act(async () => root.render(page(true)));
+    assert.equal(button("Add Change…").matches(":disabled"), false);
     await click(button("Add Change…"));
+    // Canon mode is the confirmation: no second checkbox.
+    assert.equal(
+      Array.from(doc.querySelectorAll("label")).some((l) =>
+        l.textContent?.includes("Apply this state change"),
+      ),
+      false,
+    );
     await fill("From chapter or scene", "scene");
     await click(control("Include a note"));
     await fill("Note", "");
-    assert.equal(button("Save Value").matches(":disabled"), true);
-    await click(
-      control(
-        "Apply this state change to the shared entry for all books in its scope",
-      ),
-    );
     await fill("Has the key", "false");
     await click(button("Save Value"));
     assert.match(doc.querySelector('[role="alert"]')!.textContent!, /changed/);
@@ -193,6 +213,8 @@ test("mounted state controls preserve typed false/note/point drafts through conf
     assert.equal(calls[0].value, false);
     assert.equal(calls[0].note, "");
     assert.equal(calls[0].nodeId, "scene");
+    assert.equal(calls[0].entryId, "entry");
+    assert.equal(calls[0].editSharedCanon, true);
     assert.equal(calls[0].expectedEntryUpdatedAt, "entry-stamp");
     assert.equal(calls[0].expectedFieldUpdatedAt, "field-stamp");
     assert.equal(button("Clear Value"), undefined);
@@ -204,36 +226,44 @@ test("mounted state controls preserve typed false/note/point drafts through conf
     await click(button("Edit Change…"));
     await fill("Change from", "event");
     await fill("From event", "event");
-    await click(
-      control(
-        "Apply this state change to the shared entry for all books in its scope",
-      ),
-    );
     await click(button("Save Value"));
     assert.equal(calls.at(-1).eventId, "event");
     assert.equal(calls.at(-1).nodeId, null);
     assert.equal(calls.at(-1).expectedUpdatedAt, "new");
     await click(button("Move Change to Trash…"));
-    assert.equal(button("Move Change to Trash").disabled, true);
-    await click(
-      control(
-        "Apply this state change to the shared entry for all books in its scope",
-      ),
-    );
+    assert.equal(button("Move Change to Trash").disabled, false);
     await click(button("Move Change to Trash"));
+    assert.equal(calls.at(-1).deleted, true);
     await click(control("Show State Change Trash"));
     await click(button("Restore Change…"));
-    assert.equal(button("Restore Change").disabled, true);
-    await click(
-      control(
-        "Apply this state change to the shared entry for all books in its scope",
-      ),
-    );
     await click(button("Restore Change"));
     assert.equal(calls.at(-1).deleted, false);
+    // Outside the entry page the form still asks for its own confirmation.
     await React.act(async () =>
       root.render(
         React.createElement(StateChangeForm, {
+          catalog,
+          entry,
+          mode: "edit",
+          busy: false,
+          onCancel: () => {},
+          onSave: async () => {},
+        }),
+      ),
+    );
+    await fill("From chapter or scene", "scene");
+    await fill("Has the key", "true");
+    assert.equal(button("Save Value").matches(":disabled"), true);
+    await click(
+      control(
+        "Apply this state change to the shared entry for all books in its scope",
+      ),
+    );
+    assert.equal(button("Save Value").matches(":disabled"), false);
+    await React.act(async () =>
+      root.render(
+        React.createElement(StateChangeForm, {
+          key: "stale",
           catalog,
           entry,
           change: {

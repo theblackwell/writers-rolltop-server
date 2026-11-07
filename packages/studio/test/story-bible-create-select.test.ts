@@ -60,8 +60,8 @@ test("a created entry opens from its list row after switching, filtering, remoun
 
     // Sequence 5: Relationships (a tool) is open, then a name is clicked. The
     // row is selected, but the tool used to keep covering the entry page.
-    await t.click(t.button("Relationships…"));
-    assert.equal(t.state.tool, "relationships");
+    await t.click(t.button("Relationship types…"));
+    assert.equal(t.state.tool, "relationshipTypes");
     await t.click(t.button("Tom Reed", t.doc.querySelector("aside")!));
     assert.equal(t.state.selected, "tom-reed");
     assert.equal(t.state.tool, null, "choosing an entry closes the tool");

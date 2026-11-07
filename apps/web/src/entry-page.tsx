@@ -8,6 +8,9 @@ import {
   SaveStatus,
   useEntryWriter,
 } from "./entry-editing.tsx";
+import { EntryChanges } from "./entry-changes.tsx";
+import { EntryLinks } from "./entry-relationships.tsx";
+import { useRelationshipData } from "./relationships.tsx";
 import { EntryFields } from "./entry-fields.tsx";
 import type { Catalog } from "./entry-fields.tsx";
 import {
@@ -42,6 +45,7 @@ export function EntryPage({
   onPurged,
   onBack,
   onOpenAppearance,
+  onOpenEntry,
   flushRef,
   onReloadCatalog,
 }: {
@@ -58,6 +62,8 @@ export function EntryPage({
   onPurged: (id: string, backup: string) => Promise<void>;
   onBack?: () => void;
   onOpenAppearance?: (nodeId: string, anchorId: string) => Promise<void>;
+  /** Opens another entry's page (the app saves this page's drafts first). */
+  onOpenEntry?: (id: string) => void;
   /** Receives a function that saves open drafts; false means stay here. */
   flushRef?: MutableRefObject<(() => Promise<boolean>) | null>;
   onReloadCatalog?: () => Promise<void>;
@@ -76,6 +82,7 @@ export function EntryPage({
     onReload: onReloadCatalog,
   });
   const { flush } = writer;
+  const rel = useRelationshipData(bookId);
   useEffect(() => {
     if (!flushRef) return;
     flushRef.current = flush;
@@ -257,6 +264,25 @@ export function EntryPage({
             </section>
           )}
         </Fragment>
+        <section className="entry-section" aria-label="Relationships">
+          <EntryLinks
+            entry={entry}
+            entries={entries}
+            bookId={bookId}
+            rel={rel}
+            canonOk={!shared || canon}
+            flush={flush}
+            onOpenEntry={onOpenEntry}
+          />
+        </section>
+        <EntryChanges
+          entry={entry}
+          bookId={bookId}
+          canon={canon}
+          rel={rel}
+          flush={flush}
+          onOpenEntry={onOpenEntry}
+        />
         <section className="entry-section" aria-label="Family and appearances">
           <EntryContext
             key={entry.id}

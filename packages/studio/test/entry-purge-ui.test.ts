@@ -73,10 +73,23 @@ test("mounted Entry page Trash requires exact name/shared consent, retains faile
     Object.defineProperty(globalThis, "fetch", {
       configurable: true,
       writable: true,
-      value: async (_url: string, options: any) => {
-        // The page's family/appearances section loads with plain GETs.
+      value: async (url: string, options: any) => {
+        // The page's sections load with plain GETs.
         if (!options?.body)
-          return new Response(JSON.stringify({ appearances: [], matches: [] }));
+          return new Response(
+            JSON.stringify({
+              appearances: [],
+              matches: [],
+              relationshipTypes: [],
+              relationships: [],
+              books: [],
+              nodes: [],
+              fields: [],
+              entries: [],
+              events: [],
+              stateChanges: [],
+            }),
+          );
         calls.push(JSON.parse(options.body));
         return new Response(
           JSON.stringify(

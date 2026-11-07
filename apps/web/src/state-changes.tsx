@@ -1,7 +1,6 @@
 import { AttachmentField } from "./attachments.tsx";
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useState } from "react";
-import { api } from "./api.ts";
+import { useState } from "react";
 import { ScalarForm } from "./entry-fields.tsx";
 import { StructuredForm, structuredSummary } from "./structured-fields.tsx";
 import {
@@ -13,263 +12,12 @@ import { structuredTypes } from "../../../packages/studio/src/structured-values.
 import {
   inScope,
   eventInStory,
-  orderedChanges,
-  resolveState,
   stateFieldTypes,
 } from "../../../packages/studio/src/state-values.ts";
 import { scopeAllowsTarget } from "../../../packages/studio/src/scope-values.ts";
 import type { Entry } from "./entries.tsx";
 import type { Field } from "./entry-fields.tsx";
-export function StateChanges({ bookId }: { bookId: string }) {
-  const [catalog, setCatalog] = useState<any>(),
-    [entryId, setEntryId] = useState(""),
-    [asOf, setAsOf] = useState(""),
-    [trash, setTrash] = useState(false),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [edit, setEdit] = useState<{
-      change?: any;
-      mode: "edit" | "trash" | "restore";
-    }>();
-  useEffect(() => {
-    let live = true;
-    api("/books/" + bookId + "/state-changes")
-      .then((c) => {
-        if (live) {
-          setCatalog(c);
-          setEntryId(
-            c.entries.find((e: any) => inScope(e.scope, c.book) && !e.deletedAt)
-              ?.id ?? "",
-          );
-        }
-      })
-      .catch((e) => {
-        if (live) setError(e.message);
-      });
-    return () => {
-      live = false;
-    };
-  }, [bookId]);
-  const entry = catalog?.entries.find((e: any) => e.id === entryId);
-  const fields =
-    catalog?.fields.filter(
-      (f: Field) => f.templateId === entry?.templateId && !f.deletedAt,
-    ) ?? [];
-  const describe = (c: any) => {
-    const f = catalog.fields.find((f: Field) => f.id === c.fieldId);
-    return f ? valueTitle(f, c.value, catalog.entries) : "Unavailable field";
-  };
-  async function save(value: object) {
-    setBusy(true);
-    setError("");
-    try {
-      const c = edit?.change,
-        result = await api(
-          "/books/" + bookId + "/state-changes" + (c ? "/" + c.id : ""),
-          c ? "PUT" : "POST",
-          { ...value, ...(c ? { expectedUpdatedAt: c.updatedAt } : {}) },
-        );
-      setCatalog((old: any) => ({
-        ...old,
-        stateChanges: c
-          ? old.stateChanges.map((x: any) => (x.id === c.id ? result : x))
-          : [...old.stateChanges, result],
-      }));
-      setEdit(undefined);
-    } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "This change could not be saved.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <section aria-label="Changing State">
-      <p>
-        Record a field taking a new value from an event, chapter or scene
-        onward. Earlier books apply before this book's override and its own
-        changes. Prose and canon stay as saved.
-      </p>
-      {error && <p role="alert">{error}</p>}
-      {!catalog ? (
-        <p>Loading…</p>
-      ) : (
-        <>
-          <label>
-            Entry
-            <select
-              value={entryId}
-              disabled={!!edit || busy}
-              onChange={(e) => {
-                setEntryId(e.target.value);
-                setError("");
-              }}
-            >
-              <option value="">Choose an entry</option>
-              {catalog.entries
-                .filter((e: any) => inScope(e.scope, catalog.book))
-                .map((e: any) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                    {e.deletedAt ? " (in Trash)" : ""}
-                  </option>
-                ))}
-            </select>
-          </label>
-          {entry &&
-            (edit ? (
-              <StateChangeForm
-                key={(edit.change?.id ?? "new") + edit.mode}
-                catalog={catalog}
-                entry={entry}
-                change={edit.change}
-                mode={edit.mode}
-                busy={busy}
-                onCancel={() => {
-                  setEdit(undefined);
-                  setError("");
-                }}
-                onSave={save}
-              />
-            ) : (
-              <>
-                <h3>As of</h3>
-                <label>
-                  As of chapter or scene
-                  <select
-                    value={asOf}
-                    onChange={(e) => setAsOf(e.target.value)}
-                  >
-                    <option value="">Current book values</option>
-                    {catalog.nodes
-                      .filter(
-                        (n: any) =>
-                          n.bookId === bookId &&
-                          !n.inTrash &&
-                          ["chapter", "scene"].includes(n.kind),
-                      )
-                      .map((n: any) => (
-                        <option key={n.id} value={n.id}>
-                          {n.title}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <ul className="search-results">
-                  {fields.map((f: Field) => {
-                    const resolved = resolveState(
-                      entry,
-                      f.id,
-                      bookId,
-                      asOf,
-                      catalog,
-                    );
-                    return (
-                      <li key={f.id}>
-                        <strong>{f.label}</strong>
-                        <p style={{ whiteSpace: "pre-wrap" }}>
-                          {resolved.value === undefined
-                            ? "Not set"
-                            : valueTitle(f, resolved.value, catalog.entries)}
-                        </p>
-                        <p>
-                          {resolved.source === "change"
-                            ? "Set by change at " +
-                              placeTitle(
-                                catalog,
-                                catalog.stateChanges.find(
-                                  (c: any) => c.id === resolved.changeId,
-                                ),
-                              )
-                            : resolved.source === "override"
-                              ? "This book's override"
-                              : "Shared canon"}
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {!fields.length && (
-                  <p>
-                    Assign a template with fields in Bible Entries before adding
-                    changes.
-                  </p>
-                )}
-                <h3>Changes over the story</h3>
-                <button
-                  disabled={
-                    !!entry.deletedAt ||
-                    !fields.some((f: Field) =>
-                      stateFieldTypes.includes(f.fieldType),
-                    )
-                  }
-                  onClick={() => {
-                    setError("");
-                    setEdit({ mode: "edit" });
-                  }}
-                >
-                  Add Change…
-                </button>
-                <label className="entry-toggle">
-                  <input
-                    type="checkbox"
-                    checked={trash}
-                    onChange={(e) => setTrash(e.target.checked)}
-                  />
-                  Show State Change Trash
-                </label>
-                <ul className="search-results">
-                  {(trash
-                    ? catalog.stateChanges.filter(
-                        (c: any) => c.entryId === entryId && c.deletedAt,
-                      )
-                    : orderedChanges(entry, catalog).map((x: any) => x.change)
-                  ).map((c: any) => (
-                    <li key={c.id}>
-                      <strong>
-                        {catalog.fields.find((f: Field) => f.id === c.fieldId)
-                          ?.label ?? "Unavailable field"}{" "}
-                        → {describe(c)}
-                      </strong>
-                      <p>
-                        {placeTitle(catalog, c)}
-                        {c.note !== undefined ? " · " + c.note : ""}
-                      </p>
-                      {!c.deletedAt && (
-                        <button
-                          onClick={() => {
-                            setError("");
-                            setEdit({ change: c, mode: "edit" });
-                          }}
-                        >
-                          Edit Change…
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          setError("");
-                          setEdit({
-                            change: c,
-                            mode: c.deletedAt ? "restore" : "trash",
-                          });
-                        }}
-                      >
-                        {c.deletedAt
-                          ? "Restore Change…"
-                          : "Move Change to Trash…"}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ))}
-        </>
-      )}
-    </section>
-  );
-}
-function placeTitle(c: any, change: any) {
+export function placeTitle(c: any, change: any) {
   if (!change) return "Unavailable point";
   if (change.nodeId) {
     const n = c.nodes.find((n: any) => n.id === change.nodeId);
@@ -288,7 +36,7 @@ function placeTitle(c: any, change: any) {
         (e.deletedAt ? " (in Trash)" : "")
     : "Unavailable event";
 }
-function valueTitle(f: Field, v: any, entries: Entry[]) {
+export function valueTitle(f: Field, v: any, entries: Entry[]) {
   return referenceTypes.includes(f.fieldType)
     ? referenceSummary(v, entries)
     : structuredSummary(f, v);
@@ -298,6 +46,7 @@ export function StateChangeForm({
   entry,
   change,
   mode,
+  canon,
   busy,
   onCancel,
   onSave,
@@ -306,6 +55,8 @@ export function StateChangeForm({
   entry: any;
   change?: any;
   mode: "edit" | "trash" | "restore";
+  /** The entry page is already in canon mode, so no separate confirmation. */
+  canon?: boolean;
   busy: boolean;
   onCancel: () => void;
   onSave: (v: object) => Promise<void>;
@@ -345,8 +96,11 @@ export function StateChangeForm({
     place === "node"
       ? nodes.some((n: any) => n.id === nodeId)
       : events.some((e: any) => e.id === eventId && !e.deletedAt);
+  const confirmed = !!canon || ack;
   const gated =
-    busy || (shared && !ack) || (mode === "edit" && (!field || !validPoint));
+    busy ||
+    (shared && !confirmed) ||
+    (mode === "edit" && (!field || !validPoint));
   const save = async (value: unknown) => {
     if (gated) return;
     if (value === null) {
@@ -492,7 +246,7 @@ export function StateChangeForm({
         ) : (
           <p>{placeTitle(catalog, change)}</p>
         )}
-        {shared && (
+        {shared && !canon && (
           <label className="entry-toggle" style={{ margin: "1rem 0" }}>
             <input
               type="checkbox"

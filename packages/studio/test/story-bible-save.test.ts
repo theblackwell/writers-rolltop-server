@@ -349,9 +349,9 @@ test("an open draft is saved before another entry, a tool or a view change, and 
 
     // A tool is a move too.
     await t.type(t.field("Summary")!, "Harbor draft two");
-    await t.click(t.button("Relationships…"));
+    await t.click(t.button("Relationship types…"));
     assert.equal(t.fake.puts().at(-1)!.body.summary, "Harbor draft two");
-    assert.equal(t.state.tool, "relationships");
+    assert.equal(t.state.tool, "relationshipTypes");
     await t.click(t.button("Harbor", t.doc.querySelector("aside")!));
 
     // A failing save blocks the move and leaves the draft and error visible.
@@ -368,7 +368,7 @@ test("an open draft is saved before another entry, a tool or a view change, and 
     assert.match(t.text(), /Summary rejected\./);
     assert.match(t.text(), /not saved yet|Not saved/);
     assert.equal(await t.flush(), false);
-    await t.click(t.button("Relationships…"));
+    await t.click(t.button("Relationship types…"));
     assert.equal(
       t.state.tool,
       null,

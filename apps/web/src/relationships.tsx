@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
-import type { Entry } from "./entries.tsx";
 type RelationType = {
   id: string;
   label: string;
@@ -20,221 +19,139 @@ type Relation = {
   deletedAt?: string;
 };
 type Catalog = { relationshipTypes: RelationType[]; relationships: Relation[] };
-export function Relationships({
-  bookId,
-  libraryId,
-  entries,
-  onClose,
-}: {
-  bookId: string;
-  libraryId: string;
-  entries: Entry[];
-  onClose: () => void;
-}) {
+export type { RelationType, Relation };
+/** Loads the book's relationship types and links; reload keeps the last data
+ * on screen if it fails. */
+export function useRelationshipData(bookId: string) {
   const [data, setData] = useState<Catalog>({
       relationshipTypes: [],
       relationships: [],
     }),
     [loaded, setLoaded] = useState(false),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [trash, setTrash] = useState(false);
-  const [edit, setEditState] = useState<{
-    kind: "type" | "link";
-    item?: RelationType | Relation;
-  } | null>(null);
+    [error, setError] = useState("");
+  const live = useRef(true);
+  const reload = async () => {
+    const next = await api<Catalog>(`/books/${bookId}/relationships`);
+    if (live.current) {
+      setData(next);
+      setLoaded(true);
+      setError("");
+    }
+  };
+  useEffect(() => {
+    live.current = true;
+    setLoaded(false);
+    reload().catch((e) => {
+      if (live.current) setError(e.message);
+    });
+    return () => {
+      live.current = false;
+    };
+  }, [bookId]);
+  return { data, loaded, error, reload, setError };
+}
+// Bible settings: relationship types are shared by the whole library. Links
+// between entries are managed on the entry pages.
+export function RelationshipTypes({
+  bookId,
+  libraryId,
+  onClose,
+}: {
+  bookId: string;
+  libraryId: string;
+  onClose: () => void;
+}) {
+  const {
+    data,
+    loaded,
+    error: loadError,
+    reload,
+  } = useRelationshipData(bookId);
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [edit, setEditState] = useState<{ item?: RelationType } | null>(null);
   function setEdit(value: typeof edit) {
     setError("");
     setEditState(value);
   }
-  const reload = async () => {
-    setData(await api(`/books/${bookId}/relationships`));
-    setLoaded(true);
-  };
-  useEffect(() => {
-    reload().catch((e) => setError(e.message));
-  }, [bookId]);
   async function action(work: () => Promise<void>) {
     setBusy(true);
     setError("");
     try {
       await work();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Relationships could not be saved.",
-      );
+      setError(e instanceof Error ? e.message : "The type could not be saved.");
     } finally {
       setBusy(false);
     }
   }
-  async function save(
-    kind: "type" | "link",
-    item: RelationType | Relation | undefined,
-    value: object,
-  ) {
+  async function save(item: RelationType | undefined, value: object) {
     await api(
-      kind === "type"
-        ? `/libraries/${libraryId}/relationship-types${item ? `/${item.id}` : ""}`
-        : `/books/${bookId}/relationships${item ? `/${item.id}` : ""}`,
+      `/libraries/${libraryId}/relationship-types${item ? `/${item.id}` : ""}`,
       item ? "PUT" : "POST",
       { ...value, ...(item ? { expectedUpdatedAt: item.updatedAt } : {}) },
     );
     await reload();
     setEdit(null);
   }
-  const name = (id: string) => {
-    const e = entries.find((e) => e.id === id);
-    return e
-      ? e.name + (e.deletedAt ? " (in Trash)" : "")
-      : `Unavailable entry (${id})`;
-  };
   return (
-    <section aria-label="Relationships">
-      <h3>Relationships</h3>
+    <section aria-label="Bible settings">
+      <h2>Bible settings</h2>
+      <h3>Relationship types</h3>
       <p>
         Direction matters: the forward label reads from the first entry to the
-        second; the inverse label reads back. Shared relationships appear in
-        every book that can see both entries.
+        second; the inverse label reads back. Types are shared throughout this
+        library. Add the links themselves from an entry's page.
       </p>
-      {error && <p role="alert">{error}</p>}
-      {!loaded ? (
-        <p>Loading…</p>
+      {(loadError || error) && <p role="alert">{error || loadError}</p>}
+      {!loaded && !loadError ? (
+        <p role="status">Loading…</p>
       ) : edit ? (
-        edit.kind === "type" ? (
-          <TypeForm
-            key={edit.item?.id ?? "new-type"}
-            item={edit.item as RelationType | undefined}
-            busy={busy}
-            onCancel={() => setEdit(null)}
-            onSave={(value) => action(() => save("type", edit.item, value))}
-          />
-        ) : (
-          <LinkForm
-            key={edit.item?.id ?? "new-link"}
-            item={edit.item as Relation | undefined}
-            types={data.relationshipTypes}
-            entries={entries}
-            busy={busy}
-            onCancel={() => setEdit(null)}
-            onSave={(value) => action(() => save("link", edit.item, value))}
-          />
-        )
+        <TypeForm
+          key={edit.item?.id ?? "new-type"}
+          item={edit.item}
+          busy={busy}
+          onCancel={() => setEdit(null)}
+          onSave={(value) => action(() => save(edit.item, value))}
+        />
       ) : (
-        <fieldset disabled={busy}>
-          <h4>Relationship Types</h4>
-          <button onClick={() => setEdit({ kind: "type" })}>
-            New Relationship Type…
-          </button>
-          {!data.relationshipTypes.length && (
-            <p>Create a type with forward and inverse labels first.</p>
-          )}
-          <ul className="search-results">
-            {data.relationshipTypes.map((t) => (
-              <li key={t.id}>
-                <strong>
-                  {t.label} / {t.inverseLabel}
-                </strong>
-                {t.deletedAt ? " (in Trash)" : ""}
-                {!t.deletedAt && (
-                  <button
-                    aria-label={`Edit relationship type ${t.label}`}
-                    onClick={() => setEdit({ kind: "type", item: t })}
-                  >
-                    Edit Type…
-                  </button>
-                )}
-                <button
-                  aria-label={`${t.deletedAt ? "Restore" : "Trash"} relationship type ${t.label}`}
-                  onClick={() =>
-                    void action(() =>
-                      save("type", t, { deleted: !t.deletedAt }),
-                    )
-                  }
-                >
-                  {t.deletedAt ? "Restore Type" : "Move Type to Trash"}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <h4>Entry Links</h4>
-          <button
-            disabled={
-              !data.relationshipTypes.some((t) => !t.deletedAt) ||
-              entries.filter((e) => !e.deletedAt).length < 2
-            }
-            onClick={() => setEdit({ kind: "link" })}
-          >
-            New Relationship…
-          </button>
-          <label className="entry-toggle">
-            <input
-              type="checkbox"
-              checked={trash}
-              onChange={(e) => setTrash(e.target.checked)}
-            />
-            Show Relationship Trash
-          </label>
-          {!data.relationships.some((r) => !!r.deletedAt === trash) && (
-            <p>
-              {trash ? "No relationships in Trash." : "No relationships yet."}
-            </p>
-          )}
-          <ul className="search-results">
-            {data.relationships
-              .filter((r) => !!r.deletedAt === trash)
-              .map((r) => {
-                const t = data.relationshipTypes.find((t) => t.id === r.typeId);
-                return (
-                  <li key={r.id}>
-                    <strong>
-                      {name(r.fromEntryId)} {t?.label ?? "Unavailable type"}{" "}
-                      {name(r.toEntryId)}
-                    </strong>
-                    <p>
-                      {name(r.toEntryId)}{" "}
-                      {t?.inverseLabel ?? "Unavailable inverse label"}{" "}
-                      {name(r.fromEntryId)}
-                    </p>
-                    <p>
-                      {r.bookId ? "This book only" : "Shared relationship"}
-                      {t?.deletedAt ? " · Type in Trash" : ""}
-                    </p>
-                    {r.note && (
-                      <p style={{ whiteSpace: "pre-wrap" }}>{r.note}</p>
-                    )}
-                    {!r.deletedAt && (
-                      <button
-                        aria-label={`Edit note for relationship ${name(r.fromEntryId)} to ${name(r.toEntryId)}`}
-                        onClick={() => setEdit({ kind: "link", item: r })}
-                      >
-                        Edit Note…
-                      </button>
-                    )}
+        loaded && (
+          <fieldset disabled={busy}>
+            <button onClick={() => setEdit({})}>New Relationship Type…</button>
+            {!data.relationshipTypes.length && (
+              <p>Create a type with forward and inverse labels first.</p>
+            )}
+            <ul className="search-results">
+              {data.relationshipTypes.map((t) => (
+                <li key={t.id}>
+                  <strong>
+                    {t.label} / {t.inverseLabel}
+                  </strong>
+                  {t.deletedAt ? " (in Trash)" : ""}
+                  {!t.deletedAt && (
                     <button
-                      onClick={() =>
-                        void action(() =>
-                          save("link", r, {
-                            deleted: !r.deletedAt,
-                            expectedTypeUpdatedAt: t?.updatedAt,
-                            editSharedCanon: !r.bookId,
-                          }),
-                        )
-                      }
+                      aria-label={`Edit relationship type ${t.label}`}
+                      onClick={() => setEdit({ item: t })}
                     >
-                      {r.deletedAt
-                        ? "Restore Relationship"
-                        : r.bookId
-                          ? "Move Relationship to Trash"
-                          : "Trash Shared Relationship"}
+                      Edit Type…
                     </button>
-                  </li>
-                );
-              })}
-          </ul>
-        </fieldset>
+                  )}
+                  <button
+                    aria-label={`${t.deletedAt ? "Restore" : "Trash"} relationship type ${t.label}`}
+                    onClick={() =>
+                      void action(() => save(t, { deleted: !t.deletedAt }))
+                    }
+                  >
+                    {t.deletedAt ? "Restore Type" : "Move Type to Trash"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+        )
       )}
       <button disabled={busy || !!edit} onClick={onClose}>
-        Close Relationships
+        Close Bible Settings
       </button>
     </section>
   );
@@ -293,24 +210,32 @@ function TypeForm({
     </form>
   );
 }
-function LinkForm({
+export function LinkForm({
   item,
   types,
   entries,
+  fromId,
+  sharedAllowed = true,
   busy,
   onSave,
   onCancel,
 }: {
   item?: Relation;
   types: RelationType[];
-  entries: Entry[];
+  entries: { id: string; name: string; deletedAt?: string }[];
+  /** Fixes the first entry (the entry page the link is added from). */
+  fromId?: string;
+  /** False keeps a shared link out of reach until canon mode is on. */
+  sharedAllowed?: boolean;
   busy: boolean;
   onSave: (value: object) => Promise<void>;
   onCancel: () => void;
 }) {
   const live = entries.filter((e) => !e.deletedAt),
-    [from, setFrom] = useState(live[0]?.id ?? ""),
-    [to, setTo] = useState(live[1]?.id ?? ""),
+    [from, setFrom] = useState(fromId ?? live[0]?.id ?? ""),
+    [to, setTo] = useState(
+      live.find((e) => e.id !== (fromId ?? live[0]?.id))?.id ?? "",
+    ),
     [type, setType] = useState(types.find((t) => !t.deletedAt)?.id ?? ""),
     [bookSpecific, setBookSpecific] = useState(true),
     [note, setNote] = useState(item?.note ?? "");
@@ -342,6 +267,7 @@ function LinkForm({
               First entry
               <select
                 value={from}
+                disabled={!!fromId}
                 onChange={(e) => {
                   const id = e.target.value;
                   setFrom(id);
@@ -387,11 +313,17 @@ function LinkForm({
                 onChange={(e) => setBookSpecific(e.target.value === "book")}
               >
                 <option value="book">This book only</option>
-                <option value="shared">
+                <option value="shared" disabled={!sharedAllowed}>
                   All books that can see both entries
                 </option>
               </select>
             </label>
+            {!sharedAllowed && (
+              <p className="hint">
+                Turn on Edit shared details to add a link that applies to every
+                book.
+              </p>
+            )}
             <p>
               {live.find((e) => e.id === from)?.name}{" "}
               {types.find((t) => t.id === type)?.label}{" "}

@@ -1240,3 +1240,16 @@ dialog textarea {
     display: inline-block;
   }
 }
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.entry-links li p {
+  margin: 0.2rem 0;
+}

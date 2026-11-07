@@ -90,6 +90,18 @@ test("Story Bible tab groups entries by type, selects an entry into its page, cr
           return json(entry);
         }
         if (path.endsWith("/entries")) return json(entries);
+        if (path.endsWith("/relationships"))
+          return json({ relationshipTypes: [], relationships: [] });
+        if (path.endsWith("/state-changes"))
+          return json({
+            book: { id: "book" },
+            books: [],
+            entries,
+            fields: [],
+            events: [],
+            nodes: [],
+            stateChanges: [],
+          });
         if (path.endsWith("/appearances")) return json({ appearances: [] });
         if (path.endsWith("/family")) return json({ matches: [] });
         if (path.endsWith("/templates"))

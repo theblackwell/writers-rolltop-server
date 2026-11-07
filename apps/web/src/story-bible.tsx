@@ -7,10 +7,10 @@ import { EntryPage } from "./entry-page.tsx";
 import type { Catalog } from "./entry-fields.tsx";
 import { entryTypeLabel, entryTypes } from "./entries.tsx";
 import type { Entry } from "./entries.tsx";
-import { Relationships } from "./relationships.tsx";
+import { RelationshipTypes } from "./relationships.tsx";
 import { TemplateManager } from "./template-manager.tsx";
 
-export type BibleTool = "relationships" | "templates" | null;
+export type BibleTool = "relationshipTypes" | "templates" | null;
 type Context = {
   libraryId: string;
   book: { id: string; universeId?: string; seriesId?: string };
@@ -145,7 +145,7 @@ export function StoryBible({
   }, [flushRef]);
   const pick = async (id: string) => {
     if (id !== selectedId && !(await leavePage())) return;
-    // A tool (Relationships, Templates) covers the entry page, so close it.
+    // A tool (Relationship types, Templates) covers the entry page, so close it.
     onTool(null);
     onSelect(id);
     setShowList(false);
@@ -187,10 +187,12 @@ export function StoryBible({
           <button
             disabled={!context}
             onClick={() =>
-              void openTool(tool === "relationships" ? null : "relationships")
+              void openTool(
+                tool === "relationshipTypes" ? null : "relationshipTypes",
+              )
             }
           >
-            Relationships…
+            Relationship types…
           </button>
           <button
             disabled={!context}
@@ -259,11 +261,10 @@ export function StoryBible({
       </aside>
       <main className="manuscript-area bible-area">
         {error && <p role="alert">{error}</p>}
-        {toolOpen && tool === "relationships" ? (
-          <Relationships
+        {toolOpen && tool === "relationshipTypes" ? (
+          <RelationshipTypes
             bookId={bookId}
             libraryId={context.libraryId}
-            entries={entries}
             onClose={() => onTool(null)}
           />
         ) : toolOpen && tool === "templates" ? (
@@ -304,6 +305,7 @@ export function StoryBible({
             action={action}
             onBack={() => setShowList(true)}
             onOpenAppearance={onOpenAppearance}
+            onOpenEntry={(id) => void pick(id)}
             onSaved={(entry) =>
               setEntries((es) => es.map((e) => (e.id === entry.id ? entry : e)))
             }

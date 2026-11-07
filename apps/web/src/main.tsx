@@ -42,7 +42,6 @@ import { prepareContinuityPlace } from "./continuity-navigation.ts";
 import { warningCountsByNode } from "../../../packages/studio/src/continuity-values.ts";
 import type { ContinuityCatalog } from "./continuity.tsx";
 import { Continuity } from "./continuity.tsx";
-import { StateChanges } from "./state-changes.tsx";
 import { Timeline } from "./timeline.tsx";
 import { Questions } from "./questions.tsx";
 import { Facts } from "./facts.tsx";
@@ -201,7 +200,6 @@ function App() {
   }>();
   const [warningError, setWarningError] = useState("");
   const [continuityOpen, setContinuityOpen] = useState(false);
-  const [stateOpen, setStateOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
   const [factsOpen, setFactsOpen] = useState(false);
@@ -251,14 +249,7 @@ function App() {
       setWarningError("");
       return;
     }
-    if (
-      continuityOpen ||
-      factsOpen ||
-      questionsOpen ||
-      timelineOpen ||
-      stateOpen
-    )
-      return;
+    if (continuityOpen || factsOpen || questionsOpen || timelineOpen) return;
     api<ContinuityCatalog>("/books/" + book.id + "/continuity")
       .then((c) => {
         if (live) {
@@ -283,7 +274,6 @@ function App() {
     factsOpen,
     questionsOpen,
     timelineOpen,
-    stateOpen,
   ]);
   function showWarnings(point?: string) {
     setContinuityPoint(point);
@@ -679,12 +669,12 @@ function App() {
                   disabled={!book}
                   onClick={async () => {
                     if (await leave()) {
-                      setBibleTool("relationships");
+                      setBibleTool("relationshipTypes");
                       setView("bible");
                     }
                   }}
                 >
-                  Relationships…
+                  Relationship Types…
                 </button>
                 <button
                   disabled={!book}
@@ -702,9 +692,6 @@ function App() {
                 </button>
                 <button disabled={!book} onClick={() => setKnowledgeOpen(true)}>
                   Who Knows What…
-                </button>
-                <button disabled={!book} onClick={() => setStateOpen(true)}>
-                  Changing State…
                 </button>
                 <button
                   disabled={!book}
@@ -1238,11 +1225,6 @@ function App() {
               }
               onOpenFact={(id) => openWarningSubject("fact", id)}
             />
-          </Dialog>
-        )}
-        {stateOpen && book && (
-          <Dialog title="Changing State" close={() => setStateOpen(false)}>
-            <StateChanges key={book.id} bookId={book.id} />
           </Dialog>
         )}
         {timelineOpen && book && (
