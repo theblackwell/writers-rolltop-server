@@ -460,3 +460,16 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 228 of 228 pass (223 existing, 5 new in `story-bible-story.test.ts`; `state-ui.test.ts` rewritten for `EntryChanges`); `npm run build` exit 0 (existing advisory). Prettier clean on touched files.
 - Browser spot-check (lead, scratch preview serving this build): the entry page shows the Relationships, Changes over the story and As of sections in order, with empty states, and the sidebar shows "Relationship types…". Not checked: adding or saving a link or change in the browser, the As of values with data, narrow layout, keyboard.
 - Known risks: the state-change catalog for the whole library loads on every entry-page open (heavy; lazy loading is a follow-up); two extra GETs per entry open.
+
+## U4 — Timeline, facts and questions as list and page views — 2026-11-07
+
+- Story Bible sidebar gains a section switch (Entries / Timeline / Facts / Questions). Each record type has a list with filter, a Show or Order control (fact truth, question status, timeline Story Date / Reading Order), a Trash group collapsed by default, and "＋ New". Record pages (`records.tsx`) show the existing `FactForm`, question and event forms (`facts.tsx`, `questions.tsx`, `timeline.tsx`), "Entries named" linking to entries, and Trash/Restore.
+- Writes use `record-editing.tsx`: one serialised queue per page, newest `updatedAt`, 409 with Reload / Discard My Changes, and a flush that blocks leaving. Per-form shared-canon checkboxes are replaced by one page-level canon switch and banner; canon mode resets when the record changes.
+- "Mentioned in" on entry pages lists live facts, questions and events that name the entry (trashed excluded).
+- The Timeline, Questions and Facts dialogs are deleted. Library menu items Timeline…, Questions and Decisions… and Facts and Knowledge… now open the matching list.
+- Warnings: a fact, question or event opens its page in the Story Bible tab (flushed first); "← Back to warnings" or "← Back to Who Knows What" returns. Entry and scene targets unchanged.
+- **Save-model deviation (for owner decision):** record forms keep an explicit Save button, with save on leave for valid changes; an invalid draft or a 409 refuses the move and keeps the draft. The U2 model was blur or Enter for fields. Records have no book-only override, so a shared record in this-book mode is fully read-only.
+- Creating a shared record sends `scopeKind` and no `editSharedCanon`, because the create route rejects that key (`facts.ts` allowed-key list, ~line 156). Canon mode is UI consent only.
+- Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 241 of 241 pass (228 previous; facts/questions/timeline dialog tests rewritten on the harness; new `records-ui.test.ts` and `records-app-ui.test.ts`, which mounts the real `main.tsx` shell); `npm run build` exit 0 (existing advisory).
+- Not checked in a browser: layout, the 600 px stack, keyboard order, focus, real warnings navigation.
+- Known risks: three extra GETs on each Story Bible mount; a timeline event's `readingPositions` refreshes only when the catalogs reload.

@@ -36,15 +36,13 @@ import { PassageLinks } from "./passage-links.tsx";
 import { flushAll } from "./leave.ts";
 import { prepareEntryPlace } from "./entry-navigation.ts";
 import { StoryBible } from "./story-bible.tsx";
-import type { BibleTool } from "./story-bible.tsx";
+import type { BibleSection, BibleTool } from "./story-bible.tsx";
+import type { RecordKind } from "./records.tsx";
 import { Knowledge } from "./knowledge.tsx";
 import { prepareContinuityPlace } from "./continuity-navigation.ts";
 import { warningCountsByNode } from "../../../packages/studio/src/continuity-values.ts";
 import type { ContinuityCatalog } from "./continuity.tsx";
 import { Continuity } from "./continuity.tsx";
-import { Timeline } from "./timeline.tsx";
-import { Questions } from "./questions.tsx";
-import { Facts } from "./facts.tsx";
 import { QuickNotes } from "./notes.tsx";
 import { ManuscriptSearch } from "./search.tsx";
 import { BookDetails } from "./book-details.tsx";
@@ -190,19 +188,21 @@ function App() {
   const [planningPoint, setPlanningPoint] = useState<string>();
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [continuityPoint, setContinuityPoint] = useState<string>();
-  const [recordTarget, setRecordTarget] = useState<{
-    kind: "fact" | "question" | "event";
+  const [bibleSection, setBibleSection] = useState<BibleSection>("entries");
+  const [bibleRecord, setBibleRecord] = useState<string>();
+  // Where an opened record came from, so its page can lead back to that list.
+  const [recordReturn, setRecordReturn] = useState<{
+    kind: RecordKind;
     id: string;
+    from: "warnings" | "knowledge";
   }>();
+  const [recordsVersion, setRecordsVersion] = useState(0);
   const [warningSnapshot, setWarningSnapshot] = useState<{
     bookId: string;
     catalog: ContinuityCatalog;
   }>();
   const [warningError, setWarningError] = useState("");
   const [continuityOpen, setContinuityOpen] = useState(false);
-  const [timelineOpen, setTimelineOpen] = useState(false);
-  const [questionsOpen, setQuestionsOpen] = useState(false);
-  const [factsOpen, setFactsOpen] = useState(false);
   const [noting, setNoting] = useState(false);
   const [searching, setSearching] = useState(false);
   const [details, setDetails] = useState<Item | null>(null);
@@ -249,7 +249,7 @@ function App() {
       setWarningError("");
       return;
     }
-    if (continuityOpen || factsOpen || questionsOpen || timelineOpen) return;
+    if (continuityOpen) return;
     api<ContinuityCatalog>("/books/" + book.id + "/continuity")
       .then((c) => {
         if (live) {
@@ -266,22 +266,14 @@ function App() {
     return () => {
       live = false;
     };
-  }, [
-    book?.id,
-    progressVersion,
-    nodes,
-    continuityOpen,
-    factsOpen,
-    questionsOpen,
-    timelineOpen,
-  ]);
+  }, [book?.id, progressVersion, nodes, continuityOpen, recordsVersion]);
   function showWarnings(point?: string) {
     setContinuityPoint(point);
     setContinuityOpen(true);
   }
   async function openName(n: NameNeeded) {
     if (!book) return;
-    if (n.source === "fact") await openWarningSubject("fact", n.sourceId);
+    if (n.source === "fact") await openRecord("fact", n.sourceId);
     else if (n.source === "manuscript") {
       const data = await prepareNamesPlace(n.sourceId, leave, () =>
         api("/books/" + book.id),
@@ -295,6 +287,7 @@ function App() {
         api("/books/" + book.id + "/entries"),
       );
       setBibleTool(null);
+      setBibleSection("entries");
       setBibleEntry(id);
       setView("bible");
     }
@@ -318,20 +311,31 @@ function App() {
     setView("manuscript");
     setAppearance({ nodeId, anchorId, requestId: crypto.randomUUID() });
   }
-  async function openWarningSubject(
-    kind: "fact" | "question" | "event",
+  /** Opens a fact, question or event on its Story Bible page. */
+  async function openRecord(
+    kind: RecordKind,
     id: string,
+    from?: "warnings" | "knowledge",
   ) {
     if (!(await leave()))
       throw new Error(
-        "Resolve the current scene's draft or save conflict before opening this record.",
+        "Resolve the current scene's or page's draft or save conflict before opening this record.",
       );
-    setRecordTarget({ kind, id });
+    setBibleTool(null);
+    setBibleSection(kind);
+    setBibleRecord(id);
+    setRecordReturn(from && { kind, id, from });
+    setView("bible");
     setContinuityOpen(false);
     setKnowledgeOpen(false);
-    if (kind === "fact") setFactsOpen(true);
-    else if (kind === "question") setQuestionsOpen(true);
-    else setTimelineOpen(true);
+  }
+  async function openRecordList(kind: RecordKind) {
+    if (!(await leave())) return;
+    setBibleTool(null);
+    setBibleSection(kind);
+    setBibleRecord(undefined);
+    setRecordReturn(undefined);
+    setView("bible");
   }
   async function openWarningPlace(point: { id: string; bookId: string }) {
     const data = await prepareContinuityPlace(point, leave, (id) =>
@@ -347,6 +351,9 @@ function App() {
   useEffect(() => {
     setBibleEntry(undefined);
     setBibleTool(null);
+    setBibleSection("entries");
+    setBibleRecord(undefined);
+    setRecordReturn(undefined);
   }, [book?.id]);
   useEffect(() => {
     api("/session")
@@ -695,28 +702,19 @@ function App() {
                 </button>
                 <button
                   disabled={!book}
-                  onClick={() => {
-                    setRecordTarget(undefined);
-                    setTimelineOpen(true);
-                  }}
+                  onClick={() => void openRecordList("event")}
                 >
                   Timeline…
                 </button>
                 <button
                   disabled={!book}
-                  onClick={() => {
-                    setRecordTarget(undefined);
-                    setQuestionsOpen(true);
-                  }}
+                  onClick={() => void openRecordList("question")}
                 >
                   Questions and Decisions…
                 </button>
                 <button
                   disabled={!book}
-                  onClick={() => {
-                    setRecordTarget(undefined);
-                    setFactsOpen(true);
-                  }}
+                  onClick={() => void openRecordList("fact")}
                 >
                   Facts and Knowledge…
                 </button>
@@ -906,6 +904,37 @@ function App() {
             bookId={book.id}
             selectedId={bibleEntry}
             onSelect={setBibleEntry}
+            section={bibleSection}
+            onSection={setBibleSection}
+            recordId={bibleRecord}
+            onRecord={(id) => {
+              setBibleRecord(id);
+              setRecordReturn(undefined);
+            }}
+            back={
+              recordReturn &&
+              recordReturn.kind === bibleSection &&
+              recordReturn.id === bibleRecord
+                ? recordReturn.from === "warnings"
+                  ? {
+                      label: "Back to warnings",
+                      onClick: () => {
+                        void leave().then((ok) => {
+                          if (ok) setContinuityOpen(true);
+                        });
+                      },
+                    }
+                  : {
+                      label: "Back to Who Knows What",
+                      onClick: () => {
+                        void leave().then((ok) => {
+                          if (ok) setKnowledgeOpen(true);
+                        });
+                      },
+                    }
+                : undefined
+            }
+            onRecordsChanged={() => setRecordsVersion((v) => v + 1)}
             tool={bibleTool}
             onTool={setBibleTool}
             flushRef={bibleFlush}
@@ -1208,7 +1237,7 @@ function App() {
               onCatalog={(c) =>
                 setWarningSnapshot({ bookId: book.id, catalog: c })
               }
-              onOpenSubject={openWarningSubject}
+              onOpenSubject={(kind, id) => openRecord(kind, id, "warnings")}
               onOpenPlace={openWarningPlace}
             />
           </Dialog>
@@ -1223,55 +1252,7 @@ function App() {
                   ? scene.id
                   : undefined
               }
-              onOpenFact={(id) => openWarningSubject("fact", id)}
-            />
-          </Dialog>
-        )}
-        {timelineOpen && book && (
-          <Dialog title="Timeline" close={() => setTimelineOpen(false)}>
-            <Timeline
-              key={
-                book.id +
-                ":" +
-                (recordTarget?.kind === "event" ? recordTarget.id : "list")
-              }
-              bookId={book.id}
-              initialId={
-                recordTarget?.kind === "event" ? recordTarget.id : undefined
-              }
-            />
-          </Dialog>
-        )}
-        {questionsOpen && book && (
-          <Dialog
-            title="Questions and Decisions"
-            close={() => setQuestionsOpen(false)}
-          >
-            <Questions
-              key={
-                book.id +
-                ":" +
-                (recordTarget?.kind === "question" ? recordTarget.id : "list")
-              }
-              bookId={book.id}
-              initialId={
-                recordTarget?.kind === "question" ? recordTarget.id : undefined
-              }
-            />
-          </Dialog>
-        )}
-        {factsOpen && book && (
-          <Dialog title="Facts and Knowledge" close={() => setFactsOpen(false)}>
-            <Facts
-              key={
-                book.id +
-                ":" +
-                (recordTarget?.kind === "fact" ? recordTarget.id : "list")
-              }
-              bookId={book.id}
-              initialId={
-                recordTarget?.kind === "fact" ? recordTarget.id : undefined
-              }
+              onOpenFact={(id) => openRecord("fact", id, "knowledge")}
             />
           </Dialog>
         )}

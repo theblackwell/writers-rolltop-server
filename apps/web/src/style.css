@@ -1168,6 +1168,46 @@ dialog textarea {
 .bible-area {
   max-width: 940px;
 }
+.bible-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+.bible-sections button {
+  font-size: 0.72rem;
+  padding: 4px 8px;
+}
+.bible-sections button[aria-pressed="true"] {
+  background: #d7c9af;
+  font-weight: 600;
+}
+.bible-binder select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.record-row-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.record-links {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.record-links li {
+  padding: 4px 0;
+}
+.record-links small {
+  color: #8b795b;
+}
+.return-link {
+  display: inline-block;
+  margin: 0 0 12px;
+}
 .entry-page-header h1 {
   margin: 4px 0 10px;
 }

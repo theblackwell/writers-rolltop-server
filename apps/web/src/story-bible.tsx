@@ -9,8 +9,19 @@ import { entryTypeLabel, entryTypes } from "./entries.tsx";
 import type { Entry } from "./entries.tsx";
 import { RelationshipTypes } from "./relationships.tsx";
 import { TemplateManager } from "./template-manager.tsx";
+import {
+  RecordList,
+  RecordPage,
+  recordKindList,
+  recordKinds,
+  recordsOf,
+  useRecordCatalogs,
+} from "./records.tsx";
+import type { RecordKind } from "./records.tsx";
 
 export type BibleTool = "relationshipTypes" | "templates" | null;
+/** The list in the sidebar: entries, or one kind of record. */
+export type BibleSection = "entries" | RecordKind;
 type Context = {
   libraryId: string;
   book: { id: string; universeId?: string; seriesId?: string };
@@ -30,6 +41,12 @@ export function StoryBible({
   onTool,
   onOpenAppearance,
   flushRef,
+  section = "entries",
+  onSection,
+  recordId,
+  onRecord,
+  back,
+  onRecordsChanged,
 }: {
   bookId: string;
   selectedId?: string;
@@ -39,6 +56,15 @@ export function StoryBible({
   onOpenAppearance?: (nodeId: string, anchorId: string) => Promise<void>;
   /** The app calls this before it leaves the tab; false means stay here. */
   flushRef?: MutableRefObject<(() => Promise<boolean>) | null>;
+  section?: BibleSection;
+  onSection?: (section: BibleSection) => void;
+  /** The selected fact, question or event when a record section is showing. */
+  recordId?: string;
+  onRecord?: (id: string | undefined) => void;
+  /** Shown on a record page opened from elsewhere, such as the warnings list. */
+  back?: { label: string; onClick: () => void };
+  /** A record was saved; the app refreshes anything derived from records. */
+  onRecordsChanged?: () => void;
 }) {
   const pageFlush = useRef<(() => Promise<boolean>) | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -52,7 +78,12 @@ export function StoryBible({
   const [namesOnly, setNamesOnly] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [showList, setShowList] = useState(!selectedId);
+  const [showList, setShowList] = useState(
+    !(section === "entries" ? selectedId : recordId),
+  );
+  const [drafting, setDrafting] = useState(false);
+  const records = useRecordCatalogs(bookId, tick);
+  const recordKind = section === "entries" ? undefined : section;
   useEffect(() => {
     let live = true;
     setContext(undefined);
@@ -96,6 +127,18 @@ export function StoryBible({
       setReceipt("");
     }
   }, [selectedId]);
+  useEffect(() => {
+    if (recordId) {
+      setShowList(false);
+      setDrafting(false);
+    }
+  }, [recordId]);
+  useEffect(() => {
+    setDrafting(false);
+    setShowList(!(section === "entries" ? selectedId : recordId));
+    // Only a change of section resets the view; selections have their own effects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
   const selected = entries.find((e) => e.id === selectedId);
   useEffect(() => {
     if (selected?.deletedAt) setTrashOpen(true);
@@ -131,7 +174,7 @@ export function StoryBible({
     setError(
       ok
         ? ""
-        : "This entry has changes that are not saved. Fix or cancel them before leaving it.",
+        : "This page has changes that are not saved. Fix or discard them before leaving it.",
     );
     return ok;
   };
@@ -144,10 +187,36 @@ export function StoryBible({
     };
   }, [flushRef]);
   const pick = async (id: string) => {
-    if (id !== selectedId && !(await leavePage())) return;
+    if ((id !== selectedId || section !== "entries") && !(await leavePage()))
+      return;
     // A tool (Relationship types, Templates) covers the entry page, so close it.
     onTool(null);
+    onSection?.("entries");
     onSelect(id);
+    setShowList(false);
+  };
+  const pickRecord = async (kind: RecordKind, id: string) => {
+    if ((kind !== section || id !== recordId) && !(await leavePage())) return;
+    onTool(null);
+    setDrafting(false);
+    onSection?.(kind);
+    onRecord?.(id);
+    setShowList(false);
+  };
+  const switchSection = async (next: BibleSection) => {
+    if (next === section) return;
+    if (!(await leavePage())) return;
+    onTool(null);
+    setDrafting(false);
+    onRecord?.(undefined);
+    onSection?.(next);
+    setShowList(next === "entries" ? !selectedId : true);
+  };
+  const startNewRecord = async () => {
+    if (!(await leavePage())) return;
+    onTool(null);
+    onRecord?.(undefined);
+    setDrafting(true);
     setShowList(false);
   };
   const openTool = async (next: BibleTool) => {
@@ -170,17 +239,114 @@ export function StoryBible({
     );
   }
   const toolOpen = tool !== null && !!context;
+  const renderRecordArea = () => {
+    if (!recordKind) return null;
+    const cfg = recordKinds[recordKind];
+    const catalogLoaded = records.catalogs[recordKind];
+    const failure = records.errors[recordKind];
+    if (failure)
+      return (
+        <div className="empty" role="alert">
+          <p>
+            Could not load {cfg.section.toLowerCase()}. {failure}
+          </p>
+          <button onClick={records.reload}>Try Again</button>
+        </div>
+      );
+    if (!catalogLoaded) return <p role="status">Loading…</p>;
+    const record = recordsOf(recordKind, records.catalogs).find(
+      (r) => r.id === recordId,
+    );
+    if (drafting || record)
+      return (
+        <RecordPage
+          key={`${recordKind}:${drafting ? "new" : recordId}`}
+          kind={recordKind}
+          bookId={bookId}
+          record={drafting ? undefined : record}
+          catalogs={records.catalogs}
+          flushRef={pageFlush}
+          onBack={() => setShowList(true)}
+          returnTo={back}
+          onOpenEntry={(id) => void pick(id)}
+          onCancelNew={() => {
+            setDrafting(false);
+            setShowList(true);
+          }}
+          onSaved={(kind, saved, created) => {
+            records.apply(kind, saved, created);
+            onRecordsChanged?.();
+            if (created) {
+              setDrafting(false);
+              onRecord?.(saved.id);
+            }
+          }}
+        />
+      );
+    return (
+      <div className="empty">
+        {recordId && (
+          <p role="alert">
+            This {cfg.label.toLowerCase()} is no longer available here. Review
+            its Trash or check the warnings again.
+          </p>
+        )}
+        {back && (
+          <button type="button" onClick={back.onClick}>
+            ← {back.label}
+          </button>
+        )}
+        <p className="eyebrow">STORY BIBLE</p>
+        <h1>Pick a {cfg.label.toLowerCase()} to open its page.</h1>
+        <p>
+          Each page shows the entries it names, and each entry page lists the
+          records that mention it. Shared records apply to every book in their
+          scope.
+        </p>
+      </div>
+    );
+  };
   return (
     <div
       className={`writing-workspace bible-workspace${showList ? "" : " showing-page"}`}
     >
-      <aside className="binder bible-binder" aria-label="Story Bible entries">
+      <aside
+        className="binder bible-binder"
+        aria-label={
+          recordKind
+            ? `Story Bible ${recordKinds[recordKind].section.toLowerCase()}`
+            : "Story Bible entries"
+        }
+      >
         <p className="eyebrow">STORY BIBLE</p>
+        <div
+          className="bible-sections"
+          role="group"
+          aria-label="Story Bible sections"
+        >
+          {(["entries", ...recordKindList] as BibleSection[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={s === section}
+              onClick={() => void switchSection(s)}
+            >
+              {s === "entries" ? "Entries" : recordKinds[s].section}
+            </button>
+          ))}
+        </div>
         <div className="bible-binder-actions">
           <button
             className="primary"
-            disabled={!context}
-            onClick={() => setCreating(true)}
+            disabled={recordKind ? !records.catalogs[recordKind] : !context}
+            aria-label={
+              recordKind
+                ? `New ${recordKinds[recordKind].label.toLowerCase()}`
+                : undefined
+            }
+            onClick={() =>
+              recordKind ? void startNewRecord() : setCreating(true)
+            }
           >
             ＋ New
           </button>
@@ -203,59 +369,77 @@ export function StoryBible({
             Templates and Fields…
           </button>
         </div>
-        <label>
-          Find name or alias
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} />
-        </label>
-        <label className="entry-toggle">
-          <input
-            type="checkbox"
-            checked={namesOnly}
-            onChange={(e) => setNamesOnly(e.target.checked)}
+        {recordKind ? (
+          <RecordList
+            key={recordKind}
+            kind={recordKind}
+            catalogs={records.catalogs}
+            error={records.errors[recordKind]}
+            selectedId={drafting ? undefined : recordId}
+            onPick={(id) => void pickRecord(recordKind, id)}
+            onRetry={records.reload}
           />
-          Only names still needed
-        </label>
-        {loadError ? (
-          <div role="alert">
-            <p>Could not load the Story Bible. {loadError}</p>
-            <button onClick={() => setTick((t) => t + 1)}>Try Again</button>
-          </div>
-        ) : !context ? (
-          <p role="status">Loading entries…</p>
         ) : (
           <>
-            {!total && !trashed.length && (
-              <p className="hint">
-                No entries yet. Choose New to add a character, place or idea.
-              </p>
+            <label>
+              Find name or alias
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </label>
+            <label className="entry-toggle">
+              <input
+                type="checkbox"
+                checked={namesOnly}
+                onChange={(e) => setNamesOnly(e.target.checked)}
+              />
+              Only names still needed
+            </label>
+            {loadError ? (
+              <div role="alert">
+                <p>Could not load the Story Bible. {loadError}</p>
+                <button onClick={() => setTick((t) => t + 1)}>Try Again</button>
+              </div>
+            ) : !context ? (
+              <p role="status">Loading entries…</p>
+            ) : (
+              <>
+                {!total && !trashed.length && (
+                  <p className="hint">
+                    No entries yet. Choose New to add a character, place or
+                    idea.
+                  </p>
+                )}
+                {!!total && !live.length && !trashed.length && (
+                  <p className="hint">No entries match.</p>
+                )}
+                {entryTypes
+                  .filter((t) => live.some((e) => e.entryType === t))
+                  .map((t) => (
+                    <section key={t} aria-label={entryTypeLabel(t, true)}>
+                      <h3 className="bible-group">
+                        {entryTypeLabel(t, true)} (
+                        {live.filter((e) => e.entryType === t).length})
+                      </h3>
+                      <ul className="bible-list">
+                        {live.filter((e) => e.entryType === t).map(row)}
+                      </ul>
+                    </section>
+                  ))}
+                <details
+                  className="node-trash"
+                  open={trashOpen}
+                  onToggle={(e) => setTrashOpen(e.currentTarget.open)}
+                >
+                  <summary>
+                    Trash ({entries.filter((e) => e.deletedAt).length})
+                  </summary>
+                  {!trashed.length && <p className="hint">Nothing in Trash.</p>}
+                  <ul className="bible-list">{trashed.map(row)}</ul>
+                </details>
+              </>
             )}
-            {!!total && !live.length && !trashed.length && (
-              <p className="hint">No entries match.</p>
-            )}
-            {entryTypes
-              .filter((t) => live.some((e) => e.entryType === t))
-              .map((t) => (
-                <section key={t} aria-label={entryTypeLabel(t, true)}>
-                  <h3 className="bible-group">
-                    {entryTypeLabel(t, true)} (
-                    {live.filter((e) => e.entryType === t).length})
-                  </h3>
-                  <ul className="bible-list">
-                    {live.filter((e) => e.entryType === t).map(row)}
-                  </ul>
-                </section>
-              ))}
-            <details
-              className="node-trash"
-              open={trashOpen}
-              onToggle={(e) => setTrashOpen(e.currentTarget.open)}
-            >
-              <summary>
-                Trash ({entries.filter((e) => e.deletedAt).length})
-              </summary>
-              {!trashed.length && <p className="hint">Nothing in Trash.</p>}
-              <ul className="bible-list">{trashed.map(row)}</ul>
-            </details>
           </>
         )}
       </aside>
@@ -284,6 +468,8 @@ export function StoryBible({
               setError("");
             }}
           />
+        ) : recordKind ? (
+          renderRecordArea()
         ) : selected && context ? (
           <EntryPage
             key={selected.id}
@@ -306,6 +492,9 @@ export function StoryBible({
             onBack={() => setShowList(true)}
             onOpenAppearance={onOpenAppearance}
             onOpenEntry={(id) => void pick(id)}
+            records={records.catalogs}
+            recordErrors={records.errors}
+            onOpenRecord={(kind, id) => void pickRecord(kind, id)}
             onSaved={(entry) =>
               setEntries((es) => es.map((e) => (e.id === entry.id ? entry : e)))
             }

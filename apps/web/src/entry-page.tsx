@@ -10,6 +10,8 @@ import {
 } from "./entry-editing.tsx";
 import { EntryChanges } from "./entry-changes.tsx";
 import { EntryLinks } from "./entry-relationships.tsx";
+import { EntryMentions } from "./records.tsx";
+import type { RecordCatalogs, RecordKind } from "./records.tsx";
 import { useRelationshipData } from "./relationships.tsx";
 import { EntryFields } from "./entry-fields.tsx";
 import type { Catalog } from "./entry-fields.tsx";
@@ -48,6 +50,9 @@ export function EntryPage({
   onOpenEntry,
   flushRef,
   onReloadCatalog,
+  records,
+  recordErrors,
+  onOpenRecord,
 }: {
   entry: Entry;
   entries: Entry[];
@@ -67,6 +72,11 @@ export function EntryPage({
   /** Receives a function that saves open drafts; false means stay here. */
   flushRef?: MutableRefObject<(() => Promise<boolean>) | null>;
   onReloadCatalog?: () => Promise<void>;
+  /** Facts, questions and timeline events, for "Mentioned in". */
+  records?: RecordCatalogs;
+  recordErrors?: Partial<Record<RecordKind, string>>;
+  /** Opens a record's page (the app saves this page's drafts first). */
+  onOpenRecord?: (kind: RecordKind, id: string) => void;
 }) {
   const [purging, setPurging] = useState(false);
   const shared = entry.scope?.kind !== "book";
@@ -283,6 +293,14 @@ export function EntryPage({
           flush={flush}
           onOpenEntry={onOpenEntry}
         />
+        {records && (
+          <EntryMentions
+            entryId={entry.id}
+            catalogs={records}
+            errors={recordErrors ?? {}}
+            onOpenRecord={onOpenRecord}
+          />
+        )}
         <section className="entry-section" aria-label="Family and appearances">
           <EntryContext
             key={entry.id}

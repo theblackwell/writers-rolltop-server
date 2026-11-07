@@ -17,6 +17,10 @@ export type Fake = {
   relationships: any[];
   stateChanges: any[];
   nodes: any[];
+  /** Records for the fact, question and timeline-event lists. */
+  facts: any[];
+  questions: any[];
+  events: any[];
   calls: Call[];
   version: number;
   /** Return a Response to fail a call, or undefined to let the fake handle it. */
@@ -98,6 +102,9 @@ export async function setup() {
     relationships: [],
     stateChanges: [],
     nodes: [],
+    facts: [],
+    questions: [],
+    events: [],
     calls: [],
     version: 0,
     puts: () => fake.calls.filter((c) => c.method === "PUT"),
@@ -120,6 +127,76 @@ export async function setup() {
       const failure = fake.intercept?.(call);
       if (failure) return failure;
       if (method !== "GET") await fake.hold?.(call);
+      const rec = path.match(
+        /^\/books\/book\/(facts|questions|events)(?:\/([^/]+))?$/,
+      );
+      if (rec) {
+        const key = rec[1] as "facts" | "questions" | "events";
+        if (method === "GET")
+          return json({
+            book: fake.book,
+            readingPositions: {},
+            scopes: [
+              { kind: "book", id: "book", title: "This book" },
+              ...(fake.book.universeId
+                ? [
+                    {
+                      kind: "universe",
+                      id: fake.book.universeId,
+                      title: "Shared world: World",
+                    },
+                  ]
+                : []),
+            ],
+            [key]: fake[key],
+            entries: fake.entries,
+            books: [{ title: "Book", ...fake.book }],
+            nodes: fake.nodes,
+          });
+        if (method === "POST") {
+          const made = {
+            id: `${key}-${fake[key].length + 1}`,
+            scope: {
+              kind: body.scopeKind ?? "book",
+              id: body.scopeKind === "universe" ? "world" : "book",
+            },
+            entryIds: [],
+            knowledge: [],
+            sceneIds: [],
+            participants: [],
+            truth: "true",
+            status: "open",
+            ...body,
+            updatedAt: bump(),
+          };
+          delete (made as any).scopeKind;
+          fake[key] = [...fake[key], made];
+          return json(made, 201);
+        }
+        const old = fake[key].find((r) => r.id === rec[2]);
+        if (!old) return jsonError(404, "Not found");
+        if (body.expectedUpdatedAt !== old.updatedAt)
+          return jsonError(409, "This record changed.");
+        if (old.scope.kind !== "book" && body.editSharedCanon !== true)
+          return jsonError(400, "Confirm editing shared canon.");
+        const next: any = { ...old, ...body, updatedAt: bump() };
+        delete next.expectedUpdatedAt;
+        delete next.editSharedCanon;
+        if (body.deleted === true) next.deletedAt = next.updatedAt;
+        if (body.deleted === false) delete next.deletedAt;
+        delete next.deleted;
+        for (const k of [
+          "nodeId",
+          "entryId",
+          "summary",
+          "topic",
+          "decision",
+          "when",
+        ])
+          if (next[k] === null) delete next[k];
+        fake[key] = fake[key].map((r) => (r.id === next.id ? next : r));
+        return json(next);
+      }
       if (method === "POST" && path.endsWith("/entries")) {
         const made = entry(body.name, body.entryType, {
           updatedAt: bump(),
@@ -274,8 +351,14 @@ export async function setup() {
     },
   });
 
-  type Mounted = { selected?: string; tool: any };
-  const state: Mounted = { tool: null };
+  type Mounted = {
+    selected?: string;
+    tool: any;
+    section: string;
+    recordId?: string;
+    back?: { label: string; onClick: () => void };
+  };
+  const state: Mounted = { tool: null, section: "entries" };
   const flushRef: { current: null | (() => Promise<boolean>) } = {
     current: null,
   };
@@ -295,6 +378,17 @@ export async function setup() {
           state.tool = tool;
           render();
         },
+        section: state.section,
+        onSection: (section: string) => {
+          state.section = section;
+          render();
+        },
+        recordId: state.recordId,
+        onRecord: (id: string | undefined) => {
+          state.recordId = id;
+          render();
+        },
+        back: state.back,
         flushRef,
       } as any),
     );
@@ -334,6 +428,16 @@ export async function setup() {
       Array.from(within.querySelectorAll("button")).find((b) =>
         b.textContent?.includes(label),
       ),
+    /** A row in the sidebar list (entry or record) by part of its text. */
+    row: (text: string) =>
+      Array.from(doc.querySelectorAll(".bible-row")).find((b) =>
+        b.textContent?.includes(text),
+      ) as HTMLElement | undefined,
+    /** A checkbox whose label ends with the given text. */
+    check: (label: string): any =>
+      Array.from(doc.querySelectorAll("label"))
+        .find((l) => l.textContent?.trim() === label)
+        ?.querySelector("input"),
     field: (label: string): any =>
       Array.from(doc.querySelectorAll("label"))
         .find((l) => l.firstChild?.textContent?.trim() === label)
