@@ -481,3 +481,12 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - `record-editing.tsx` dedupes an identical in-flight send, so Enter then blur sends one PUT.
 - Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 245 of 245 pass (241 previous, plus four new save-model tests in `records-ui.test.ts`); `npm run build` exit 0.
 - Not checked in a browser: real Tab, Enter and blur focus behaviour. Multi-input forms rely on a form-level Enter handler on text inputs.
+
+## Sign-in and password managers — 2026-11-07
+
+- Symptom (owner, 1Password): after signing in, moving between manuscript and bible repeatedly offered to save the studio password.
+- Cause (lead's reading, confirmed by the owner's test): sign-in ran as a script call, so the sign-in form disappeared without a page change. The password manager kept the password as pending and offered to save it on later screen changes.
+- Fix: a successful sign-in on the full sign-in page reloads the page, so the browser sees a normal page change. The expired-session overlay is unchanged, so unsaved text there is not affected. Owner confirmed the prompt stopped.
+- Checks: `tsc --noEmit` exit 0; `npm test` 245 of 245; `npm run build` exit 0. Sign-in checked on the scratch preview.
+- Open: on the first screen after sign-in the empty-library message showed briefly; not reproduced after the first load.
+- Not fixed: the expired-session overlay signs in without a reload, so the same prompt may still appear after a session expires.

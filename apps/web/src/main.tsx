@@ -572,10 +572,12 @@ function App() {
       <>
         <Login
           onLogin={() => {
-            setError("");
-            setExpired(false);
-            authRef.current = true;
-            setAuth(true);
+            // Sign-in is a script call, so the sign-in form simply disappears and
+            // the browser never sees a page change. Password managers then keep
+            // treating the password as pending and offer to save it on later
+            // screen changes. A reload completes the sign-in as a normal page
+            // change, which they handle once.
+            window.location.reload();
           }}
         />
         {error && (
