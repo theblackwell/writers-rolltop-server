@@ -231,7 +231,7 @@ test("validation errors show next to the field and keep the draft; client checks
   }
 });
 
-test("editSharedCanon is sent only after Edit shared details, and the mode resets when the entry changes", async () => {
+test("editSharedCanon is sent only after choosing Shared canon, and the mode resets when the entry changes", async () => {
   const t = await setup();
   try {
     withTemplate(t);
@@ -260,20 +260,21 @@ test("editSharedCanon is sent only after Edit shared details, and the mode reset
     );
     // This-book mode: header is read-only, field values save as overrides.
     assert.equal(t.field("Summary"), undefined);
-    assert.ok(t.button("Edit shared details"));
-    assert.equal(t.doc.querySelector(".entry-banner.canon"), null);
+    assert.equal(t.button("Edit shared details"), undefined);
+    assert.equal(t.doc.querySelector(".canon-control.canon"), null);
     await t.type(t.field("Role")!, "Book role");
     await t.blur(t.field("Role")!);
     assert.equal(t.fake.puts().length, 1);
     assert.equal(t.fake.puts()[0].body.mode, "book");
     assert.equal("editSharedCanon" in t.fake.puts()[0].body, false);
 
-    // The explicit switch shows one amber banner naming the world.
-    await t.click(t.button("Edit shared details"));
-    const banner = t.doc.querySelector(".entry-banner.canon")!;
+    // The explicit switch shows one amber control naming the world.
+    const control = t.doc.querySelector(".canon-control")!;
+    await t.click(t.button("Shared canon", control));
+    const banner = t.doc.querySelector(".canon-control.canon")!;
     assert.match(banner.textContent!, /Editing shared canon/);
     assert.match(banner.textContent!, /Aerth/);
-    assert.equal(t.doc.querySelectorAll(".entry-banner").length, 1);
+    assert.equal(t.doc.querySelectorAll(".canon-control").length, 1);
     await t.type(t.field("Summary")!, "New canon summary");
     await t.blur(t.field("Summary")!);
     assert.equal(t.fake.puts().length, 2);
@@ -286,9 +287,14 @@ test("editSharedCanon is sent only after Edit shared details, and the mode reset
     // Another entry, then back: the page is in this-book mode again.
     await open(t, "Mira Vale");
     await open(t, "Old Mill");
-    assert.equal(t.doc.querySelector(".entry-banner.canon"), null);
+    assert.equal(t.doc.querySelector(".canon-control.canon"), null);
     assert.equal(t.field("Summary"), undefined);
-    assert.ok(t.button("Edit shared details"));
+    assert.equal(
+      t
+        .button("This book only", t.doc.querySelector(".canon-control")!)
+        ?.getAttribute("aria-pressed"),
+      "true",
+    );
   } finally {
     await t.cleanup();
   }
@@ -349,7 +355,7 @@ test("an open draft is saved before another entry, a tool or a view change, and 
 
     // A tool is a move too.
     await t.type(t.field("Summary")!, "Harbor draft two");
-    await t.click(t.button("Relationship types…"));
+    await t.menu("Bible settings", "Relationship types…");
     assert.equal(t.fake.puts().at(-1)!.body.summary, "Harbor draft two");
     assert.equal(t.state.tool, "relationshipTypes");
     await t.click(t.button("Harbor", t.doc.querySelector("aside")!));
@@ -368,7 +374,7 @@ test("an open draft is saved before another entry, a tool or a view change, and 
     assert.match(t.text(), /Summary rejected\./);
     assert.match(t.text(), /not saved yet|Not saved/);
     assert.equal(await t.flush(), false);
-    await t.click(t.button("Relationship types…"));
+    await t.menu("Bible settings", "Relationship types…");
     assert.equal(
       t.state.tool,
       null,

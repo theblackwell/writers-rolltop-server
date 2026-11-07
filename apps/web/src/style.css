@@ -1119,72 +1119,183 @@ dialog textarea {
 }
 .bible-binder label input:not([type="checkbox"]) {
   width: 100%;
+  min-height: 44px;
   margin-top: 4px;
+}
+.bible-binder .entry-toggle {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+.bible-caption {
+  margin: 4px 10px 0;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 .bible-binder-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   margin: 12px 0;
 }
 .bible-binder-actions button {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
+  min-height: 44px;
+}
+.bible-menu {
+  position: relative;
+}
+.bible-menu-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.bible-menu-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 210px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(48, 41, 35, 0.18);
+}
+.bible-menu-list button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  font-size: 0.85rem;
+}
+.bible-menu-list button:hover,
+.bible-menu-list button:focus-visible {
+  background: #eae2d4;
+}
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background: #e3dacb;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.segmented button {
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.segmented button:hover {
+  background: rgba(255, 252, 245, 0.55);
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--paper);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(48, 41, 35, 0.25);
 }
 .bible-group {
-  margin: 18px 0 4px;
-  padding: 0 6px;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #786344;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+  padding: 10px 12px 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #5d4b30;
+}
+.bible-count {
+  font-weight: 400;
+  color: var(--muted);
+}
+.bible-card {
+  margin: 14px 0 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
 }
 .bible-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
+.bible-list > li + li {
+  border-top: 1px solid var(--line);
+}
 .bible-row {
   display: flex;
   width: 100%;
-  align-items: baseline;
+  min-height: 44px;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   text-align: left;
   background: transparent;
   border: 0;
-  border-radius: 4px;
-  padding: 9px 6px;
-  font-size: 0.78rem;
+  border-radius: 0;
+  padding: 9px 12px;
+  font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
+.bible-row:hover {
+  background: #f3ece0;
+}
 .bible-row.current {
-  background: #d7c9af;
+  background: #eadfc8;
+  font-weight: 600;
+  box-shadow: inset 4px 0 0 #8a6a2c;
 }
 .bible-row small {
-  color: #8b795b;
-  font-size: 0.65rem;
+  color: #6f5d3f;
+  font-size: 0.68rem;
+  font-weight: 400;
   white-space: nowrap;
 }
 .bible-area {
   max-width: 940px;
 }
 .bible-sections {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  padding: 2px;
   margin: 8px 0;
+  background: #e3dacb;
+  border: 1px solid var(--line);
+  border-radius: 9px;
 }
 .bible-sections button {
-  font-size: 0.72rem;
+  min-height: 44px;
   padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 0.8rem;
+}
+.bible-sections button:hover {
+  background: rgba(255, 252, 245, 0.55);
 }
 .bible-sections button[aria-pressed="true"] {
-  background: #d7c9af;
+  background: var(--paper);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgba(48, 41, 35, 0.25);
 }
 .bible-binder select {
   display: block;
   width: 100%;
+  min-height: 44px;
   margin-top: 4px;
 }
 .record-row-title {
@@ -1262,10 +1373,57 @@ dialog textarea {
 .entry-fields > li {
   margin-bottom: 14px;
 }
-.entry-section {
-  margin-top: 28px;
-  padding-top: 18px;
-  border-top: 1px solid #d4c9b6;
+.entry-section,
+.entry-card {
+  margin-top: 16px;
+  padding: 16px 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.entry-section > h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #5d4b30;
+}
+.entry-page-header.entry-card {
+  margin-top: 0;
+}
+.canon-control {
+  margin-top: 16px;
+}
+.canon-control p {
+  margin: 8px 2px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.canon-control.canon .segmented {
+  border-color: #b8862e;
+  background: #f0dca6;
+}
+.canon-control.canon .segmented button[aria-pressed="true"] {
+  background: #fbefd0;
+  color: #4d3708;
+}
+.canon-control.canon p {
+  color: #4d3708;
+}
+.entry-page label {
+  display: block;
+  margin: 0 0 12px;
+}
+.entry-page label > input:not([type="checkbox"]):not([type="radio"]),
+.entry-page label > select,
+.entry-page label > textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.entry-page button,
+.entry-page select,
+.entry-page input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: 44px;
 }
 .back-to-list {
   display: none;

@@ -490,3 +490,13 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Checks: `tsc --noEmit` exit 0; `npm test` 245 of 245; `npm run build` exit 0. Sign-in checked on the scratch preview.
 - Open: on the first screen after sign-in the empty-library message showed briefly; not reproduced after the first load.
 - Not fixed: the expired-session overlay signs in without a reload, so the same prompt may still appear after a session expires.
+
+## B1 — iPhone-style bible layout — 2026-11-07
+
+- Sidebar: 2x2 section switch; "Showing what <book> can see" caption; grouped paper-toned cards with counts per type; Trash last, collapsed. "+" menu creates an entry with its type preset (through the existing New Entry dialog). "⋯ Bible settings" holds Relationship types… and Templates and Fields….
+- Entry page in iPhone order: header, shared-canon control (shared entries), names and summary, family (characters), fields and attachments, changes over the story, As of, relationships, appears in, mentioned in, trash. Family and Appears in are separate sections (`entry-context.tsx` `part` prop).
+- Shared-canon banner and "Edit shared details" button replaced by one segmented "Shared canon" | "In <book> only" control, default This book only. Canon keeps its amber state and the flush gate; `editSharedCanon` unchanged.
+- Style: paper-toned cards, sentence-case headers, 44 px targets, labels above inputs. The 600 px stack is unchanged (B5).
+- Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 250 of 250 (245 previous; 5 new in `story-bible-layout.test.ts`); `npm run build` exit 0.
+- Not checked in a browser: the look, 44 px targets, 2x2 switch, 600 px stacking, and the caption (it relies on `book.title` from `GET /books/:id`, which returns the book record, so the title is present).
+- Open: the stylesheet has no dark theme; contrast was checked by hand on light only. Record pages (B4) still use the old banner, so the web has two shared-canon patterns until B4.

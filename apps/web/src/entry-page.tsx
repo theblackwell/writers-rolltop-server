@@ -29,10 +29,11 @@ export function scopeLabel(entry: Entry, scopeName?: string) {
   return `Shared ${kind}${scopeName ? `: ${scopeName}` : ""}`;
 }
 
-// One bible entry assembled from the editors, top to bottom: header, fields
-// (template, values, attachments), family and appearances, then Trash and
-// permanent Delete. Text saves when you leave a field. A shared entry opens in
-// "This book only" mode; Edit shared details switches the whole page to canon.
+// One bible entry as a single grouped page, in the iPhone's order: header,
+// family (characters), fields (template, values, attachments), changes over
+// the story, relationships, appears in, mentioned in, then Trash and permanent
+// Delete. Text saves when you leave a field. A shared entry opens in "This book
+// only" mode; the segmented control at the top switches the whole page to canon.
 export function EntryPage({
   entry,
   entries,
@@ -41,6 +42,7 @@ export function EntryPage({
   seriesWorld,
   catalog,
   scopeName,
+  bookTitle,
   busy,
   action,
   onSaved,
@@ -61,6 +63,7 @@ export function EntryPage({
   seriesWorld?: string;
   catalog: Catalog;
   scopeName?: string;
+  bookTitle?: string;
   busy: boolean;
   action: (work: () => Promise<void>) => Promise<void>;
   onSaved: (entry: Entry) => void;
@@ -120,7 +123,7 @@ export function EntryPage({
   return (
     <EntryEditingContext.Provider value={writer.context}>
       <article className="entry-page" aria-label={`Entry ${entry.name}`}>
-        <header className="entry-page-header">
+        <header className="entry-page-header entry-card">
           {onBack && (
             <button type="button" className="back-to-list" onClick={onBack}>
               ← Back to list
@@ -156,38 +159,44 @@ export function EntryPage({
             </>
           )}
         </header>
-        {shared &&
-          (canon ? (
-            <div
-              className="entry-banner canon"
-              role="region"
-              aria-label="Shared canon"
-            >
-              <p>
-                <strong>Editing shared canon.</strong> Changes apply to every
-                book in this {scopeWord}
-                {scopeName ? `, ${scopeName}` : ""}.
-              </p>
-              <button type="button" onClick={() => void switchMode(false)}>
-                Back to This Book Only
+        {shared && (
+          <section
+            className={`canon-control${canon ? " canon" : ""}`}
+            aria-label="Shared canon"
+          >
+            <div className="segmented" role="group" aria-label="Edit scope">
+              <button
+                type="button"
+                aria-pressed={canon}
+                onClick={() => !canon && void switchMode(true)}
+              >
+                Shared canon
+              </button>
+              <button
+                type="button"
+                aria-pressed={!canon}
+                onClick={() => canon && void switchMode(false)}
+              >
+                {bookTitle ? `In ${bookTitle} only` : "This book only"}
               </button>
             </div>
-          ) : (
-            <div
-              className="entry-banner"
-              role="region"
-              aria-label="Shared canon"
-            >
-              <p>
-                This entry is shared across this {scopeWord}
-                {scopeName ? `, ${scopeName}` : ""}. Field values you change
-                save for this book only.
-              </p>
-              <button type="button" onClick={() => void switchMode(true)}>
-                Edit shared details
-              </button>
-            </div>
-          ))}
+            <p>
+              {canon ? (
+                <>
+                  <strong>Editing shared canon.</strong> Changes apply to every
+                  book in this {scopeWord}
+                  {scopeName ? `, ${scopeName}` : ""}.
+                </>
+              ) : (
+                <>
+                  Shared across this {scopeWord}
+                  {scopeName ? `, ${scopeName}` : ""}. Field values you change
+                  save for this book only.
+                </>
+              )}
+            </p>
+          </section>
+        )}
         {conflict && (
           <div className="entry-banner conflict" role="alert">
             {conflict.reloaded ? (
@@ -258,6 +267,18 @@ export function EntryPage({
               )}
             </section>
           )}
+        </Fragment>
+        {entry.entryType === "character" && (
+          <section className="entry-section" aria-label="Family">
+            <EntryContext
+              key={`family:${entry.id}`}
+              part="family"
+              entry={entry}
+              bookId={bookId}
+            />
+          </section>
+        )}
+        <Fragment key={`fields:${writer.generation}`}>
           {!trashed && (
             <section
               className="entry-section"
@@ -274,6 +295,14 @@ export function EntryPage({
             </section>
           )}
         </Fragment>
+        <EntryChanges
+          entry={entry}
+          bookId={bookId}
+          canon={canon}
+          rel={rel}
+          flush={flush}
+          onOpenEntry={onOpenEntry}
+        />
         <section className="entry-section" aria-label="Relationships">
           <EntryLinks
             entry={entry}
@@ -285,14 +314,15 @@ export function EntryPage({
             onOpenEntry={onOpenEntry}
           />
         </section>
-        <EntryChanges
-          entry={entry}
-          bookId={bookId}
-          canon={canon}
-          rel={rel}
-          flush={flush}
-          onOpenEntry={onOpenEntry}
-        />
+        <section className="entry-section" aria-label="Appears in">
+          <EntryContext
+            key={`appears:${entry.id}`}
+            part="appearances"
+            entry={entry}
+            bookId={bookId}
+            onOpen={onOpenAppearance}
+          />
+        </section>
         {records && (
           <EntryMentions
             entryId={entry.id}
@@ -301,14 +331,6 @@ export function EntryPage({
             onOpenRecord={onOpenRecord}
           />
         )}
-        <section className="entry-section" aria-label="Family and appearances">
-          <EntryContext
-            key={entry.id}
-            entry={entry}
-            bookId={bookId}
-            onOpen={onOpenAppearance}
-          />
-        </section>
         <section className="entry-section" aria-label="Trash and deletion">
           <h3>{trashed ? "Entry in Trash" : "Trash"}</h3>
           {purging && (
@@ -343,7 +365,7 @@ export function EntryPage({
           </button>
           {shared && !canon && (
             <p className="hint">
-              This entry is shared. Choose Edit shared details to{" "}
+              This entry is shared. Switch to Shared canon above to{" "}
               {trashed ? "restore" : "move it to Trash"} for every book in this{" "}
               {scopeWord}.
             </p>

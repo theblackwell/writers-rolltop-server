@@ -6,7 +6,7 @@ import { entry, setup } from "./bible-ui-harness.ts";
 // Owner report: "After a user is created, clicking their name does not bring
 // their info back up." Each sequence below was tried against the U1 code.
 async function create(t: Awaited<ReturnType<typeof setup>>, name: string) {
-  await t.click(t.button("＋ New"));
+  await t.menu("New entry", "New Character");
   await t.type(
     t.doc.querySelector("dialog input[name='name']") as HTMLInputElement,
     name,
@@ -60,7 +60,7 @@ test("a created entry opens from its list row after switching, filtering, remoun
 
     // Sequence 5: Relationships (a tool) is open, then a name is clicked. The
     // row is selected, but the tool used to keep covering the entry page.
-    await t.click(t.button("Relationship types…"));
+    await t.menu("Bible settings", "Relationship types…");
     assert.equal(t.state.tool, "relationshipTypes");
     await t.click(t.button("Tom Reed", t.doc.querySelector("aside")!));
     assert.equal(t.state.selected, "tom-reed");
@@ -68,7 +68,7 @@ test("a created entry opens from its list row after switching, filtering, remoun
     assert.equal(heading(t), "Tom Reed");
 
     // The same holds for Templates and Fields.
-    await t.click(t.button("Templates and Fields…"));
+    await t.menu("Bible settings", "Templates and Fields…");
     await t.click(t.button("Mira Vale"));
     assert.equal(heading(t), "Mira Vale");
   } finally {

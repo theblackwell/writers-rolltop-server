@@ -165,9 +165,8 @@ test("Story Bible tab groups entries by type, selects an entry into its page, cr
     assert.ok(
       doc.querySelector('section[aria-label="Fields and attachments"]'),
     );
-    assert.ok(
-      doc.querySelector('section[aria-label="Family and appearances"]'),
-    );
+    assert.ok(doc.querySelector('section[aria-label="Family"]'));
+    assert.ok(doc.querySelector('section[aria-label="Appears in"]'));
     assert.ok(button("Move Entry to Trash"));
     assert.equal(
       doc.querySelector('[aria-current="true"]')!.textContent,
@@ -187,7 +186,8 @@ test("Story Bible tab groups entries by type, selects an entry into its page, cr
       null,
     );
     // New opens the create form in a dialog and selects the new entry.
-    await click(button("＋ New"));
+    await click(doc.querySelector('button[aria-label="New entry"]'));
+    await click(button("New Location"));
     assert.ok(doc.querySelector("dialog[aria-label='New Bible Entry']"));
     await type(
       doc.querySelector("dialog input[name='name']") as HTMLInputElement,
@@ -203,6 +203,7 @@ test("Story Bible tab groups entries by type, selects an entry into its page, cr
     await React.act(async () => {});
     assert.equal(posts.length, 1);
     assert.equal(posts[0].input.name, "Harbor");
+    assert.equal(posts[0].input.entryType, "location", "the + menu presets it");
     assert.equal(selected, "harbor");
     assert.equal(doc.querySelector("dialog"), null);
     assert.equal(doc.querySelector("article h1")!.textContent, "Harbor");

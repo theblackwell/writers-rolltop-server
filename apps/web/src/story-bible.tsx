@@ -24,12 +24,93 @@ export type BibleTool = "relationshipTypes" | "templates" | null;
 export type BibleSection = "entries" | RecordKind;
 type Context = {
   libraryId: string;
-  book: { id: string; universeId?: string; seriesId?: string };
+  book: { id: string; title?: string; universeId?: string; seriesId?: string };
   seriesWorld?: string;
   names: Record<string, string>;
   catalog: Catalog;
 };
 const byName = (a: Entry, b: Entry) => a.name.localeCompare(b.name);
+
+// A small menu button (the iPhone's "+" and "..." menus). Escape and a click
+// elsewhere close it; arrow keys move between items.
+function BibleMenu({
+  label,
+  glyph,
+  disabled,
+  items,
+}: {
+  label: string;
+  glyph: string;
+  disabled?: boolean;
+  items: { label: string; run: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    box.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const away = (e: Event) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  return (
+    <div
+      className="bible-menu"
+      ref={box}
+      onKeyDown={(e) => {
+        if (!open) return;
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          setOpen(false);
+          trigger.current?.focus();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const all = Array.from(
+            box.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ??
+              [],
+          );
+          const at = all.indexOf(document.activeElement as HTMLElement);
+          const step = e.key === "ArrowDown" ? 1 : -1;
+          all[(at + step + all.length) % all.length]?.focus();
+        }
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        className="bible-menu-button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {glyph}
+      </button>
+      {open && (
+        <ul role="menu" aria-label={label} className="bible-menu-list">
+          {items.map((item) => (
+            <li key={item.label} role="none">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  item.run();
+                }}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // Third workspace tab: a binder of entries on the left, one entry page on the
 // right. Selection lives in the app so other tools can route into it.
@@ -77,7 +158,8 @@ export function StoryBible({
   const [filter, setFilter] = useState("");
   const [namesOnly, setNamesOnly] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
+  // The type preset by the "+" menu; the dialog stays the same form.
+  const [creating, setCreating] = useState<string | false>(false);
   const [showList, setShowList] = useState(
     !(section === "entries" ? selectedId : recordId),
   );
@@ -335,39 +417,49 @@ export function StoryBible({
             </button>
           ))}
         </div>
+        <p className="bible-caption">
+          Showing what {context?.book.title ?? "this book"} can see
+        </p>
         <div className="bible-binder-actions">
-          <button
-            className="primary"
-            disabled={recordKind ? !records.catalogs[recordKind] : !context}
-            aria-label={
-              recordKind
-                ? `New ${recordKinds[recordKind].label.toLowerCase()}`
-                : undefined
-            }
-            onClick={() =>
-              recordKind ? void startNewRecord() : setCreating(true)
-            }
-          >
-            ＋ New
-          </button>
-          <button
+          {recordKind ? (
+            <button
+              className="primary"
+              disabled={!records.catalogs[recordKind]}
+              aria-label={`New ${recordKinds[recordKind].label.toLowerCase()}`}
+              onClick={() => void startNewRecord()}
+            >
+              ＋ New
+            </button>
+          ) : (
+            <BibleMenu
+              label="New entry"
+              glyph="＋"
+              disabled={!context}
+              items={entryTypes.map((t) => ({
+                label: `New ${entryTypeLabel(t)}`,
+                run: () => setCreating(t),
+              }))}
+            />
+          )}
+          <BibleMenu
+            label="Bible settings"
+            glyph="⋯"
             disabled={!context}
-            onClick={() =>
-              void openTool(
-                tool === "relationshipTypes" ? null : "relationshipTypes",
-              )
-            }
-          >
-            Relationship types…
-          </button>
-          <button
-            disabled={!context}
-            onClick={() =>
-              void openTool(tool === "templates" ? null : "templates")
-            }
-          >
-            Templates and Fields…
-          </button>
+            items={[
+              {
+                label: "Relationship types…",
+                run: () =>
+                  void openTool(
+                    tool === "relationshipTypes" ? null : "relationshipTypes",
+                  ),
+              },
+              {
+                label: "Templates and Fields…",
+                run: () =>
+                  void openTool(tool === "templates" ? null : "templates"),
+              },
+            ]}
+          />
         </div>
         {recordKind ? (
           <RecordList
@@ -407,8 +499,7 @@ export function StoryBible({
               <>
                 {!total && !trashed.length && (
                   <p className="hint">
-                    No entries yet. Choose New to add a character, place or
-                    idea.
+                    No entries yet. Choose ＋ to add a character, place or idea.
                   </p>
                 )}
                 {!!total && !live.length && !trashed.length && (
@@ -417,10 +508,16 @@ export function StoryBible({
                 {entryTypes
                   .filter((t) => live.some((e) => e.entryType === t))
                   .map((t) => (
-                    <section key={t} aria-label={entryTypeLabel(t, true)}>
+                    <section
+                      key={t}
+                      className="bible-card"
+                      aria-label={entryTypeLabel(t, true)}
+                    >
                       <h3 className="bible-group">
-                        {entryTypeLabel(t, true)} (
-                        {live.filter((e) => e.entryType === t).length})
+                        {entryTypeLabel(t, true)}{" "}
+                        <span className="bible-count">
+                          {live.filter((e) => e.entryType === t).length}
+                        </span>
                       </h3>
                       <ul className="bible-list">
                         {live.filter((e) => e.entryType === t).map(row)}
@@ -487,6 +584,7 @@ export function StoryBible({
             seriesWorld={context.seriesWorld}
             catalog={context.catalog}
             scopeName={selected.scope && context.names[selected.scope.id]}
+            bookTitle={context.book.title}
             busy={busy}
             action={action}
             onBack={() => setShowList(true)}
@@ -533,6 +631,7 @@ export function StoryBible({
       {creating && context && (
         <Dialog title="New Bible Entry" close={() => setCreating(false)}>
           <NewEntryForm
+            initialType={creating}
             bookId={bookId}
             book={context.book}
             onCancel={() => setCreating(false)}
@@ -551,11 +650,13 @@ export function StoryBible({
 }
 
 export function NewEntryForm({
+  initialType,
   bookId,
   book,
   onCancel,
   onCreated,
 }: {
+  initialType?: string;
   bookId: string;
   book: { universeId?: string; seriesId?: string };
   onCancel: () => void;
@@ -586,7 +687,7 @@ export function NewEntryForm({
       </label>
       <label>
         Type
-        <select name="entryType">
+        <select name="entryType" defaultValue={initialType}>
           {entryTypes.map((t) => (
             <option key={t} value={t}>
               {entryTypeLabel(t)}

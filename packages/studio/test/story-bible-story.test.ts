@@ -286,7 +286,9 @@ test("a rejected change keeps the form and typed value; shared entries need cano
     // A shared entry's changes follow the page-level canon switch.
     await open(t, "Old Gate");
     assert.equal(t.button("Add Change…")!.disabled, true);
-    await t.click(t.button("Edit shared details"));
+    await t.click(
+      t.button("Shared canon", t.doc.querySelector(".canon-control")!),
+    );
     assert.equal(t.button("Add Change…")!.disabled, false);
     await t.click(t.button("Add Change…"));
     assert.equal(
@@ -314,7 +316,7 @@ test("relationship types live in Bible settings; the old Relationships and Chang
   try {
     assert.equal(t.button("Relationships…"), undefined);
     assert.equal(t.button("Changing State…"), undefined);
-    await t.click(t.button("Relationship types…"));
+    await t.menu("Bible settings", "Relationship types…");
     await t.settle();
     assert.equal(t.state.tool, "relationshipTypes");
     const settings = section(t, "Bible settings");

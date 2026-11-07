@@ -18,7 +18,10 @@ export function EntryContext({
   bookId,
   onClose,
   onOpen,
+  part = "both",
 }: {
+  /** The entry page shows family and appearances as two separate sections. */
+  part?: "both" | "family" | "appearances";
   entry: Entry;
   bookId: string;
   onClose?: () => void;
@@ -30,9 +33,11 @@ export function EntryContext({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [bookSpecific, setBookSpecific] = useState(true);
+  const wantFamily = entry.entryType === "character" && part !== "appearances";
+  const wantAppearances = part !== "family";
   const family = async () => {
     const result =
-      entry.entryType === "character" && !entry.deletedAt
+      wantFamily && !entry.deletedAt
         ? await api(`/books/${bookId}/entries/${entry.id}/family`)
         : { matches: [] };
     setMatches(result.matches);
@@ -40,10 +45,12 @@ export function EntryContext({
   useEffect(() => {
     let live = true;
     Promise.all([
-      entry.entryType === "character" && !entry.deletedAt
+      wantFamily && !entry.deletedAt
         ? api(`/books/${bookId}/entries/${entry.id}/family`)
         : Promise.resolve({ matches: [] }),
-      api(`/books/${bookId}/entries/${entry.id}/appearances`),
+      wantAppearances
+        ? api(`/books/${bookId}/entries/${entry.id}/appearances`)
+        : Promise.resolve({ appearances: [] }),
     ])
       .then(([f, a]) => {
         if (live) {
@@ -73,18 +80,24 @@ export function EntryContext({
     }
   }
   const sectionTitle =
-    entry.entryType === "character" ? "Family and Appearances" : "Appearances";
+    part === "family"
+      ? "Family"
+      : part === "appearances"
+        ? "Appears in"
+        : entry.entryType === "character"
+          ? "Family and Appearances"
+          : "Appearances";
   return (
     <section aria-label={`${sectionTitle} for ${entry.name}`}>
       <h3>
-        {entry.name}: {sectionTitle}
+        {part === "both" ? `${entry.name}: ${sectionTitle}` : sectionTitle}
       </h3>
       {error && <p role="alert">{error}</p>}
       {!loaded ? (
         <p>Loading…</p>
       ) : (
         <>
-          {entry.entryType === "character" && (
+          {wantFamily && (
             <>
               <h4>Same Family Name</h4>
               {entry.deletedAt ? (
@@ -154,40 +167,44 @@ export function EntryContext({
               )}
             </>
           )}
-          <h4>Appears In</h4>
-          <p>Linked passages in the open book.</p>
-          {!appearances.length && (
-            <p>
-              No live linked passages yet. Mark a passage in the manuscript and
-              link it to this entry using Writing tools, References.
-            </p>
-          )}
-          <ul className="search-results">
-            {appearances.map((a) => (
-              <li key={a.referenceId}>
-                <strong>{a.sceneTitle}</strong>
+          {wantAppearances && (
+            <>
+              {part === "both" && <h4>Appears In</h4>}
+              <p>Linked passages in the open book.</p>
+              {!appearances.length && (
                 <p>
-                  {a.bookTitle}
-                  {a.passageMissing
-                    ? " · Passage no longer present"
-                    : " · Linked passage"}
+                  No live linked passages yet. Mark a passage in the manuscript
+                  and link it to this entry using Writing tools, References.
                 </p>
-                {a.excerpt && <p>{a.excerpt}</p>}
-                <button
-                  disabled={busy || !onOpen}
-                  onClick={() =>
-                    void action(async () => {
-                      await onOpen?.(a.nodeId, a.anchorId);
-                    })
-                  }
-                >
-                  {a.passageMissing
-                    ? "Open Scene (passage missing)"
-                    : "Show Linked Passage"}
-                </button>
-              </li>
-            ))}
-          </ul>
+              )}
+              <ul className="search-results">
+                {appearances.map((a) => (
+                  <li key={a.referenceId}>
+                    <strong>{a.sceneTitle}</strong>
+                    <p>
+                      {a.bookTitle}
+                      {a.passageMissing
+                        ? " · Passage no longer present"
+                        : " · Linked passage"}
+                    </p>
+                    {a.excerpt && <p>{a.excerpt}</p>}
+                    <button
+                      disabled={busy || !onOpen}
+                      onClick={() =>
+                        void action(async () => {
+                          await onOpen?.(a.nodeId, a.anchorId);
+                        })
+                      }
+                    >
+                      {a.passageMissing
+                        ? "Open Scene (passage missing)"
+                        : "Show Linked Passage"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </>
       )}
       {onClose && (

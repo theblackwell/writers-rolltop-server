@@ -428,6 +428,19 @@ export async function setup() {
       Array.from(within.querySelectorAll("button")).find((b) =>
         b.textContent?.includes(label),
       ),
+    /** Open a sidebar menu ("New entry" or "Bible settings") and choose an item. */
+    menu: async (label: string, item: string) => {
+      const trigger = doc.querySelector(
+        `button[aria-label="${label}"]`,
+      ) as HTMLElement | null;
+      if (!trigger) throw new Error(`No ${label} menu`);
+      await React.act(async () => trigger.click());
+      const choice = Array.from(doc.querySelectorAll('[role="menuitem"]')).find(
+        (b) => b.textContent?.includes(item),
+      ) as HTMLElement | undefined;
+      if (!choice) throw new Error(`No menu item ${item}`);
+      await React.act(async () => choice.click());
+    },
     /** A row in the sidebar list (entry or record) by part of its text. */
     row: (text: string) =>
       Array.from(doc.querySelectorAll(".bible-row")).find((b) =>
