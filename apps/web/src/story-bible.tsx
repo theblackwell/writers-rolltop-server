@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { api } from "./api.ts";
 import { Dialog } from "./dialog.tsx";
 import { EntryPage } from "./entry-page.tsx";
@@ -28,6 +29,7 @@ export function StoryBible({
   tool,
   onTool,
   onOpenAppearance,
+  flushRef,
 }: {
   bookId: string;
   selectedId?: string;
@@ -35,7 +37,10 @@ export function StoryBible({
   tool: BibleTool;
   onTool: (tool: BibleTool) => void;
   onOpenAppearance?: (nodeId: string, anchorId: string) => Promise<void>;
+  /** The app calls this before it leaves the tab; false means stay here. */
+  flushRef?: MutableRefObject<(() => Promise<boolean>) | null>;
 }) {
+  const pageFlush = useRef<(() => Promise<boolean>) | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [context, setContext] = useState<Context>();
   const [loadError, setLoadError] = useState("");
@@ -119,9 +124,34 @@ export function StoryBible({
   const live = shown.filter((e) => !e.deletedAt);
   const trashed = shown.filter((e) => e.deletedAt);
   const total = entries.filter((e) => !e.deletedAt).length;
-  const pick = (id: string) => {
+  // Save the open entry's drafts before anything replaces its page. If that
+  // fails the page stays, with its draft and error visible.
+  const leavePage = async () => {
+    const ok = (await pageFlush.current?.()) ?? true;
+    setError(
+      ok
+        ? ""
+        : "This entry has changes that are not saved. Fix or cancel them before leaving it.",
+    );
+    return ok;
+  };
+  useEffect(() => {
+    if (!flushRef) return;
+    const flush = async () => (await pageFlush.current?.()) ?? true;
+    flushRef.current = flush;
+    return () => {
+      if (flushRef.current === flush) flushRef.current = null;
+    };
+  }, [flushRef]);
+  const pick = async (id: string) => {
+    if (id !== selectedId && !(await leavePage())) return;
+    // A tool (Relationships, Templates) covers the entry page, so close it.
+    onTool(null);
     onSelect(id);
     setShowList(false);
+  };
+  const openTool = async (next: BibleTool) => {
+    if (await leavePage()) onTool(next);
   };
   function row(e: Entry) {
     return (
@@ -130,7 +160,7 @@ export function StoryBible({
           type="button"
           className={`bible-row${e.id === selectedId ? " current" : ""}`}
           aria-current={e.id === selectedId ? "true" : undefined}
-          onClick={() => pick(e.id)}
+          onClick={() => void pick(e.id)}
         >
           <span>{e.name}</span>
           {e.toBeNamed && <small>name to decide</small>}
@@ -157,14 +187,16 @@ export function StoryBible({
           <button
             disabled={!context}
             onClick={() =>
-              onTool(tool === "relationships" ? null : "relationships")
+              void openTool(tool === "relationships" ? null : "relationships")
             }
           >
             Relationships…
           </button>
           <button
             disabled={!context}
-            onClick={() => onTool(tool === "templates" ? null : "templates")}
+            onClick={() =>
+              void openTool(tool === "templates" ? null : "templates")
+            }
           >
             Templates and Fields…
           </button>
@@ -254,6 +286,13 @@ export function StoryBible({
         ) : selected && context ? (
           <EntryPage
             key={selected.id}
+            flushRef={pageFlush}
+            onReloadCatalog={async () => {
+              const catalog = await api<Catalog>(
+                `/libraries/${context.libraryId}/templates`,
+              );
+              setContext((c) => c && { ...c, catalog });
+            }}
             entry={selected}
             entries={entries}
             bookId={bookId}
@@ -310,9 +349,8 @@ export function StoryBible({
               setEntries((es) => [...es, entry]);
               setFilter("");
               setNamesOnly(false);
-              onTool(null);
-              pick(entry.id);
               setCreating(false);
+              void pick(entry.id);
             }}
           />
         </Dialog>

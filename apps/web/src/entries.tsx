@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
+import { FieldError, useDraftSave, useEntryEditing } from "./entry-editing.tsx";
 export type Entry = {
   attachments?: string[];
   id: string;
@@ -45,146 +46,201 @@ const typeLabels: Record<string, [string, string]> = {
 };
 export const entryTypeLabel = (type: string, plural = false) =>
   typeLabels[type]?.[plural ? 1 : 0] ?? type;
-export function EntryForm({
-  entry,
-  busy,
-  onCancel,
-  onSave,
-}: {
-  entry: Entry;
-  busy: boolean;
-  onCancel?: () => void;
-  onSave: (patch: object) => Promise<void>;
-}) {
-  const [name, setName] = useState(entry.name);
-  const split = entry.name.lastIndexOf(" ");
-  const initialGiven =
-    entry.givenName ??
-    (entry.familyName !== undefined
-      ? ""
-      : split < 0
-        ? entry.name
-        : entry.name.slice(0, split));
-  const initialFamily =
-    entry.familyName ??
-    (entry.givenName !== undefined || split < 0
-      ? ""
-      : entry.name.slice(split + 1));
-  const [given, setGiven] = useState(initialGiven);
-  const [family, setFamily] = useState(initialFamily);
-  const [aliases, setAliases] = useState(entry.aliases.join("\n"));
-  const [summary, setSummary] = useState(entry.summary ?? "");
-  const [toBeNamed, setToBeNamed] = useState(!!entry.toBeNamed);
+const trimmed = (a: string, b: string) => a.trim() === b.trim();
+const aliasList = (text: string) =>
+  text
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+const sameAliases = (a: string, b: string) =>
+  JSON.stringify(aliasList(a)) === JSON.stringify(aliasList(b));
+
+// Header details of one entry. Text saves when you leave a field (or press
+// Enter in a single-line field); the checkbox saves when you change it.
+export function EntryHeader({ entry }: { entry: Entry }) {
+  const ctx = useEntryEditing();
   const character = entry.entryType === "character";
-  return (
-    <form
-      onSubmit={(e) => {
+  const split = entry.name.lastIndexOf(" ");
+  const savedNames = {
+    given:
+      entry.givenName ??
+      (entry.familyName !== undefined
+        ? ""
+        : split < 0
+          ? entry.name
+          : entry.name.slice(0, split)),
+    family:
+      entry.familyName ??
+      (entry.givenName !== undefined || split < 0
+        ? ""
+        : entry.name.slice(split + 1)),
+  };
+  const names = useDraftSave({
+    key: "names",
+    label: "First and last name",
+    saved: savedNames,
+    same: (a, b) => trimmed(a.given, b.given) && trimmed(a.family, b.family),
+    show: (d) => `First name: ${d.given}\nLast name: ${d.family}`,
+    validate: (d) =>
+      d.given.trim() || d.family.trim()
+        ? undefined
+        : "Enter a first or last name.",
+    send: (d) => ctx.put("", { givenName: d.given, familyName: d.family }),
+  });
+  const name = useDraftSave({
+    key: "name",
+    label: "Name",
+    saved: entry.name,
+    same: trimmed,
+    show: (d) => d,
+    validate: (d) => (d.trim() ? undefined : "Enter a name."),
+    send: (d) => ctx.put("", { name: d }),
+  });
+  const aliases = useDraftSave({
+    key: "aliases",
+    label: "Aliases",
+    saved: entry.aliases.join("\n"),
+    same: sameAliases,
+    show: (d) => d,
+    send: (d) => ctx.put("", { aliases: aliasList(d) }),
+  });
+  const summary = useDraftSave({
+    key: "summary",
+    label: "Summary",
+    saved: entry.summary ?? "",
+    same: (a, b) => a === b,
+    show: (d) => d,
+    send: (d) => ctx.put("", { summary: d }),
+  });
+  const toBeNamed = useDraftSave({
+    key: "toBeNamed",
+    label: "Name still to be decided",
+    saved: !!entry.toBeNamed,
+    same: (a, b) => a === b,
+    show: (d) => (d ? "Name still to be decided" : "Name decided"),
+    send: (d) => ctx.put("", { toBeNamed: d }),
+  });
+  const enter =
+    (commit: () => Promise<boolean>) => (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
         e.preventDefault();
-        const patch: Record<string, unknown> = {};
-        if (character) {
-          if (given !== initialGiven || family !== initialFamily) {
-            patch.givenName = given;
-            patch.familyName = family;
-          }
-        } else if (name !== entry.name) patch.name = name;
-        if (aliases !== entry.aliases.join("\n"))
-          patch.aliases = aliases
-            .split("\n")
-            .map((s) => s.trim())
-            .filter(Boolean);
-        if (summary !== (entry.summary ?? "")) patch.summary = summary;
-        if (toBeNamed !== !!entry.toBeNamed) patch.toBeNamed = toBeNamed;
-        void onSave(patch);
-      }}
-    >
+        void commit();
+      }
+    };
+  return (
+    <div className="entry-edit">
       <h3>Edit {entry.name}</h3>
-      {entry.scope?.kind !== "book" && (
-        <p>
-          These details are shared canon. Saving changes them for every book in
-          this scope.
-        </p>
-      )}
-      <fieldset disabled={busy}>
-        {character ? (
-          <>
-            <label>
-              First name
-              <input
-                maxLength={500}
-                value={given}
-                onChange={(e) => setGiven(e.target.value)}
-              />
-            </label>
-            <label>
-              Last name
-              <input
-                maxLength={500}
-                value={family}
-                onChange={(e) => setFamily(e.target.value)}
-              />
-            </label>
-            <p>
-              Display name:{" "}
-              {[given.trim(), family.trim()].filter(Boolean).join(" ") ||
-                "Enter a name"}
-            </p>
-          </>
-        ) : (
+      {character ? (
+        <div
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+              void names.commit();
+          }}
+        >
           <label>
-            Name
+            First name
             <input
-              required
               maxLength={500}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={names.draft.given}
+              aria-invalid={!!names.error}
+              onKeyDown={enter(names.commit)}
+              onChange={(e) =>
+                names.setDraft({ ...names.draft, given: e.target.value })
+              }
             />
           </label>
-        )}
-        <label>
-          Aliases (one per line)
-          <textarea
-            value={aliases}
-            onChange={(e) => setAliases(e.target.value)}
-          />
-        </label>
-        <label>
-          Summary
-          <textarea
-            maxLength={20000}
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-          />
-        </label>
-        <label className="entry-toggle">
-          <input
-            type="checkbox"
-            checked={toBeNamed}
-            onChange={(e) => setToBeNamed(e.target.checked)}
-          />
-          Name still to be decided
-        </label>
-        <p>Changes save explicitly. Entry type and scope stay the same.</p>
-        <div className="dialog-actions">
-          {onCancel && (
-            <button type="button" onClick={onCancel}>
-              Cancel Edit
-            </button>
-          )}
-          <button
-            className="primary"
-            disabled={
-              character ? !(given.trim() || family.trim()) : !name.trim()
-            }
-          >
-            {busy
-              ? "Saving…"
-              : entry.scope?.kind !== "book"
-                ? "Save Shared Canon"
-                : "Save Entry"}
-          </button>
+          <label>
+            Last name
+            <input
+              maxLength={500}
+              value={names.draft.family}
+              aria-invalid={!!names.error}
+              onKeyDown={enter(names.commit)}
+              onChange={(e) =>
+                names.setDraft({ ...names.draft, family: e.target.value })
+              }
+            />
+          </label>
+          <p>
+            Display name:{" "}
+            {[names.draft.given.trim(), names.draft.family.trim()]
+              .filter(Boolean)
+              .join(" ") || "Enter a name"}
+          </p>
+          <FieldError id="entry-names-error" message={names.error} />
         </div>
-      </fieldset>
-    </form>
+      ) : (
+        <label>
+          Name
+          <input
+            maxLength={500}
+            value={name.draft}
+            aria-invalid={!!name.error}
+            aria-describedby={name.error ? "entry-name-error" : undefined}
+            onKeyDown={enter(name.commit)}
+            onBlur={() => void name.commit()}
+            onChange={(e) => name.setDraft(e.target.value)}
+          />
+        </label>
+      )}
+      {!character && <FieldError id="entry-name-error" message={name.error} />}
+      <label>
+        Aliases (one per line)
+        <textarea
+          value={aliases.draft}
+          aria-invalid={!!aliases.error}
+          onBlur={() => void aliases.commit()}
+          onChange={(e) => aliases.setDraft(e.target.value)}
+        />
+      </label>
+      <FieldError id="entry-aliases-error" message={aliases.error} />
+      <label>
+        Summary
+        <textarea
+          maxLength={20000}
+          value={summary.draft}
+          aria-invalid={!!summary.error}
+          onBlur={() => void summary.commit()}
+          onChange={(e) => summary.setDraft(e.target.value)}
+        />
+      </label>
+      <FieldError id="entry-summary-error" message={summary.error} />
+      <label className="entry-toggle">
+        <input
+          type="checkbox"
+          checked={toBeNamed.draft}
+          onChange={(e) => {
+            toBeNamed.setDraft(e.target.checked);
+            void toBeNamed.commit(e.target.checked);
+          }}
+        />
+        Name still to be decided
+      </label>
+      <FieldError id="entry-tobenamed-error" message={toBeNamed.error} />
+      <p className="hint">
+        Changes save when you leave a field. Entry type and scope stay the same.
+      </p>
+    </div>
+  );
+}
+
+/** Shared details while the page is in "This book only" mode. */
+export function EntryHeaderReadOnly({ entry }: { entry: Entry }) {
+  return (
+    <div className="entry-edit">
+      <h3>{entry.name}</h3>
+      {!!entry.aliases.length && (
+        <p>Also known as: {entry.aliases.join(", ")}</p>
+      )}
+      {entry.summary && (
+        <p style={{ whiteSpace: "pre-wrap" }}>{entry.summary}</p>
+      )}
+      {entry.toBeNamed && <p>Name still to be decided.</p>}
+      <p className="hint">
+        These details are shared canon. Choose Edit shared details to change
+        them for every book in this scope.
+      </p>
+    </div>
   );
 }
 

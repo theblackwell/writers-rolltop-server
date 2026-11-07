@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { structuredValueError } from "../../../packages/studio/src/structured-values.ts";
 import type { Field } from "./entry-fields.tsx";
 export function structuredSummary(field: Field, value: any): string {
@@ -35,6 +35,7 @@ export function StructuredForm({
   value,
   busy,
   onCancel,
+  onDirtyChange,
   onSave,
 }: {
   allowClear?: boolean;
@@ -42,6 +43,8 @@ export function StructuredForm({
   value: any;
   busy: boolean;
   onCancel: () => void;
+  /** Lets a host refuse to leave while the form holds unsaved edits. */
+  onDirtyChange?: (dirty: boolean) => void;
   onSave: (v: unknown) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<string[]>(
@@ -59,6 +62,21 @@ export function StructuredForm({
       : { columns: ["Column 1"], rows: [] },
   );
   const [error, setError] = useState("");
+  const initial = useRef(
+    JSON.stringify([selected, date, label, calendar, ordinal, table]),
+  );
+  const draft = JSON.stringify([
+    selected,
+    date,
+    label,
+    calendar,
+    ordinal,
+    table,
+  ]);
+  useEffect(() => {
+    onDirtyChange?.(draft !== initial.current);
+    return () => onDirtyChange?.(false);
+  }, [draft]);
   const options = [
     ...(field.options ?? []),
     ...selected

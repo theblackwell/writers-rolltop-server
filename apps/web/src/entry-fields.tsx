@@ -1,15 +1,10 @@
-import { AttachmentField, EntryAttachments } from "./attachments.tsx";
 // SPDX-License-Identifier: AGPL-3.0-only
-import {
-  ReferenceField,
-  referenceTypes,
-  referenceSummary,
-} from "./reference-field.tsx";
-import { StructuredForm, structuredSummary } from "./structured-fields.tsx";
-import { structuredTypes } from "../../../packages/studio/src/structured-values.ts";
+import { EntryAttachments } from "./attachments.tsx";
+import { FieldError, useEntryEditing } from "./entry-editing.tsx";
+import { FormField, InlineField, inlineTypes } from "./field-editors.tsx";
+import { structuredSummary } from "./structured-fields.tsx";
 import { scopeAllowsTarget } from "../../../packages/studio/src/scope-values.ts";
 import { useState } from "react";
-import { api } from "./api.ts";
 import type { Entry } from "./entries.tsx";
 export type Template = {
   id: string;
@@ -31,6 +26,16 @@ export type Field = {
   deletedAt?: string;
 };
 export type Catalog = { templates: Template[]; fields: Field[] };
+const layered = (
+  e: Entry,
+  bookId: string,
+  shared: boolean,
+  canon: boolean,
+): Record<string, unknown> =>
+  shared && !canon
+    ? { ...e.values, ...e.overrides?.find((o) => o.bookId === bookId)?.values }
+    : (e.values ?? {});
+const formTypes = ["attachment", "table"];
 export function EntryFields({
   entry,
   entries,
@@ -38,10 +43,6 @@ export function EntryFields({
   book,
   seriesWorld,
   catalog,
-  busy,
-  action,
-  onSaved,
-  onClose,
 }: {
   entry: Entry;
   entries: Entry[];
@@ -49,122 +50,79 @@ export function EntryFields({
   book: { id: string; universeId?: string; seriesId?: string };
   seriesWorld?: string;
   catalog: Catalog;
-  busy: boolean;
-  action: (work: () => Promise<void>) => Promise<void>;
-  onSaved: (e: Entry) => void;
-  onClose?: () => void;
 }) {
-  const shared = entry.scope?.kind !== "book";
-  const [mode, setMode] = useState<"canon" | "book">(shared ? "book" : "canon");
+  const ctx = useEntryEditing();
+  const { shared, canon } = ctx;
   const override = entry.overrides?.find((o) => o.bookId === bookId);
-  const values =
-    shared && mode === "book"
-      ? { ...entry.values, ...override?.values }
-      : (entry.values ?? {});
+  const values = layered(entry, bookId, shared, canon);
   const targetOwner =
-    mode === "book" ? { scope: { kind: "book", id: bookId } } : entry;
+    shared && !canon ? { scope: { kind: "book", id: bookId } } : entry;
   const candidateEntries = entries.filter((target) =>
     scopeAllowsTarget(targetOwner, target, book, seriesWorld),
   );
   const [templateId, setTemplateId] = useState(entry.templateId ?? "");
-  const [fieldId, setFieldId] = useState("");
+  const [templateError, setTemplateError] = useState("");
+  const [formFieldId, setFormFieldId] = useState("");
   const compatible = catalog.templates.filter(
     (t) => !t.deletedAt && t.entryType === entry.entryType,
   );
   const fields = catalog.fields.filter(
     (f) => !f.deletedAt && f.templateId === entry.templateId,
   );
-  const field = fields.find((f) => f.id === fieldId);
-  const save = (path: string, payload: object) =>
-    action(async () => {
-      const result = await api<Entry>(
-        `/books/${bookId}/entries/${entry.id}/${path}`,
-        "PUT",
-        {
-          ...payload,
-          expectedUpdatedAt: entry.updatedAt,
-          ...(path.startsWith("values/") ? { mode } : {}),
-          ...(shared && (path === "template" || mode === "canon")
-            ? { editSharedCanon: true }
-            : {}),
-        },
-      );
-      onSaved(result);
-      setFieldId("");
-    });
   const hasValues =
     Object.keys(entry.values ?? {}).length > 0 || !!entry.overrides?.length;
+  const locked = hasValues || (shared && !canon);
+  const assign = async (next: string) => {
+    setTemplateId(next);
+    setTemplateError("");
+    const result = await ctx.write({
+      key: "template",
+      label: "Template",
+      run: ctx.put("template", {
+        templateId: next || null,
+        expectedTemplateUpdatedAt: compatible.find((t) => t.id === next)
+          ?.updatedAt,
+      }),
+    });
+    if (!result.ok) {
+      setTemplateId(entry.templateId ?? "");
+      if (result.status !== 409) setTemplateError(result.message);
+    }
+  };
   return (
     <section aria-label={`Fields for ${entry.name}`}>
       <h3>Fields for {entry.name}</h3>
-      {shared && (
-        <>
-          <label>
-            Edit values for
-            <select
-              aria-label="Edit values for"
-              disabled={busy || !!fieldId}
-              value={mode}
-              onChange={(e) => setMode(e.target.value as "canon" | "book")}
-            >
-              <option value="book">This book only</option>
-              <option value="canon">Shared canon (all books)</option>
-            </select>
-          </label>
-          <p>
-            {mode === "book"
-              ? "Saved overrides affect this book only. Clear Value or Use Canon Again removes its override and inherits canon."
-              : "These values are shared canon. Changes affect every book without its own override."}
-          </p>
-        </>
-      )}
-
-      <EntryAttachments bookId={bookId} entry={entry} onSaved={onSaved} />
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save("template", {
-            templateId: templateId || null,
-            expectedTemplateUpdatedAt: compatible.find(
-              (t) => t.id === templateId,
-            )?.updatedAt,
-          });
-        }}
-      >
-        <fieldset disabled={busy || !!fieldId || (shared && mode === "book")}>
-          <label>
-            Template
-            <select
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-            >
-              <option value="">No template</option>
-              {entry.templateId &&
-                !compatible.some((t) => t.id === entry.templateId) && (
-                  <option value={entry.templateId}>
-                    Current template unavailable
-                  </option>
-                )}
-              {compatible.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            disabled={
-              templateId === (entry.templateId ?? "") ||
-              (hasValues && templateId !== (entry.templateId ?? ""))
-            }
-          >
-            {shared ? "Assign Shared Template" : "Assign Template"}
-          </button>
-        </fieldset>
-      </form>
-      {shared && mode === "book" && (
+      <EntryAttachments
+        bookId={bookId}
+        entry={entry}
+        readOnly={shared && !canon}
+      />
+      <label>
+        Template
+        <select
+          value={templateId}
+          disabled={locked}
+          onChange={(e) => void assign(e.target.value)}
+        >
+          <option value="">No template</option>
+          {entry.templateId &&
+            !compatible.some((t) => t.id === entry.templateId) && (
+              <option value={entry.templateId}>
+                Current template unavailable
+              </option>
+            )}
+          {compatible.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <FieldError id="entry-template-error" message={templateError} />
+      {shared && !canon && (
         <p>
-          Templates belong to shared canon. Choose Shared canon to assign one.
+          Templates belong to shared canon. Choose Edit shared details to assign
+          one.
         </p>
       )}
       {hasValues && (
@@ -180,131 +138,87 @@ export function EntryFields({
         !compatible.some((t) => t.id === entry.templateId) && (
           <p>The saved template is unavailable. Existing values are kept.</p>
         )}
-      <ul className="search-results">
-        {fields.map((f) => (
-          <li key={f.id}>
-            <strong>{f.label}</strong>
-            {f.required && " (suggested)"}
-            <p style={{ whiteSpace: "pre-wrap" }}>
-              {Object.hasOwn(values, f.id)
-                ? referenceTypes.includes(f.fieldType)
-                  ? referenceSummary(values[f.id], entries)
-                  : structuredSummary(f, values[f.id])
-                : "Not set"}
-            </p>
-            {shared && (
-              <p>
-                {mode === "canon"
-                  ? "Shared canon"
-                  : Object.hasOwn(override?.values ?? {}, f.id)
-                    ? "This book overrides canon"
-                    : "Inherited from canon"}
-              </p>
-            )}
-            {shared &&
-              mode === "book" &&
-              Object.hasOwn(override?.values ?? {}, f.id) && (
-                <button
-                  disabled={busy || !!fieldId}
-                  onClick={() =>
-                    void save(`values/${f.id}`, {
-                      value: null,
-                      expectedFieldUpdatedAt: f.updatedAt,
-                    })
-                  }
-                >
-                  Use Canon Again for {f.label}
-                </button>
+      <ul className="search-results entry-fields">
+        {fields.map((f) => {
+          const own = Object.hasOwn(
+            shared && !canon ? (override?.values ?? {}) : values,
+            f.id,
+          );
+          return (
+            <li key={f.id}>
+              {inlineTypes.includes(f.fieldType) ? (
+                <InlineField
+                  field={f}
+                  value={values[f.id]}
+                  clearable={own}
+                  layer={shared && !canon ? "book" : "canon"}
+                  candidates={candidateEntries}
+                  readValue={(e) => layered(e, bookId, shared, canon)[f.id]}
+                />
+              ) : formTypes.includes(f.fieldType) ? (
+                <>
+                  <strong>{f.label}</strong>
+                  {f.required && " (suggested)"}
+                  <p style={{ whiteSpace: "pre-wrap" }}>
+                    {Object.hasOwn(values, f.id)
+                      ? structuredSummary(f, values[f.id])
+                      : "Not set"}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={!!formFieldId}
+                    onClick={() => setFormFieldId(f.id)}
+                    aria-label={`Edit field ${f.label}`}
+                  >
+                    Edit {f.label}…
+                  </button>
+                  {shared && !canon && own && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void ctx.write({
+                          key: `field:${f.id}:clear`,
+                          label: f.label,
+                          run: ctx.put(`values/${f.id}`, {
+                            value: null,
+                            expectedFieldUpdatedAt: f.updatedAt,
+                          }),
+                        })
+                      }
+                    >
+                      Use Canon Again for {f.label}
+                    </button>
+                  )}
+                  <FormField
+                    field={f}
+                    bookId={bookId}
+                    value={values[f.id]}
+                    open={formFieldId === f.id}
+                    onClose={() => setFormFieldId("")}
+                  />
+                </>
+              ) : (
+                <>
+                  <strong>{f.label}</strong>
+                  <p>
+                    This field type is not editable yet. Its saved value is
+                    kept.
+                  </p>
+                </>
               )}
-            {[
-              "attachment",
-              "shortText",
-              "longText",
-              "integer",
-              "decimal",
-              "boolean",
-              ...structuredTypes,
-              ...referenceTypes,
-            ].includes(f.fieldType) ? (
-              <button
-                disabled={busy || !!fieldId}
-                onClick={() => setFieldId(f.id)}
-                aria-label={`Edit field ${f.label}`}
-              >
-                Edit {f.label}…
-              </button>
-            ) : (
-              <p>
-                This field type is not editable yet. Its saved value is kept.
-              </p>
-            )}
-          </li>
-        ))}
+              {shared && (
+                <p className="hint">
+                  {canon
+                    ? "Shared canon"
+                    : own
+                      ? "This book overrides canon"
+                      : "Inherited from canon"}
+                </p>
+              )}
+            </li>
+          );
+        })}
       </ul>
-      {field &&
-        (field.fieldType === "attachment" ? (
-          <AttachmentField
-            key={field.id}
-            bookId={bookId}
-            value={values[field.id]}
-            busy={busy}
-            onCancel={() => setFieldId("")}
-            onSave={(value) =>
-              save(`values/${field.id}`, {
-                value,
-                expectedFieldUpdatedAt: field.updatedAt,
-              })
-            }
-          />
-        ) : referenceTypes.includes(field.fieldType) ? (
-          <ReferenceField
-            key={field.id}
-            field={field}
-            value={values[field.id]}
-            entries={candidateEntries}
-            busy={busy}
-            onCancel={() => setFieldId("")}
-            onSave={(value) =>
-              save(`values/${field.id}`, {
-                value,
-                expectedFieldUpdatedAt: field.updatedAt,
-              })
-            }
-          />
-        ) : structuredTypes.includes(field.fieldType) ? (
-          <StructuredForm
-            key={field.id}
-            field={field}
-            value={values[field.id]}
-            busy={busy}
-            onCancel={() => setFieldId("")}
-            onSave={(value) =>
-              save(`values/${field.id}`, {
-                value,
-                expectedFieldUpdatedAt: field.updatedAt,
-              })
-            }
-          />
-        ) : (
-          <ScalarForm
-            key={field.id}
-            field={field}
-            value={values[field.id]}
-            busy={busy}
-            onCancel={() => setFieldId("")}
-            onSave={(value) =>
-              save(`values/${field.id}`, {
-                value,
-                expectedFieldUpdatedAt: field.updatedAt,
-              })
-            }
-          />
-        ))}
-      {onClose && (
-        <button disabled={busy} onClick={onClose}>
-          Close Fields
-        </button>
-      )}
     </section>
   );
 }

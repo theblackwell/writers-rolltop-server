@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, type Item } from "./api.ts";
 import type { Entry } from "./entries.tsx";
+import { useEntryEditing } from "./entry-editing.tsx";
 import { upload } from "./portable.tsx";
 type Asset = {
   sha256: string;
@@ -15,6 +16,7 @@ export function AttachmentField({
   value,
   busy = false,
   allowClear = true,
+  browseOnly = false,
   onSave,
   onCancel,
 }: {
@@ -23,6 +25,8 @@ export function AttachmentField({
   value: unknown;
   busy?: boolean;
   allowClear?: boolean;
+  /** Choose and download files, but do not upload or save a link. */
+  browseOnly?: boolean;
   onSave: (v: any) => void;
   onCancel: () => void;
 }) {
@@ -60,6 +64,7 @@ export function AttachmentField({
           Upload attachment
           <input
             type="file"
+            disabled={browseOnly}
             onChange={async (e) => {
               const f = e.target.files?.[0];
               e.target.value = "";
@@ -103,12 +108,14 @@ export function AttachmentField({
           </p>
         )}
         <button
-          disabled={!choice || !files.some((a) => a.sha256 === choice)}
+          disabled={
+            browseOnly || !choice || !files.some((a) => a.sha256 === choice)
+          }
           onClick={() => onSave(choice)}
         >
           Save Attachment
         </button>
-        {allowClear && (
+        {allowClear && !browseOnly && (
           <button onClick={() => onSave(null)}>Clear Attachment</button>
         )}
         <button onClick={onCancel}>Cancel Attachment</button>
@@ -170,59 +177,45 @@ export function LibraryAttachments({
 export function EntryAttachments({
   bookId,
   entry,
-  onSaved,
+  readOnly = false,
 }: {
   bookId: string;
   entry: Entry;
-  onSaved: (v: Entry) => void;
+  /** Shared entries edit attachment links only in shared-canon mode. */
+  readOnly?: boolean;
 }) {
+  const ctx = useEntryEditing();
   const [open, setOpen] = useState(false),
-    [ack, setAck] = useState(false),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [error, setError] = useState("");
   async function save(sha: string, remove = false) {
-    setBusy(true);
     setError("");
-    try {
-      onSaved(
-        await api(`/books/${bookId}/entries/${entry.id}/attachments`, "PUT", {
-          sha256: sha,
-          remove,
-          expectedUpdatedAt: entry.updatedAt,
-          ...(entry.scope?.kind !== "book" ? { editSharedCanon: ack } : {}),
-        }),
-      );
-      setOpen(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    const result = await ctx.write({
+      key: `attachment:${sha}`,
+      label: "Attachment link",
+      run: ctx.put("attachments", { sha256: sha, remove }),
+    });
+    if (result.ok) setOpen(false);
+    else if (result.status !== 409) setError(result.message);
   }
   return (
     <section>
       <h4>Entry attachments</h4>
       {error && <p role="alert">{error}</p>}
-      {entry.scope?.kind !== "book" && (
-        <label>
-          <input
-            type="checkbox"
-            checked={ack}
-            onChange={(e) => setAck(e.target.checked)}
-          />
-          Change attachments on shared canon for all books
-        </label>
+      {readOnly && (
+        <p>
+          Attachment links on a shared entry are shared canon. Choose Edit
+          shared details to change them.
+        </p>
       )}
       <ul>
         {(entry.attachments ?? []).map((h) => (
           <li key={h}>
             {h}
-            <button
-              disabled={busy || (entry.scope?.kind !== "book" && !ack)}
-              onClick={() => void save(h, true)}
-            >
-              Remove Attachment Link
-            </button>
+            {!readOnly && (
+              <button type="button" onClick={() => void save(h, true)}>
+                Remove Attachment Link
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -230,14 +223,14 @@ export function EntryAttachments({
         <AttachmentField
           bookId={bookId}
           value={undefined}
-          busy={busy || (entry.scope?.kind !== "book" && !ack)}
           allowClear={false}
+          browseOnly={readOnly}
           onCancel={() => setOpen(false)}
           onSave={(sha) => void save(sha)}
         />
       ) : (
-        <button onClick={() => setOpen(true)}>
-          Add or Download Attachment…
+        <button type="button" onClick={() => setOpen(true)}>
+          {readOnly ? "Browse Attachments…" : "Add or Download Attachment…"}
         </button>
       )}
     </section>

@@ -1184,6 +1184,44 @@ dialog textarea {
   background: #f3ece0;
   color: #5d4b30;
 }
+.entry-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.entry-banner {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid #cdbfa7;
+  border-radius: 5px;
+  background: #f3ece0;
+}
+.entry-banner p {
+  margin: 0 0 8px;
+}
+.entry-banner.canon {
+  border-color: #b8862e;
+  background: #fbefd0;
+  color: #4d3708;
+}
+.entry-banner.conflict {
+  border-color: #a8553f;
+  background: #f8e6df;
+  color: #5b2414;
+}
+.entry-banner textarea {
+  width: 100%;
+  min-height: 5rem;
+}
+.field-error {
+  color: #8a2f1c;
+  margin: 4px 0 8px;
+  font-size: 0.85rem;
+}
+.entry-fields > li {
+  margin-bottom: 14px;
+}
 .entry-section {
   margin-top: 28px;
   padding-top: 18px;

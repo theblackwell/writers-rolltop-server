@@ -33,6 +33,8 @@ import { BookProgress } from "./progress.tsx";
 import { wordCount } from "../../../packages/document-adapter/src/text.ts";
 import { Dialog } from "./dialog.tsx";
 import { PassageLinks } from "./passage-links.tsx";
+import { flushAll } from "./leave.ts";
+import { prepareEntryPlace } from "./entry-navigation.ts";
 import { StoryBible } from "./story-bible.tsx";
 import type { BibleTool } from "./story-bible.tsx";
 import { Knowledge } from "./knowledge.tsx";
@@ -184,6 +186,7 @@ function App() {
   const [namesOpen, setNamesOpen] = useState(false);
   const [bibleEntry, setBibleEntry] = useState<string>();
   const [bibleTool, setBibleTool] = useState<BibleTool>(null);
+  const bibleFlush = useRef<(() => Promise<boolean>) | null>(null);
   const [planningOpen, setPlanningOpen] = useState(false);
   const [planningPoint, setPlanningPoint] = useState<string>();
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
@@ -298,17 +301,11 @@ function App() {
       setScene(data.target);
       setView("manuscript");
     } else {
-      if (!(await leave()))
-        throw new Error(
-          "Resolve the current scene's draft or save conflict before opening this entry.",
-        );
-      const entries = await api<any[]>("/books/" + book.id + "/entries");
-      if (!entries.some((e) => e.id === n.sourceId && !e.deletedAt))
-        throw new Error(
-          "This entry is no longer live here. Review Trash or check names again.",
-        );
+      const id = await prepareEntryPlace(n.sourceId, leave, () =>
+        api("/books/" + book.id + "/entries"),
+      );
       setBibleTool(null);
-      setBibleEntry(n.sourceId);
+      setBibleEntry(id);
       setView("bible");
     }
     setNamesOpen(false);
@@ -404,7 +401,10 @@ function App() {
     }
   }
   async function leave() {
-    return (await pane.current?.flush()) ?? true;
+    return flushAll(
+      async () => (await pane.current?.flush()) ?? true,
+      bibleFlush.current,
+    );
   }
   async function openLibrary(item: Item) {
     if (!(await leave())) return;
@@ -808,7 +808,9 @@ function App() {
           <button
             disabled={!book}
             className={view === "manuscript" ? "selected" : ""}
-            onClick={() => setView("manuscript")}
+            onClick={async () => {
+              if (await leave()) setView("manuscript");
+            }}
           >
             Manuscript
           </button>
@@ -919,6 +921,7 @@ function App() {
             onSelect={setBibleEntry}
             tool={bibleTool}
             onTool={setBibleTool}
+            flushRef={bibleFlush}
             onOpenAppearance={openAppearance}
           />
         ) : (
