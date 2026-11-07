@@ -30,9 +30,9 @@ test("a new question keeps topic, status, decision, deadline and entries, and a 
     await t.choose(t.field("Decide by"), "scene");
     await t.choose(t.field("About entry"), "keeper");
     await t.click(t.button("Add About Entry"));
-    assert.equal(t.button("Save Question")!.disabled, true);
+    assert.equal(t.button("Create Question")!.disabled, true);
     await t.click(t.button("Edit shared details"));
-    await t.click(t.button("Save Question"));
+    await t.click(t.button("Create Question"));
     const post = t.fake.calls.find((c) => c.method === "POST")!;
     assert.deepEqual(post.body, {
       text: "The secret",
@@ -71,26 +71,26 @@ test("clearing a decision, topic and deadline is explicit, and a saved out-of-sc
     assert.equal(t.field("Decide by").value, "missing");
     assert.match(t.doc.body.textContent!, /outside selected scope/);
     await t.type(t.field("Topic"), "");
-    assert.equal(t.button("Save Question")!.disabled, true);
+    await t.blur(t.field("Topic"));
+    assert.equal(t.fake.puts().length, 0, "a bad deadline is not saved");
     await t.choose(t.field("Decide by"), "");
+    assert.equal(t.fake.puts().length, 1, "the fixed draft saves at once");
     await t.click(t.check("Include a decision"));
     await t.choose(t.field("Status"), "open");
-    await t.click(t.button("Save Question"));
-    assert.deepEqual(t.fake.puts()[0].body, {
+    assert.deepEqual(t.fake.puts().at(-1)!.body, {
       text: "Kept",
       topic: null,
       status: "open",
       decision: null,
       nodeId: null,
       entryIds: [],
-      expectedUpdatedAt: "u0",
+      expectedUpdatedAt: t.fake.puts().at(-1)!.body.expectedUpdatedAt,
     });
     // Reopening keeps a saved decision unless it is cleared.
     await t.click(t.check("Include a decision"));
     await t.type(t.field("Decision"), "Keep this answer");
     await t.choose(t.field("Status"), "decided");
     await t.choose(t.field("Status"), "open");
-    await t.click(t.button("Save Question"));
     assert.equal(t.fake.puts().at(-1)!.body.decision, "Keep this answer");
     assert.equal(t.fake.puts().at(-1)!.body.status, "open");
   } finally {

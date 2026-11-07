@@ -15,6 +15,8 @@ export type RecordHost = {
   /** The page is in shared-canon mode (never true for book records). */
   canon: boolean;
   busy: boolean;
+  /** An unreloaded 409 holds the page; field saves wait for Reload or Discard. */
+  held?: boolean;
   /** Sends the form's value. True means the server accepted it. */
   save: (value: object) => Promise<boolean>;
   register: (draft: RecordDraft) => () => void;
@@ -220,17 +222,41 @@ export function useFormDraft(
   const dirty = json !== base;
   const current = useRef({ json, base, payload, ...options, host });
   current.current = { json, base, payload, ...options, host };
+  const sending = useRef<{ json: string; job: Promise<boolean> } | null>(null);
   const submit = useCallback(async () => {
     const { payload, canSave, host } = current.current;
     if (!canSave) return false;
     const sent = JSON.stringify(payload);
-    const ok = await host.save(payload);
-    if (ok) {
-      current.current.base = sent;
-      setBase(sent);
+    // A blur and an Enter for the same value send one request.
+    if (sending.current?.json === sent) return sending.current.job;
+    const job = (async () => {
+      const ok = await host.save(payload);
+      if (ok) {
+        current.current.base = sent;
+        setBase(sent);
+      }
+      return ok;
+    })();
+    const mine = { json: sent, job };
+    sending.current = mine;
+    try {
+      return await job;
+    } finally {
+      if (sending.current === mine) sending.current = null;
     }
-    return ok;
   }, []);
+  // Save on leave: a field asks for a save when it loses focus, on Enter, or
+  // when a choice changes. The ask is served after the render that holds the
+  // new value. A new record is only created by its Create button.
+  const [asked, setAsked] = useState(0);
+  const autosave = useCallback(() => {
+    if (!current.current.isNew) setAsked((n) => n + 1);
+  }, []);
+  useEffect(() => {
+    const c = current.current;
+    if (asked && !c.isNew && c.json !== c.base && !c.host.held && !c.host.busy)
+      void submit();
+  }, [asked, submit]);
   const { register, setDirty } = host;
   useEffect(
     () =>
@@ -242,5 +268,5 @@ export function useFormDraft(
     [register, submit],
   );
   useEffect(() => setDirty(dirty), [setDirty, dirty]);
-  return { dirty, submit };
+  return { dirty, submit, autosave };
 }

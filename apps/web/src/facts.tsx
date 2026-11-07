@@ -106,7 +106,13 @@ export function FactForm({
   ) => (
     <label>
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          autosave();
+        }}
+      >
         <option value="">{none}</option>
         {value && !scopedNodes.some((n) => n.id === value) && (
           <option value={value}>
@@ -149,7 +155,7 @@ export function FactForm({
   };
   const canSave =
     !missingScope && !!text.length && !invalidPoint && (!shared || host.canon);
-  const { dirty, submit } = useFormDraft(host, payload, {
+  const { dirty, submit, autosave } = useFormDraft(host, payload, {
     canSave,
     isNew: !fact,
   });
@@ -159,7 +165,21 @@ export function FactForm({
       aria-label={fact ? "Edit Fact" : "New Fact"}
       onSubmit={(e) => {
         e.preventDefault();
-        if (canSave && !host.busy) void submit();
+        if (!fact) {
+          if (canSave && !host.busy) void submit();
+        } else autosave();
+      }}
+      onKeyDown={(e) => {
+        const t = e.target as HTMLElement;
+        if (
+          e.key === "Enter" &&
+          fact &&
+          t.tagName === "INPUT" &&
+          (t as HTMLInputElement).type === "text"
+        ) {
+          e.preventDefault();
+          autosave();
+        }
       }}
     >
       <fieldset disabled={host.busy || readOnly}>
@@ -171,6 +191,7 @@ export function FactForm({
               maxLength={20000}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              onBlur={autosave}
               rows={3}
             />
           </label>
@@ -178,7 +199,10 @@ export function FactForm({
             Truth
             <select
               value={truth}
-              onChange={(e) => setTruth(e.target.value as Fact["truth"])}
+              onChange={(e) => {
+                setTruth(e.target.value as Fact["truth"]);
+                autosave();
+              }}
             >
               <option value="true">True</option>
               <option value="false">Not true</option>
@@ -212,7 +236,10 @@ export function FactForm({
                 <button
                   type="button"
                   aria-label={`Remove about ${entryTitle(catalog, id)}`}
-                  onClick={() => setAbout(about.filter((x) => x !== id))}
+                  onClick={() => {
+                    setAbout(about.filter((x) => x !== id));
+                    autosave();
+                  }}
                 >
                   Remove
                 </button>
@@ -241,6 +268,7 @@ export function FactForm({
             onClick={() => {
               setAbout([...about, addEntry]);
               setAddEntry("");
+              autosave();
             }}
           >
             Add About Entry
@@ -268,9 +296,10 @@ export function FactForm({
               <button
                 type="button"
                 aria-label={`Remove knower ${entryTitle(catalog, k.knower)}`}
-                onClick={() =>
-                  setKnowledge(knowledge.filter((x) => x.knower !== k.knower))
-                }
+                onClick={() => {
+                  setKnowledge(knowledge.filter((x) => x.knower !== k.knower));
+                  autosave();
+                }}
               >
                 Remove Knower
               </button>
@@ -302,6 +331,7 @@ export function FactForm({
                 },
               ]);
               setAddKnower("");
+              autosave();
             }}
           >
             Add Knower
@@ -320,15 +350,16 @@ export function FactForm({
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" onClick={host.discard}>
-            {fact ? "Discard Changes" : "Cancel"}
-          </button>
-          <button
-            className="primary"
-            disabled={!canSave || host.busy || (!!fact && !dirty)}
-          >
-            Save Fact
-          </button>
+          {(!fact || dirty) && (
+            <button type="button" onClick={host.discard}>
+              {fact ? "Discard Changes" : "Cancel"}
+            </button>
+          )}
+          {!fact && (
+            <button className="primary" disabled={!canSave || host.busy}>
+              Create Fact
+            </button>
+          )}
         </div>
       </fieldset>
     </form>

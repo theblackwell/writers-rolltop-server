@@ -48,12 +48,12 @@ test("a new fact keeps every field, who knows it from when, and creates a shared
     )!;
     await t.choose(learns.querySelector("select")!, "chapter");
     assert.equal(
-      t.button("Save Fact")!.disabled,
+      t.button("Create Fact")!.disabled,
       true,
       "a shared fact needs the page switch",
     );
     await t.click(t.button("Edit shared details"));
-    await t.click(t.button("Save Fact"));
+    await t.click(t.button("Create Fact"));
     const post = t.fake.calls.find((c) => c.method === "POST")!;
     assert.deepEqual(post.body, {
       text: "The secret",
@@ -98,15 +98,11 @@ test("a saved point outside the fact's scope is shown and kept until it is clear
     assert.match(t.doc.body.textContent!, /outside selected scope/);
     assert.equal(t.doc.querySelectorAll('option[value="far"]').length, 1);
     await t.type(t.field("Fact"), "Kept, edited");
-    assert.equal(t.button("Save Fact")!.disabled, true);
+    await t.blur(t.field("Fact"));
+    assert.equal(t.fake.puts().length, 0, "a bad point is not saved");
     await t.choose(t.field("Established in"), "");
-    assert.equal(
-      t.button("Save Fact")!.disabled,
-      true,
-      "knowledge point still bad",
-    );
+    assert.equal(t.fake.puts().length, 0, "knowledge point still bad");
     await t.click(t.button("Remove Knower"));
-    await t.click(t.button("Save Fact"));
     assert.deepEqual(t.fake.puts()[0].body, {
       text: "Kept, edited",
       truth: "true",

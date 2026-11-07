@@ -473,3 +473,11 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 241 of 241 pass (228 previous; facts/questions/timeline dialog tests rewritten on the harness; new `records-ui.test.ts` and `records-app-ui.test.ts`, which mounts the real `main.tsx` shell); `npm run build` exit 0 (existing advisory).
 - Not checked in a browser: layout, the 600 px stack, keyboard order, focus, real warnings navigation.
 - Known risks: three extra GETs on each Story Bible mount; a timeline event's `readingPositions` refreshes only when the catalogs reload.
+
+## U4 follow-up — Record save-on-leave (owner decision, 2026-11-07)
+
+- Record pages use the U2 entry model: the Save button is removed. Text fields save on blur or Enter (Enter in single-line inputs); selects, checkboxes and list rows save on change; entry pickers stage a choice and the Add button commits it. Invalid drafts are not sent; a 409 holds field saves until Reload, after which blur saves the held draft or Discard My Changes applies.
+- New records are created only by an explicit "Create Fact/Question/Event" button (Enter submits); leaving never creates one. A dirty new draft still refuses navigation; a clean one leaves freely.
+- `record-editing.tsx` dedupes an identical in-flight send, so Enter then blur sends one PUT.
+- Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 245 of 245 pass (241 previous, plus four new save-model tests in `records-ui.test.ts`); `npm run build` exit 0.
+- Not checked in a browser: real Tab, Enter and blur focus behaviour. Multi-input forms rely on a form-level Enter handler on text inputs.

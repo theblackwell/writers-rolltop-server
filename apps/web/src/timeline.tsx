@@ -144,7 +144,7 @@ export function TimelineEventForm({
     !invalidDate &&
     !unavailableEntry &&
     !unavailableParticipant;
-  const { dirty, submit } = useFormDraft(host, payload, {
+  const { dirty, submit, autosave } = useFormDraft(host, payload, {
     canSave,
     isNew: !event,
   });
@@ -154,20 +154,41 @@ export function TimelineEventForm({
       aria-label={event ? "Edit Event" : "New Event"}
       onSubmit={(e) => {
         e.preventDefault();
-        if (canSave && !host.busy) void submit();
+        if (!event) {
+          if (canSave && !host.busy) void submit();
+        } else autosave();
+      }}
+      onKeyDown={(e) => {
+        const t = e.target as HTMLElement;
+        if (
+          e.key === "Enter" &&
+          event &&
+          t.tagName === "INPUT" &&
+          (t as HTMLInputElement).type === "text"
+        ) {
+          e.preventDefault();
+          autosave();
+        }
       }}
     >
       <fieldset disabled={host.busy || readOnly}>
         <>
           <label>
             Event
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={autosave}
+            />
           </label>
           <label className="entry-toggle">
             <input
               type="checkbox"
               checked={hasSummary}
-              onChange={(e) => setHasSummary(e.target.checked)}
+              onChange={(e) => {
+                setHasSummary(e.target.checked);
+                autosave();
+              }}
             />
             Include a summary
           </label>
@@ -178,6 +199,7 @@ export function TimelineEventForm({
                 rows={3}
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
+                onBlur={autosave}
               />
             </label>
           )}
@@ -203,7 +225,13 @@ export function TimelineEventForm({
           )}
           <label>
             Event entry
-            <select value={entry} onChange={(e) => setEntry(e.target.value)}>
+            <select
+              value={entry}
+              onChange={(e) => {
+                setEntry(e.target.value);
+                autosave();
+              }}
+            >
               <option value="">None</option>
               {entry &&
                 !catalog.entries.some(
@@ -230,7 +258,10 @@ export function TimelineEventForm({
             <input
               type="checkbox"
               checked={hasDate}
-              onChange={(e) => setHasDate(e.target.checked)}
+              onChange={(e) => {
+                setHasDate(e.target.checked);
+                autosave();
+              }}
             />
             Include a story date
           </label>
@@ -242,6 +273,7 @@ export function TimelineEventForm({
                   required
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
+                  onBlur={autosave}
                 />
               </label>
               <label>
@@ -249,6 +281,7 @@ export function TimelineEventForm({
                 <input
                   value={calendar}
                   onChange={(e) => setCalendar(e.target.value)}
+                  onBlur={autosave}
                 />
               </label>
               <label>
@@ -257,6 +290,7 @@ export function TimelineEventForm({
                   inputMode="numeric"
                   value={ordinal}
                   onChange={(e) => setOrdinal(e.target.value)}
+                  onBlur={autosave}
                 />
               </label>
               <p>
@@ -283,7 +317,10 @@ export function TimelineEventForm({
                 <button
                   type="button"
                   aria-label={"Remove scene " + pointTitle(catalog, id)}
-                  onClick={() => setScenes(scenes.filter((x) => x !== id))}
+                  onClick={() => {
+                    setScenes(scenes.filter((x) => x !== id));
+                    autosave();
+                  }}
                 >
                   Remove Scene
                 </button>
@@ -312,6 +349,7 @@ export function TimelineEventForm({
             onClick={() => {
               setScenes([...scenes, addScene]);
               setAddScene("");
+              autosave();
             }}
           >
             Add Scene
@@ -330,6 +368,7 @@ export function TimelineEventForm({
                 <label>
                   {"Role for " + entryTitle(catalog, p.entryId)}
                   <input
+                    onBlur={autosave}
                     value={p.role ?? ""}
                     onChange={(e) =>
                       setParticipants(
@@ -348,15 +387,16 @@ export function TimelineEventForm({
                     aria-label={
                       "Clear role for " + entryTitle(catalog, p.entryId)
                     }
-                    onClick={() =>
+                    onClick={() => {
                       setParticipants(
                         participants.map((x) => {
                           if (x.entryId !== p.entryId) return x;
                           const { role, ...rest } = x;
                           return rest;
                         }),
-                      )
-                    }
+                      );
+                      autosave();
+                    }}
                   >
                     Clear Role
                   </button>
@@ -366,11 +406,12 @@ export function TimelineEventForm({
                   aria-label={
                     "Remove participant " + entryTitle(catalog, p.entryId)
                   }
-                  onClick={() =>
+                  onClick={() => {
                     setParticipants(
                       participants.filter((x) => x.entryId !== p.entryId),
-                    )
-                  }
+                    );
+                    autosave();
+                  }}
                 >
                   Remove Participant
                 </button>
@@ -403,6 +444,7 @@ export function TimelineEventForm({
             onClick={() => {
               setParticipants([...participants, { entryId: addParticipant }]);
               setAddParticipant("");
+              autosave();
             }}
           >
             Add Participant
@@ -420,15 +462,16 @@ export function TimelineEventForm({
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" onClick={host.discard}>
-            {event ? "Discard Changes" : "Cancel"}
-          </button>
-          <button
-            className="primary"
-            disabled={!canSave || host.busy || (!!event && !dirty)}
-          >
-            Save Event
-          </button>
+          {(!event || dirty) && (
+            <button type="button" onClick={host.discard}>
+              {event ? "Discard Changes" : "Cancel"}
+            </button>
+          )}
+          {!event && (
+            <button className="primary" disabled={!canSave || host.busy}>
+              Create Event
+            </button>
+          )}
         </div>
       </fieldset>
     </form>

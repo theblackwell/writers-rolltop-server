@@ -487,6 +487,7 @@ export function RecordPage({
   const host: RecordHost = {
     canon,
     busy,
+    held: !!writer.conflict && !writer.conflict.reloaded,
     save: writer.save,
     register: writer.register,
     setDirty: writer.setDirty,
@@ -573,7 +574,8 @@ export function RecordPage({
             <>
               <p>
                 <strong>Latest version loaded.</strong> Your unsaved changes are
-                still in the fields below. Save them, or discard them.
+                still in the fields below. They save when you leave a field, or
+                you can discard them.
               </p>
               <div className="dialog-actions">
                 <button type="button" onClick={writer.discard}>

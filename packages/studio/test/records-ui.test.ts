@@ -141,10 +141,10 @@ test("a record page saves through the queue with the newest updatedAt", async ()
     await t.type(t.field("Fact"), "The moon is solid");
     assert.equal(status(t), "Not saved");
     assert.equal(t.fake.puts().length, 0, "typing alone does not save");
-    await t.click(t.button("Save Fact"));
+    await t.blur(t.field("Fact"));
     assert.equal(status(t), "Saved");
     await t.type(t.field("Fact"), "The moon is cheese");
-    await t.click(t.button("Save Fact"));
+    await t.blur(t.field("Fact"));
     const [a, b] = t.fake.puts().map((c) => c.body);
     assert.equal(a.expectedUpdatedAt, "u0");
     assert.equal(
@@ -171,7 +171,7 @@ test("a stale write keeps the draft with a Reload path, and a failed flush block
     await t.type(t.field("Fact"), "First, edited");
     t.fake.intercept = (c) =>
       c.method === "PUT" ? jsonError(409, "This fact changed.") : undefined;
-    await t.click(t.button("Save Fact"));
+    await t.blur(t.field("Fact"));
     assert.match(pageText(t), /changed somewhere else/);
     assert.equal(t.field("Fact").value, "First, edited", "the draft stays");
     assert.equal(await t.flush(), false, "leaving is refused");
@@ -182,7 +182,7 @@ test("a stale write keeps the draft with a Reload path, and a failed flush block
     await t.click(t.button("Reload fact"));
     assert.match(pageText(t), /Latest version loaded/);
     assert.equal(t.field("Fact").value, "First, edited");
-    await t.click(t.button("Save Fact"));
+    await t.blur(t.field("Fact"));
     assert.doesNotMatch(pageText(t), /changed somewhere else|Latest version/);
     assert.equal(t.fake.facts[0].text, "First, edited");
     assert.equal(await t.flush(), true);
@@ -216,6 +216,111 @@ test("a draft that cannot be saved blocks the move, and a new record's draft is 
   }
 });
 
+const noSaveButton = (t: T) =>
+  assert.equal(
+    Array.from(t.doc.querySelectorAll(".bible-area button")).filter((b) =>
+      /^Save\b/.test(b.textContent ?? ""),
+    ).length,
+    0,
+    "no Save button on a record page",
+  );
+
+test("record pages have no Save button; a new record has Create, and leaving never creates it", async () => {
+  const t = await setup();
+  try {
+    t.fake.facts = [fact("f1", "First")];
+    t.fake.questions = [question("q1", "Who?")];
+    t.fake.events = [event("e1", "Storm")];
+    for (const [section, id] of [
+      ["fact", "f1"],
+      ["question", "q1"],
+      ["event", "e1"],
+    ]) {
+      await open(t, section, id);
+      noSaveButton(t);
+      await t.click(t.button("＋ New"));
+      noSaveButton(t);
+      assert.ok(t.button("Create "), section + " has a Create button");
+    }
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test("a question saves on blur and Enter with one PUT each, on the newest updatedAt", async () => {
+  const t = await setup();
+  try {
+    t.fake.questions = [question("q1", "Who has the key?")];
+    await open(t, "question", "q1");
+    await t.type(t.field("Question"), "Who holds the key?");
+    await t.blur(t.field("Question"));
+    assert.equal(t.fake.puts().length, 1);
+    await t.type(t.field("Topic"), "Keys");
+    await t.key(t.field("Topic"), "Enter");
+    await t.blur(t.field("Topic"));
+    assert.equal(t.fake.puts().length, 2, "Enter then blur sends one write");
+    assert.deepEqual(
+      t.fake.puts().map((c) => c.body.expectedUpdatedAt),
+      ["u0", "u1"],
+    );
+    assert.equal(t.fake.puts()[1].body.topic, "Keys");
+    await t.blur(t.field("Topic"));
+    assert.equal(t.fake.puts().length, 2, "an unchanged field sends nothing");
+    assert.equal(status(t), "Saved");
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test("a fact's selections, checkboxes and list rows save at once", async () => {
+  const t = await setup();
+  try {
+    t.fake.entries = [entry("Keeper")];
+    t.fake.facts = [fact("f1", "The moon is hollow")];
+    await open(t, "fact", "f1");
+    await t.choose(t.field("Truth"), "false");
+    assert.equal(t.fake.puts().length, 1);
+    assert.equal(t.fake.puts()[0].body.truth, "false");
+    await t.choose(t.field("About entry"), "keeper");
+    assert.equal(t.fake.puts().length, 1, "choosing in the picker alone waits");
+    await t.click(t.button("Add About Entry"));
+    assert.equal(t.fake.puts().length, 2);
+    assert.deepEqual(t.fake.puts()[1].body.entryIds, ["keeper"]);
+    assert.equal(t.fake.puts()[1].body.expectedUpdatedAt, "u1");
+    await t.click(t.button("Remove"));
+    assert.deepEqual(t.fake.puts()[2].body.entryIds, []);
+    assert.equal(status(t), "Saved");
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test("leaving a record saves a valid draft first; an invalid draft or a conflict refuses the move", async () => {
+  const t = await setup();
+  try {
+    t.fake.questions = [question("q1", "One"), question("q2", "Two")];
+    await open(t, "question", "q1");
+    await t.type(t.field("Question"), "One, edited");
+    await t.click(t.row("Two"));
+    assert.equal(t.fake.questions[0].text, "One, edited");
+    assert.equal(t.state.recordId, "q2", "the valid draft saved, then moved");
+    await t.type(t.field("Question"), "");
+    await t.click(t.row("One"));
+    assert.equal(t.state.recordId, "q2", "an invalid draft refuses the move");
+    assert.equal(t.field("Question").value, "");
+    assert.equal(t.fake.puts().length, 1);
+    await t.type(t.field("Question"), "Two, edited");
+    t.fake.intercept = (c) =>
+      c.method === "PUT" ? jsonError(409, "Changed.") : undefined;
+    await t.click(t.row("One"));
+    assert.equal(t.state.recordId, "q2", "a conflict refuses the move");
+    assert.equal(t.field("Question").value, "Two, edited");
+    assert.match(pageText(t), /changed somewhere else/);
+  } finally {
+    await t.cleanup();
+  }
+});
+
 test("a shared record opens in this-book mode and needs the page switch before a shared write", async () => {
   const t = await setup();
   try {
@@ -244,7 +349,7 @@ test("a shared record opens in this-book mode and needs the page switch before a
       1,
     );
     await t.type(t.field("Fact"), "Shared one, edited");
-    await t.click(t.button("Save Fact"));
+    await t.blur(t.field("Fact"));
     assert.deepEqual(t.fake.puts()[0].body.editSharedCanon, true);
     // Canon mode belongs to one record.
     await t.click(t.row("Shared two"));
@@ -259,7 +364,7 @@ test("a shared record opens in this-book mode and needs the page switch before a
     await t.remount();
     await t.click(t.row("Mine"));
     await t.type(t.field("Fact"), "Mine, edited");
-    await t.click(t.button("Save Fact"));
+    await t.blur(t.field("Fact"));
     assert.equal(t.fake.puts().at(-1)!.body.editSharedCanon, undefined);
     assert.equal(t.doc.querySelector('[aria-label="Shared canon"]'), null);
   } finally {
@@ -278,10 +383,10 @@ test("a new shared record needs the page switch, and trashing a shared record se
     assert.equal(t.doc.querySelector('[aria-label="Shared canon"]'), null);
     await t.choose(t.field("Scope"), "universe");
     assert.match(pageText(t), /will be shared across the world/);
-    assert.ok(disabled(t.button("Save Question")!));
+    assert.ok(disabled(t.button("Create Question")!));
     await t.click(t.button("Edit shared details"));
-    assert.ok(!disabled(t.button("Save Question")!));
-    await t.click(t.button("Save Question"));
+    assert.ok(!disabled(t.button("Create Question")!));
+    await t.click(t.button("Create Question"));
     const post = t.fake.calls.find((c) => c.method === "POST")!;
     assert.equal(post.body.scopeKind, "universe");
     assert.equal(post.body.editSharedCanon, undefined, "create sends no flag");

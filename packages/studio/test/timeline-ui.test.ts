@@ -40,9 +40,9 @@ test("a new event keeps date, calendar, order, scenes, entry and roles, and a sh
       l.textContent?.startsWith("Role for"),
     )!.firstChild!.textContent!;
     await t.type(t.field(role), "Witness");
-    assert.equal(t.button("Save Event")!.disabled, true);
+    assert.equal(t.button("Create Event")!.disabled, true);
     await t.click(t.button("Edit shared details"));
-    await t.click(t.button("Save Event"));
+    await t.click(t.button("Create Event"));
     const post = t.fake.calls.find((c) => c.method === "POST")!;
     assert.deepEqual(post.body, {
       title: "Storm",
@@ -83,29 +83,29 @@ test("the order number must be a whole number, and saved links that no longer fi
     assert.match(t.doc.body.textContent!, /outside selected scope/);
     assert.match(t.doc.body.textContent!, /Unavailable entry/);
     await t.type(t.field("Event"), "Kept, edited");
-    assert.equal(t.button("Save Event")!.disabled, true);
+    await t.blur(t.field("Event"));
     await t.choose(t.field("Event entry"), "");
     await t.click(t.button("Remove Scene"));
+    assert.equal(t.fake.puts().length, 0, "a saved bad link blocks saving");
     await t.click(t.button("Remove Participant"));
-    for (const [bad, ok] of [
-      ["1.5", false],
-      ["9007199254740992", false],
-      ["0", true],
-    ] as const) {
+    assert.equal(t.fake.puts().length, 1, "the fixed draft saves at once");
+    // "0" is the saved order number, so it needs no write.
+    for (const bad of ["1.5", "9007199254740992", "0"]) {
+      const before = t.fake.puts().length;
       await t.type(t.field("Order number"), bad);
-      assert.equal(t.button("Save Event")!.disabled, !ok, bad);
+      await t.blur(t.field("Order number"));
+      assert.equal(t.fake.puts().length, before, bad);
     }
     await t.click(t.check("Include a summary"));
     await t.click(t.check("Include a story date"));
-    await t.click(t.button("Save Event"));
-    assert.deepEqual(t.fake.puts()[0].body, {
+    assert.deepEqual(t.fake.puts().at(-1)!.body, {
       title: "Kept, edited",
       summary: null,
       when: null,
       entryId: null,
       sceneIds: [],
       participants: [],
-      expectedUpdatedAt: "u0",
+      expectedUpdatedAt: "u2",
     });
   } finally {
     await t.cleanup();

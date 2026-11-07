@@ -105,7 +105,13 @@ export function QuestionForm({
   ) => (
     <label>
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          autosave();
+        }}
+      >
         <option value="">{none}</option>
         {value && !scopedNodes.some((n) => n.id === value) && (
           <option value={value}>
@@ -141,7 +147,7 @@ export function QuestionForm({
   };
   const canSave =
     !missingScope && !!text.length && !invalidPoint && (!shared || host.canon);
-  const { dirty, submit } = useFormDraft(host, payload, {
+  const { dirty, submit, autosave } = useFormDraft(host, payload, {
     canSave,
     isNew: !question,
   });
@@ -151,7 +157,21 @@ export function QuestionForm({
       aria-label={question ? "Edit Question" : "New Question"}
       onSubmit={(e) => {
         e.preventDefault();
-        if (canSave && !host.busy) void submit();
+        if (!question) {
+          if (canSave && !host.busy) void submit();
+        } else autosave();
+      }}
+      onKeyDown={(e) => {
+        const t = e.target as HTMLElement;
+        if (
+          e.key === "Enter" &&
+          question &&
+          t.tagName === "INPUT" &&
+          (t as HTMLInputElement).type === "text"
+        ) {
+          e.preventDefault();
+          autosave();
+        }
       }}
     >
       <fieldset disabled={host.busy || readOnly}>
@@ -163,6 +183,7 @@ export function QuestionForm({
               maxLength={20000}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              onBlur={autosave}
               rows={3}
             />
           </label>
@@ -172,13 +193,17 @@ export function QuestionForm({
               maxLength={64}
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
+              onBlur={autosave}
             />
           </label>
           <label>
             Status
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value as Question["status"])}
+              onChange={(e) => {
+                setStatus(e.target.value as Question["status"]);
+                autosave();
+              }}
             >
               <option value="open">Open</option>
               <option value="decided">Decided</option>
@@ -188,7 +213,10 @@ export function QuestionForm({
             <input
               type="checkbox"
               checked={hasDecision}
-              onChange={(e) => setHasDecision(e.target.checked)}
+              onChange={(e) => {
+                setHasDecision(e.target.checked);
+                autosave();
+              }}
             />
             Include a decision
           </label>
@@ -200,6 +228,7 @@ export function QuestionForm({
                 rows={3}
                 value={decision}
                 onChange={(e) => setDecision(e.target.value)}
+                onBlur={autosave}
               />
             </label>
           )}
@@ -230,7 +259,10 @@ export function QuestionForm({
                 <button
                   type="button"
                   aria-label={`Remove about ${entryTitle(catalog, id)}`}
-                  onClick={() => setAbout(about.filter((x) => x !== id))}
+                  onClick={() => {
+                    setAbout(about.filter((x) => x !== id));
+                    autosave();
+                  }}
                 >
                   Remove
                 </button>
@@ -259,6 +291,7 @@ export function QuestionForm({
             onClick={() => {
               setAbout([...about, addEntry]);
               setAddEntry("");
+              autosave();
             }}
           >
             Add About Entry
@@ -277,15 +310,16 @@ export function QuestionForm({
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" onClick={host.discard}>
-            {question ? "Discard Changes" : "Cancel"}
-          </button>
-          <button
-            className="primary"
-            disabled={!canSave || host.busy || (!!question && !dirty)}
-          >
-            Save Question
-          </button>
+          {(!question || dirty) && (
+            <button type="button" onClick={host.discard}>
+              {question ? "Discard Changes" : "Cancel"}
+            </button>
+          )}
+          {!question && (
+            <button className="primary" disabled={!canSave || host.busy}>
+              Create Question
+            </button>
+          )}
         </div>
       </fieldset>
     </form>
