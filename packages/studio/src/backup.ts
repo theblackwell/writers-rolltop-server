@@ -26,11 +26,13 @@ export const backupTables = [
   "continuity_events",
   "state_changes",
   "bible_exports",
+  "library_attachments",
+  "library_portable",
 ] as const;
 export type BookBackup = {
   format: "writers-rolltop/book-recovery";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
-  schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  schemaVersion: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
   createdAt: string;
   bookId: string;
   tables: Record<string, any[]>;
@@ -46,21 +48,29 @@ export async function captureBook(
   const book = (await q("SELECT * FROM books WHERE id=$1 FOR UPDATE", [bookId]))
     .rows[0];
   if (!book) throw new Error("Book no longer exists.");
+  return captureLibrary(q, book.library_id, bookId);
+}
+/** Whole-library recovery also supports libraries without books, for portable replacement. */
+export async function captureLibrary(
+  q: Query,
+  libraryId: string,
+  receiptId = libraryId,
+): Promise<BookBackup> {
   // Existing writers lock book before library. NOWAIT avoids a cycle with a
   // writer already holding another book while waiting for this library.
   await q(
     "SELECT id FROM books WHERE library_id=$1 ORDER BY id FOR UPDATE NOWAIT",
-    [book.library_id],
+    [libraryId],
   );
   const tables: Record<string, any[]> = {};
   tables.libraries = (
-    await q("SELECT * FROM libraries WHERE id=$1 FOR UPDATE", [book.library_id])
+    await q("SELECT * FROM libraries WHERE id=$1 FOR UPDATE", [libraryId])
   ).rows;
   // A book could have been created between the first sweep and library lock.
   tables.books = (
     await q(
       "SELECT * FROM books WHERE library_id=$1 ORDER BY id FOR UPDATE NOWAIT",
-      [book.library_id],
+      [libraryId],
     )
   ).rows;
   for (const table of [
@@ -76,9 +86,11 @@ export async function captureBook(
     "continuity_events",
     "state_changes",
     "bible_exports",
+    "library_attachments",
+    "library_portable",
   ])
     tables[table] = (
-      await q(`SELECT * FROM ${table} WHERE library_id=$1`, [book.library_id])
+      await q(`SELECT * FROM ${table} WHERE library_id=$1`, [libraryId])
     ).rows;
   const bookIds = tables.books.map((b) => b.id);
   for (const table of ["manuscript_nodes", "notes"])
@@ -101,10 +113,10 @@ export async function captureBook(
     throw new Error("Recovery cannot omit an externally referenced entry.");
   return {
     format: "writers-rolltop/book-recovery",
-    version: 10,
-    schemaVersion: 12,
+    version: 11,
+    schemaVersion: 13,
     createdAt: new Date().toISOString(),
-    bookId,
+    bookId: receiptId,
     tables,
   };
 }
@@ -132,10 +144,13 @@ function validateBackup(data: BookBackup) {
   const beforeState = data?.version === 8 && data?.schemaVersion === 10;
   const current =
     (data?.version === 9 && data?.schemaVersion === 11) ||
-    (data?.version === 10 && data?.schemaVersion === 12);
+    (data?.version === 10 && data?.schemaVersion === 12) ||
+    (data?.version === 11 && data?.schemaVersion === 13);
   const compatibleTables = backupTables.filter(
     (t) =>
-      (data?.version === 10 || t !== "bible_exports") &&
+      (data?.version === 11 ||
+        !["library_attachments", "library_portable"].includes(t)) &&
+      (data?.version === 10 || data?.version === 11 || t !== "bible_exports") &&
       (current || t !== "state_changes") &&
       (current || beforeState || t !== "continuity_events") &&
       (current || beforeState || beforeEvents || t !== "questions") &&
@@ -215,6 +230,10 @@ export async function restoreBookBackup(q: Query, backup: BookBackup) {
     if ((await q(`SELECT 1 FROM ${table} LIMIT 1`)).rows.length)
       throw new Error("Recovery requires an empty scratch database.");
   }
+  await insertRecoveryRows(q, backup);
+}
+/** Internal validated library installation; caller owns all required locks and rollback. */
+export async function insertRecoveryRows(q: Query, backup: BookBackup) {
   // Insert parents first even when SQL returned children in arbitrary order.
   const pending = [...backup.tables.manuscript_nodes];
   const nodes: any[] = [];

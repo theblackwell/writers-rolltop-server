@@ -29,16 +29,17 @@ Tiptap with Document, Text, Paragraph, Heading (1–6), HardBreak, HorizontalRul
 
 Copyright 2026 The Black Well Foundry. Licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). If you run a modified version for other people over a network, you must offer them its source.
 
-The data format itself is specified separately under Apache-2.0 in `writers-rolltop-spec`, so any software, open or proprietary, can read and write Writers Rolltop projects. The vendored files under `packages/document-adapter/fixtures/` come from that repository and remain under Apache-2.0. The license doesn't grant rights to the "Writers Rolltop" name or logos.
+The data format itself is specified separately under Apache-2.0 in `writers-rolltop-spec`, so any software, open or proprietary, can read and write Writers Rolltop projects. The vendored files under `packages/document-adapter/fixtures/`, `packages/studio/fixtures/` and `packages/studio/schemas/` come from that repository and remain under Apache-2.0; see `packages/studio/SPEC-LICENSE` and `SPEC-NOTICE`. The license doesn't grant rights to the "Writers Rolltop" name or logos.
 
 **Contributions:** a contribution policy (with a contributor license agreement) is being prepared. External pull requests can't be accepted until it's published.
 
 ## M3 development (2026-11-03)
 
-The first manuscript slice is now under development: React/Tiptap web workspace,
-PostgreSQL API, single-owner login, canonical JSON saves with revision-conflict
-protection, and OCI containers for **Docker or Podman**. This is not a complete M3
-release; bible/continuity, attachments and portable archives remain required.
+The M3 implementation includes the React/Tiptap workspace, PostgreSQL API,
+single-owner login, revision-checked canonical saves, bible/continuity editing,
+portable archives and attachments, with OCI containers for **Docker or Podman**.
+Final responsive/accessibility/security review, x86-64 runtime checks and owner
+sign-off remain before release.
 
 Start with [container setup](docs/SETUP.md), [implementation plan](docs/M3-PLAN.md)
 and `npm run check`, `npm test`, `npm run build` from this repository's root.

@@ -95,7 +95,7 @@ test("as-of matches native earlier books → override → current changes, stabl
     "canon",
   );
 });
-test("state value types preserve false, zero, empty arrays/text and exact decimals; reject null and unsupported attachments", () => {
+test("state value types preserve false, zero, empty arrays/text and exact decimals; reject null and malformed attachment hashes", () => {
   for (const [field, value] of [
     [{ fieldType: "boolean" }, false],
     [{ fieldType: "integer" }, 0],
@@ -106,6 +106,7 @@ test("state value types preserve false, zero, empty arrays/text and exact decima
     [{ fieldType: "fictionalDate" }, { label: "Day", ordinal: 0 }],
     [{ fieldType: "table" }, { columns: [""], rows: [[""]] }],
     [{ fieldType: "realDate" }, "2000-02-29"],
+    [{ fieldType: "attachment" }, "a".repeat(64)],
   ] as any[])
     assert.equal(stateValueError(field, value), undefined);
   for (const [field, value] of [

@@ -1,0 +1,106 @@
+[
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "id" : "d0000001-0000-4000-8000-000000000001",
+    "orderKey" : "9",
+    "participants" : [
+      {
+        "entryId" : "b0000005-0000-4000-8000-000000000005",
+        "role" : "founders"
+      }
+    ],
+    "sceneIds" : [
+
+    ],
+    "scope" : {
+      "id" : "20000001-0000-4000-8000-000000000001",
+      "kind" : "universe"
+    },
+    "title" : "Founding of the Archive",
+    "updatedAt" : "2026-11-02T12:00:00Z",
+    "when" : {
+      "calendar" : "Lantern Reckoning",
+      "label" : "Year 1 of the Lantern Reckoning",
+      "ordinal" : 1
+    }
+  },
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "id" : "d0000002-0000-4000-8000-000000000002",
+    "orderKey" : "9",
+    "participants" : [
+      {
+        "entryId" : "b0000001-0000-4000-8000-000000000001",
+        "role" : "recipient"
+      },
+      {
+        "entryId" : "b0000002-0000-4000-8000-000000000002"
+      }
+    ],
+    "sceneIds" : [
+      "50000006-0000-4000-8000-000000000006"
+    ],
+    "scope" : {
+      "id" : "40000001-0000-4000-8000-000000000001",
+      "kind" : "book"
+    },
+    "title" : "Mara receives the letter",
+    "updatedAt" : "2026-11-02T12:00:00Z",
+    "when" : {
+      "calendar" : "Lantern Reckoning",
+      "label" : "Spring, Year 412",
+      "ordinal" : 412
+    }
+  },
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "entryId" : "b0000009-0000-4000-8000-000000000009",
+    "id" : "d0000003-0000-4000-8000-000000000003",
+    "orderKey" : "i",
+    "participants" : [
+      {
+        "entryId" : "b0000001-0000-4000-8000-000000000001"
+      },
+      {
+        "entryId" : "b0000002-0000-4000-8000-000000000002",
+        "role" : "lost"
+      }
+    ],
+    "sceneIds" : [
+      "5000000b-0000-4000-8000-00000000000b"
+    ],
+    "scope" : {
+      "id" : "30000001-0000-4000-8000-000000000001",
+      "kind" : "series"
+    },
+    "title" : "The archive burns",
+    "updatedAt" : "2026-11-02T12:00:00Z",
+    "when" : {
+      "calendar" : "Lantern Reckoning",
+      "label" : "Winter, Year 419",
+      "ordinal" : 419
+    }
+  },
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "id" : "d0000004-0000-4000-8000-000000000004",
+    "orderKey" : "9",
+    "participants" : [
+      {
+        "entryId" : "b000000a-0000-4000-8000-00000000000a"
+      }
+    ],
+    "sceneIds" : [
+      "5000000d-0000-4000-8000-00000000000d"
+    ],
+    "scope" : {
+      "id" : "40000003-0000-4000-8000-000000000003",
+      "kind" : "book"
+    },
+    "title" : "Fleet leaves port",
+    "updatedAt" : "2026-11-02T12:00:00Z",
+    "when" : {
+      "label" : "Day 1"
+    }
+  }
+]

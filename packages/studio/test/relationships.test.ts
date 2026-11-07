@@ -463,8 +463,8 @@ test("book purge cleans dependent relationships after whole-library backup and r
     );
     assert.equal(after.relationshipTypes.length, 1);
     const snapshot = await readBookBackup(join(dir, receipt.backup));
-    assert.equal(snapshot.version, 10);
-    assert.equal(snapshot.schemaVersion, 12);
+    assert.equal(snapshot.version, 11);
+    assert.equal(snapshot.schemaVersion, 13);
     assert.equal(snapshot.tables.relationships.length, 4);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q(`DELETE FROM ${t}`);

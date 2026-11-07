@@ -1,3 +1,4 @@
+import { AttachmentField } from "./attachments.tsx";
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
@@ -521,7 +522,16 @@ export function StateChangeForm({
           </button>
         </>
       ) : field ? (
-        referenceTypes.includes(field.fieldType) ? (
+        field.fieldType === "attachment" ? (
+          <AttachmentField
+            bookId={catalog.book.id}
+            value={change?.fieldId === fieldId ? change.value : undefined}
+            busy={gated}
+            allowClear={false}
+            onCancel={onCancel}
+            onSave={save}
+          />
+        ) : referenceTypes.includes(field.fieldType) ? (
           <ReferenceField
             key={fieldId}
             field={field}

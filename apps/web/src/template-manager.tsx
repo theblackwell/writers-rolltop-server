@@ -38,7 +38,7 @@ const names: Record<string, string> = {
   fictionalDate: "Story date",
   entryReference: "Single entry link",
   entryReferences: "Multiple entry links",
-  attachment: "Attachment (values coming later)",
+  attachment: "Attachment",
   table: "Table",
   worldRule: "World rule",
 };

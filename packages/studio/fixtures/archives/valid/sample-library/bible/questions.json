@@ -1,0 +1,53 @@
+[
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "entryIds" : [
+      "b0000001-0000-4000-8000-000000000001"
+    ],
+    "id" : "f0000301-0000-4000-8000-000000000301",
+    "nodeId" : "50000005-0000-4000-8000-000000000005",
+    "orderKey" : "h",
+    "scope" : {
+      "id" : "30000001-0000-4000-8000-000000000001",
+      "kind" : "series"
+    },
+    "status" : "open",
+    "text" : "Who delivered the letter?",
+    "topic" : "The letter",
+    "updatedAt" : "2026-11-02T12:00:00Z"
+  },
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "decision" : "No. He dies when the archive burns.",
+    "entryIds" : [
+      "b0000002-0000-4000-8000-000000000002",
+      "b0000009-0000-4000-8000-000000000009"
+    ],
+    "id" : "f0000302-0000-4000-8000-000000000302",
+    "orderKey" : "p",
+    "scope" : {
+      "id" : "30000001-0000-4000-8000-000000000001",
+      "kind" : "series"
+    },
+    "status" : "decided",
+    "text" : "Does Corin survive The Salt Archive?",
+    "topic" : "Corin",
+    "updatedAt" : "2026-11-02T12:00:00Z"
+  },
+  {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "deletedAt" : "2026-11-02T12:00:00Z",
+    "entryIds" : [
+
+    ],
+    "id" : "f0000303-0000-4000-8000-000000000303",
+    "orderKey" : "t",
+    "scope" : {
+      "id" : "20000001-0000-4000-8000-000000000001",
+      "kind" : "universe"
+    },
+    "status" : "open",
+    "text" : "Rename the coast?",
+    "updatedAt" : "2026-11-02T12:00:00Z"
+  }
+]

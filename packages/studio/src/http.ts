@@ -1,4 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { PortableImports, exportPortable } from "./portable.ts";
+import {
+  attachmentCatalog,
+  uploadAttachment,
+  downloadAttachment,
+  attachToRecord,
+} from "./attachments.ts";
 import {
   bibleExports,
   createBibleExport,
@@ -103,6 +110,7 @@ export function studioServer(
   const failures = new Map<string, { count: number; until: number }>();
   const cookie = (token: string, age: number) =>
     `rolltop_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? "; Secure" : ""}`;
+  const portableImports = new PortableImports(store);
   return createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -269,6 +277,118 @@ export function studioServer(
           method === "GET"
             ? await eventCatalog(store.db, parts[1])
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
+        );
+      }
+      const binary = async (limit: number) => {
+        let size = 0;
+        const chunks: Buffer[] = [];
+        for await (const c of req) {
+          size += c.length;
+          if (size > limit)
+            throw new StudioError(
+              413,
+              "TOO_LARGE",
+              "The uploaded file exceeds this server's upload limit.",
+            );
+          chunks.push(c);
+        }
+        return Buffer.concat(chunks);
+      };
+      const download = (
+        bytes: Buffer,
+        filename: string,
+        type = "application/octet-stream",
+      ) => {
+        res.writeHead(200, {
+          "Content-Type": type,
+          "Content-Disposition": `attachment; filename="${filename.replace(/[^A-Za-z0-9._-]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, (c) => "%" + c.charCodeAt(0).toString(16))}`,
+          "Content-Length": bytes.length,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "sandbox",
+        });
+        res.end(bytes);
+      };
+      if (parts[0] === "archive-imports") {
+        if (parts.length === 1 && method === "POST")
+          return respond(
+            res,
+            200,
+            await portableImports.preview(await binary(256 * 1024 * 1024)),
+          );
+        if (
+          parts.length === 3 &&
+          method === "POST" &&
+          ["commit", "cancel"].includes(parts[2])
+        ) {
+          if (!uuid.test(parts[1]))
+            throw new StudioError(
+              400,
+              "INVALID_ID",
+              "Choose a valid import preview.",
+            );
+          const input = await body(req);
+          return respond(
+            res,
+            200,
+            parts[2] === "cancel"
+              ? portableImports.cancel(parts[1])
+              : await portableImports.commit(parts[1], input),
+          );
+        }
+      }
+      if (
+        parts[0] === "libraries" &&
+        parts[2] === "archive" &&
+        parts.length === 3 &&
+        method === "GET"
+      ) {
+        download(
+          await exportPortable(store, parts[1]),
+          "Library-" + parts[1] + ".rolltop",
+        );
+        return;
+      }
+      if (parts[0] === "libraries" && parts[2] === "attachments") {
+        if (parts.length === 3 && method === "GET")
+          return respond(res, 200, await attachmentCatalog(store.db, parts[1]));
+        if (parts.length === 3 && method === "POST")
+          return respond(
+            res,
+            201,
+            await uploadAttachment(
+              store.db,
+              parts[1],
+              await binary(250 * 1024 * 1024),
+              url.searchParams.get("name") ?? "Attachment",
+              url.searchParams.get("mediaType") ?? "application/octet-stream",
+            ),
+          );
+        if (parts.length === 4 && method === "GET") {
+          const a = await downloadAttachment(store.db, parts[1], parts[3]);
+          download(a.bytes, a.data.originalName ?? a.data.sha256);
+          return;
+        }
+      }
+      if (
+        parts[0] === "books" &&
+        method === "PUT" &&
+        ((parts.length === 3 && parts[2] === "cover") ||
+          (parts.length === 5 &&
+            parts[2] === "entries" &&
+            parts[4] === "attachments"))
+      ) {
+        if (parts.length === 5 && !uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid entry.");
+        return respond(
+          res,
+          200,
+          await attachToRecord(
+            store.db,
+            parts[1],
+            await body(req),
+            parts.length === 5 ? parts[3] : undefined,
+          ),
         );
       }
       if (parts[0] === "books" && parts[2] === "bible-exports") {
@@ -821,6 +941,14 @@ export function studioServer(
       if (e instanceof DocumentError)
         return respond(res, 400, {
           error: { code: e.code, message: e.message },
+        });
+      if (["55P03", "40P01"].includes((e as any)?.code))
+        return respond(res, 409, {
+          error: {
+            code: "LIBRARY_BUSY",
+            message:
+              "This library is being edited. Nothing was committed; retry after the other operation finishes.",
+          },
         });
       // No SQL, connection strings, content, passwords or session tokens in logs/responses.
       respond(res, 500, {

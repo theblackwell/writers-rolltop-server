@@ -21,7 +21,7 @@ Codex edits Server only; Apple belongs to Claude. No format changes are needed f
 
 ## Current limits
 
-This is the beginning of M3, not a complete web edition. Features in later slices must be labelled unavailable; no fake archive buttons or lossy text imports. Browser drafts and server revisions are separate from the future M4 sync protocol. No claim of seamless simultaneous editing or end-to-end encryption.
+M3 implementation now includes the bible/continuity and portable-library sections; final acceptance remains open. Features in later slices must be labelled unavailable; no fake archive buttons or lossy text imports. Browser drafts and server revisions are separate from the future M4 sync protocol. No claim of seamless simultaneous editing or end-to-end encryption.
 
 ## Sections (one per session, owner rule 2026-11-04)
 
@@ -88,3 +88,5 @@ Continue delivery steps 3–5 above in separately sized sections after library e
 ## Final container delivery requirement
 
 Owner requirement (2026-11-04): ship both `linux/arm64` and `linux/amd64` (x86-64) images. Verify the multi-platform build and run the container smoke suite on each architecture before M3 sign-off. ARM-only local verification is insufficient.
+
+- **P1 — Portable archives and attachments: implemented 2026-11-06.** Owner requested the complete feature together. Vendored v1 schema/all25 native archive fixtures, bounded hostile-ZIP/JSON/schema/integrity/document/checksum validation, read-only preview, default new-library installation, explicit fresh-preview replacement after durable backup, preserved IDs/opaque optional fields and exact attachment bytes. Library → Portable Archives and Library Attachments, typed attachment values/history, entry links and book covers; auth/origin/CAS/shared consent and retained failed choices. Schema13/recovery11 accepts legacy1–10. Native CLI round trip,196 tests/TypeScript/build, mounted UI, live scratch browser and packaged ARM64 PostgreSQL smoke verified. No Spec change. **Next: remaining M3 acceptance**, including responsive/accessibility/security review, owner/Claude review and x86-64 runtime verification; no acceptance implementation started here.

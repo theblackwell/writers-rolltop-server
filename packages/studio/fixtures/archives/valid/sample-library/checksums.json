@@ -1,0 +1,120 @@
+{
+  "algorithm" : "sha256",
+  "files" : [
+    {
+      "byteLength" : 737,
+      "path" : "attachments.json",
+      "sha256" : "97c8e9766dd790e6339a9541759c6bff066cd0ae23258a15d33e69367a8f8555"
+    },
+    {
+      "byteLength" : 78,
+      "path" : "attachments/17342010a58201b2eb4140b10f752e2e0feae4b7952f37b16082ecfb0ad58739",
+      "sha256" : "17342010a58201b2eb4140b10f752e2e0feae4b7952f37b16082ecfb0ad58739"
+    },
+    {
+      "byteLength" : 171,
+      "path" : "attachments/60cecdc199783a603e055c91e855eee8628a67fdf8ffb3e7353bcf76e9ad6ade.svg",
+      "sha256" : "60cecdc199783a603e055c91e855eee8628a67fdf8ffb3e7353bcf76e9ad6ade"
+    },
+    {
+      "byteLength" : 69,
+      "path" : "attachments/f3041abf66c8f86cb98174c81cfb53fd97a18be4fbae2673838aaa93b33b7d27.png",
+      "sha256" : "f3041abf66c8f86cb98174c81cfb53fd97a18be4fbae2673838aaa93b33b7d27"
+    },
+    {
+      "byteLength" : 9825,
+      "path" : "bible/entries.json",
+      "sha256" : "d6ee1331fca7ff48e08b406e53a56b286131d830d6d4a239181630e8888eb16b"
+    },
+    {
+      "byteLength" : 2691,
+      "path" : "bible/facts.json",
+      "sha256" : "205b31a0fa019cad9ce3294670fdd616b69d79df08a9b5153d5aa454f6f682b0"
+    },
+    {
+      "byteLength" : 9525,
+      "path" : "bible/fields.json",
+      "sha256" : "97931dd56151d2b5d393972824a78fcd5267d34a8e22b7fec7d8282a6770e568"
+    },
+    {
+      "byteLength" : 1420,
+      "path" : "bible/questions.json",
+      "sha256" : "17aebd43eac0c95dfd6a51691c5dfed6d22147dae5468f3332a294d9cd4fa89f"
+    },
+    {
+      "byteLength" : 1892,
+      "path" : "bible/relationships.json",
+      "sha256" : "e0a97c79e8c3676a51de17ccd35d2f25c85e27ed8a91073d70d10078e66d004e"
+    },
+    {
+      "byteLength" : 2422,
+      "path" : "bible/templates.json",
+      "sha256" : "0f8194af7c0453bb8b3b1c4410d594977a9a212b636ae6c4822e5da7356fa890"
+    },
+    {
+      "byteLength" : 2585,
+      "path" : "continuity/events.json",
+      "sha256" : "36f052979483cbbfed247423cfec742e50722b84820ca1989a82f8f9c1af25fb"
+    },
+    {
+      "byteLength" : 1074,
+      "path" : "continuity/state_changes.json",
+      "sha256" : "c628b9f9680f4d6c05ba1b90b71866a16d0b1508d4199c80e1b76aa5bc1eaf6e"
+    },
+    {
+      "byteLength" : 7469,
+      "path" : "library.json",
+      "sha256" : "408b079364ca89a7aa342de9ae69408e9b7db4f541ee361236861e2c892e2506"
+    },
+    {
+      "byteLength" : 477,
+      "path" : "manuscript/50000001-0000-4000-8000-000000000001.json",
+      "sha256" : "7ca1611cf55e1ab2174bae13bc02fc99390619fe1a057fc4e734267c500295bf"
+    },
+    {
+      "byteLength" : 355,
+      "path" : "manuscript/50000003-0000-4000-8000-000000000003.json",
+      "sha256" : "286dabc90f91164c8b7188b55f443221c8a2f2f5f811fca8be333e5a9423012e"
+    },
+    {
+      "byteLength" : 2087,
+      "path" : "manuscript/50000006-0000-4000-8000-000000000006.json",
+      "sha256" : "abd6aeeb5c10a496f8f3ebc5715bf74b1dcb211ca9dfa853f9eda4c88ef17304"
+    },
+    {
+      "byteLength" : 2724,
+      "path" : "manuscript/50000007-0000-4000-8000-000000000007.json",
+      "sha256" : "a802020146e75834e6fb3444aad25d106f37e94c675e872871ccdc4ec48ae597"
+    },
+    {
+      "byteLength" : 706,
+      "path" : "manuscript/50000008-0000-4000-8000-000000000008.json",
+      "sha256" : "26b396f294ea4ec6c1ca931fc2207a3a2344168102fed1e923e4ea97a9c50b9b"
+    },
+    {
+      "byteLength" : 369,
+      "path" : "manuscript/50000009-0000-4000-8000-000000000009.json",
+      "sha256" : "edd2da2bdb70122e89917cd4d0c27bc5b3a7b1e052bce6fe83bb8a74b8aae9be"
+    },
+    {
+      "byteLength" : 685,
+      "path" : "manuscript/5000000b-0000-4000-8000-00000000000b.json",
+      "sha256" : "8e4c70ce5689dbc2eb1fbab2ac8090e671c0a761b246d3202afc228c6ccbad85"
+    },
+    {
+      "byteLength" : 588,
+      "path" : "manuscript/5000000d-0000-4000-8000-00000000000d.json",
+      "sha256" : "bacf2463f711132475846dca669d67e390972e2edc70b6005c69e1c10e321015"
+    },
+    {
+      "byteLength" : 1323,
+      "path" : "notes.json",
+      "sha256" : "1078876431944e25da93686c56eee93135b4636e3fd54b4715d39b378993bc8c"
+    },
+    {
+      "byteLength" : 1247,
+      "path" : "references.json",
+      "sha256" : "4da293e4d6ecd700795f6ce5662347cf2a91f879d9f6af2b3d2a91266cd34312"
+    }
+  ]
+}

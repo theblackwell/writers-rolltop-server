@@ -1,3 +1,4 @@
+import { AttachmentField, EntryAttachments } from "./attachments.tsx";
 // SPDX-License-Identifier: AGPL-3.0-only
 import {
   ReferenceField,
@@ -118,6 +119,7 @@ export function EntryFields({
         </>
       )}
 
+      <EntryAttachments bookId={bookId} entry={entry} onSaved={onSaved} />
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -215,6 +217,7 @@ export function EntryFields({
                 </button>
               )}
             {[
+              "attachment",
               "shortText",
               "longText",
               "integer",
@@ -239,7 +242,21 @@ export function EntryFields({
         ))}
       </ul>
       {field &&
-        (referenceTypes.includes(field.fieldType) ? (
+        (field.fieldType === "attachment" ? (
+          <AttachmentField
+            key={field.id}
+            bookId={bookId}
+            value={values[field.id]}
+            busy={busy}
+            onCancel={() => setFieldId("")}
+            onSave={(value) =>
+              save(`values/${field.id}`, {
+                value,
+                expectedFieldUpdatedAt: field.updatedAt,
+              })
+            }
+          />
+        ) : referenceTypes.includes(field.fieldType) ? (
           <ReferenceField
             key={field.id}
             field={field}

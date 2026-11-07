@@ -873,6 +873,43 @@ try {
     ),
   );
 
+  console.log(
+    await compose(
+      "exec",
+      "-T",
+      "studio",
+      "node",
+      "--input-type=module",
+      "-e",
+      `
+    import assert from 'node:assert/strict';
+    import {readFile} from 'node:fs/promises';
+    import {postgres} from './packages/studio/src/postgres.ts';
+    import {StudioStore} from './packages/studio/src/store.ts';
+    import {PortableImports,exportPortable} from './packages/studio/src/portable.ts';
+    import {readArchive} from './packages/studio/src/archive-validation.ts';
+    import {uploadAttachment,downloadAttachment} from './packages/studio/src/attachments.ts';
+    import {readBookBackup} from './packages/studio/src/backup.ts';
+    const db=postgres(process.env.DATABASE_URL),store=new StudioStore(db,'/studio/backups');
+    try {
+      const bytes=await readFile('./packages/studio/fixtures/archives/valid/unknown-optional-fields.rolltop');
+      const imports=new PortableImports(store),p=await imports.preview(bytes);
+      await imports.commit(p.id,{mode:'new'});
+      const out=readArchive(await exportPortable(store,p.libraryId));
+      assert.deepEqual(out.library,readArchive(bytes).library);
+      const asset=await uploadAttachment(db,p.libraryId,Buffer.from('durable portable attachment'),'runtime.txt','text/plain');
+      const replacement=await imports.preview(bytes);
+      const result=await imports.commit(replacement.id,{mode:'replace',confirmed:true,confirmTitle:p.libraryTitle});
+      const backup=await readBookBackup('/studio/backups/'+result.backup);
+      assert.equal(backup.tables.library_attachments.length,out.attachments.length+1);
+      assert.equal(backup.tables.library_attachments.find(r=>r.sha256===asset.sha256).content_base64,Buffer.from('durable portable attachment').toString('base64'));
+      for(const [sha,b]of out.blobs)assert.deepEqual((await downloadAttachment(db,p.libraryId,sha)).bytes,b);
+      console.log('PASS: packaged portable fixtures, real PostgreSQL import/export, attachment bytes and durable backed replacement.');
+    }finally{await db.close()}
+  `,
+    ),
+  );
+
   const page = await fetch(origin);
   if (!page.ok || !(await page.text()).includes("Writers Rolltop"))
     throw new Error("Built web app is not served.");

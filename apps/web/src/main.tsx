@@ -1,3 +1,5 @@
+import { PortableLibraries } from "./portable.tsx";
+import { LibraryAttachments } from "./attachments.tsx";
 // SPDX-License-Identifier: AGPL-3.0-only
 import { BibleExports } from "./bible-exports.tsx";
 import { NamesNeeded } from "./names.tsx";
@@ -152,6 +154,8 @@ function App() {
   const [library, setLibrary] = useState<Item | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressVersion, setProgressVersion] = useState(0);
+  const [portableOpen, setPortableOpen] = useState(false);
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [worldsOpen, setWorldsOpen] = useState(false);
   const [appearance, setAppearance] = useState<{
     nodeId: string;
@@ -548,6 +552,21 @@ function App() {
           <details className="action-menu">
             <summary>Library ▾</summary>
             <div>
+              <button
+                onClick={async () => {
+                  if (await leave()) setPortableOpen(true);
+                }}
+              >
+                Portable Archives…
+              </button>
+              <button
+                disabled={!library}
+                onClick={async () => {
+                  if (await leave()) setAttachmentsOpen(true);
+                }}
+              >
+                Library Attachments…
+              </button>
               <button onClick={() => newItem("library")}>New Library…</button>
               <button disabled={!library} onClick={() => newItem("book")}>
                 New Book…
@@ -999,6 +1018,32 @@ function App() {
         <span>M3 in development · Manuscript foundation</span>
         <span>Your server · Your work</span>
       </footer>
+      {portableOpen && (
+        <Dialog title="Portable Archives" close={() => setPortableOpen(false)}>
+          <PortableLibraries
+            library={library}
+            onImported={async (item) => {
+              setLibraries(await api("/libraries"));
+              await openLibrary(item);
+            }}
+          />
+        </Dialog>
+      )}
+      {attachmentsOpen && library && (
+        <Dialog
+          title="Library Attachments"
+          close={() => setAttachmentsOpen(false)}
+        >
+          <LibraryAttachments
+            library={library}
+            book={book}
+            onBookSaved={(b) => {
+              setBook(b);
+              setBooks((bs) => bs.map((x) => (x.id === b.id ? b : x)));
+            }}
+          />
+        </Dialog>
+      )}
       {progressOpen && book && (
         <Dialog
           title="Word Goals and Progress"

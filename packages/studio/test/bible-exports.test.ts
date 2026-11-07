@@ -186,8 +186,8 @@ test("immutable Word/PDF exports update only version metadata, retry safely, rej
     const backup = await f.store.db.transaction((q) =>
       captureBook(q, f.book.id),
     );
-    assert.equal(backup.version, 10);
-    assert.equal(backup.schemaVersion, 12);
+    assert.equal(backup.version, 11);
+    assert.equal(backup.schemaVersion, 13);
     assert.equal(backup.tables.bible_exports.length, 2);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q("DELETE FROM " + t);
@@ -238,7 +238,7 @@ test("schema11 export migration rolls back on failure, retries without rewriting
   const f = await fixture();
   try {
     await f.store.db.query(
-      "DROP TABLE bible_exports; UPDATE studio_schema SET version=11",
+      "DROP TABLE library_portable; DROP TABLE library_attachments; DROP TABLE bible_exports; UPDATE studio_schema SET version=11",
     );
     const before = await f.store.book(f.book.id);
     const broken = new StudioStore({
@@ -263,7 +263,7 @@ test("schema11 export migration rolls back on failure, retries without rewriting
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      12,
+      13,
     );
     assert.deepEqual(await f.store.book(f.book.id), before);
   } finally {

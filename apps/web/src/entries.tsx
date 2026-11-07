@@ -5,6 +5,7 @@ import { EntryFields } from "./entry-fields.tsx";
 import type { Catalog } from "./entry-fields.tsx";
 import { api } from "./api.ts";
 export type Entry = {
+  attachments?: string[];
   id: string;
   name: string;
   entryType: string;

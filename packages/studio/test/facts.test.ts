@@ -20,7 +20,7 @@ test("facts migration v7 is atomic, repeatable and preserves documents", async (
   const f = await fixture();
   try {
     const before = await f.store.document(f.scene.id);
-    await f.store.db.query("DROP TABLE bible_exports; DROP TABLE state_changes");
+    await f.store.db.query("DROP TABLE library_portable; DROP TABLE library_attachments; DROP TABLE bible_exports; DROP TABLE state_changes");
     await f.store.db.query(
       "ALTER TABLE bible_fields DROP CONSTRAINT state_fields_library_identity; ALTER TABLE continuity_events DROP CONSTRAINT state_events_library_identity",
     );
@@ -49,7 +49,7 @@ test("facts migration v7 is atomic, repeatable and preserves documents", async (
     assert.equal(
       (await f.store.db.query("SELECT version FROM studio_schema")).rows[0]
         .version,
-      12,
+      13,
     );
     assert.deepEqual(await f.store.document(f.scene.id), before);
   } finally {
@@ -210,7 +210,7 @@ test("facts join verified recovery, shared membership guards and backed entry/no
       { knower: "reader", nodeId: f.scene.id },
     ]);
     const backup = await readBookBackup(join(dir, receipt.backup));
-    assert.equal(backup.version, 10);
+    assert.equal(backup.version, 11);
     assert.equal(backup.tables.facts.length, 1);
     await target.store.db.transaction(async (q) => {
       for (const t of [...backupTables].reverse()) await q(`DELETE FROM ${t}`);

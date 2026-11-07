@@ -305,6 +305,16 @@ export async function saveStateChange(
         invalid("Use plain text for the note.");
       const error = stateValueError(field, data.value);
       if (error) invalid(error);
+      if (
+        field.fieldType === "attachment" &&
+        !(
+          await q(
+            "SELECT sha256 FROM library_attachments WHERE library_id=$1 AND sha256=$2",
+            [row.library_id, data.value],
+          )
+        ).rows.length
+      )
+        invalid("Choose an attachment in this library.");
       if (["entryReference", "entryReferences"].includes(field.fieldType)) {
         const ids =
           field.fieldType === "entryReference" ? [data.value] : data.value;

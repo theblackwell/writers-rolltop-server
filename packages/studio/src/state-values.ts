@@ -9,12 +9,18 @@ export const stateFieldTypes = [
   ...structuredTypes,
   "entryReference",
   "entryReferences",
+  "attachment",
 ];
 export function stateValueError(field: any, value: any): string | undefined {
   if (value === null || value === undefined)
     return "A state change needs a value. Use Trash to remove a change.";
   if (!stateFieldTypes.includes(field.fieldType))
     return "Attachment changes require portable-library support.";
+  if (
+    field.fieldType === "attachment" &&
+    (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value))
+  )
+    return "Choose an attachment hash.";
   const error = structuredValueError(field, value);
   if (error) return error;
   if (

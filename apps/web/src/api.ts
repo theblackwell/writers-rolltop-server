@@ -26,6 +26,7 @@ export async function api<T = any>(
   return value;
 }
 export type Item = {
+  coverAttachment?: string;
   id: string;
   title: string;
   kind?: string;
