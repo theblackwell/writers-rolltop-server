@@ -52,7 +52,7 @@ export function EntryFields({
   busy: boolean;
   action: (work: () => Promise<void>) => Promise<void>;
   onSaved: (e: Entry) => void;
-  onClose: () => void;
+  onClose?: () => void;
 }) {
   const shared = entry.scope?.kind !== "book";
   const [mode, setMode] = useState<"canon" | "book">(shared ? "book" : "canon");
@@ -300,9 +300,11 @@ export function EntryFields({
             }
           />
         ))}
-      <button disabled={busy} onClick={onClose}>
-        Close Fields
-      </button>
+      {onClose && (
+        <button disabled={busy} onClick={onClose}>
+          Close Fields
+        </button>
+      )}
     </section>
   );
 }

@@ -37,4 +37,21 @@ One section per session. The list below defines the next bounded work; split a s
 
 Shared acceptance rules: all new records must be included in backups/recovery and safe deletion; stale writes must preserve the user's form; no lossy archive import/export. Portable archives/attachments are complete in M3 P1 (see M3-PLAN.md). Full responsive/accessibility/performance/security acceptance remains.
 
+## Story bible UI revamp (U1–U6, owner-approved 2026-11-07)
+
+The owner found the bible entry UI awkward and confusing (flat Library menu, one modal per tool, one entry split across four dialogs). Back end unchanged. Owner decisions: Claude owns the Server web front end for this revamp; fields save on leave; one page-level shared-canon control; new-entry default scope matches Apple (world, else series, else book); a "check the bible while writing" side panel is in scope; URL deep links and browser Back are in scope.
+
+Design: a third **Story Bible** workspace tab (sidebar list plus page, in the manuscript's `.writing-workspace` shape); an entry page showing header, fields, attachments, family, relationships, changes over the story, records that mention the entry, appearances, and Trash/delete. Endpoints and request shapes stay as they are. Each slice ships and is verified on its own, one section per session.
+
+| Section | Scope / acceptance |
+| --- | --- |
+| **U1 — Story Bible tab, list and entry page** | Third tab; sidebar grouped by type with filters, flagged names, Trash group and "+ New"; entry page assembles the existing editors in place (save behaviour unchanged); Names and Continuity routes select the entry; Bible Entries dialog retired and manuscript passage links split out. Acceptance: every capability of the old dialog stays reachable. |
+| **U2 — Save on leave and shared-canon model** | Text, number and date fields save on blur or Enter; selections and links on change; tables keep explicit Save/Cancel. One per-entry write queue using the newest `updatedAt`; status line; 409 keeps the draft with a Reload banner; one page-level "Edit shared canon" switch with one banner; `editSharedCanon` only in canon mode. Flush on leave; refuse navigation if the flush fails. |
+| **U3 — Relationships and changes on the entry page** | Per-entry relationships (Add with this entry as the source); changes over the story with an As of view; relationship types move to settings; retire the Relationships and Changing State dialogs. |
+| **U4 — Timeline, facts and questions as list and page views** | Two-way links between records and entries; "Mentioned in" on the entry page; retire the three dialogs; warnings open the records without losing the warnings list. |
+| **U5 — Review and tools pages** | Warnings with badges, Who Knows What, Names, Export, Templates and Fields as pages; regroup the Library menu under Library, Book and Story Bible headings; manuscript-area bible buttons route into the tab. |
+| **U6 — Final pass** | Responsive layout at about 1280, 800 and 390 px; keyboard-only check; fresh screenshots; remove dead code; update docs. |
+
+Shared checks for every slice: `npm run check`, `npm test` and `npm run build` in `Server/`; browser QA on a scratch library via `scripts/preview-scratch.ts`. Plan approved; section status is in `M3-PROGRESS.md`.
+
 Owner requirement (2026-11-04): final self-hosted delivery must support **both `linux/arm64` and `linux/amd64` (x86-64)** container images, with a multi-platform build and runtime smoke verification for each before final M3 sign-off. Current local Podman checks run on ARM64 and do not satisfy x86 verification.

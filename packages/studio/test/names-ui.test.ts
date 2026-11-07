@@ -5,7 +5,7 @@ import { registerHooks } from "node:module";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { JSDOM } from "jsdom";
-test("mounted names view filters sources/search, retains failed navigation and refresh, and opens exact sources; entry filter/direct editor loads once", async () => {
+test("mounted names view filters sources/search, retains failed navigation and refresh, and opens exact sources", async () => {
   const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", {
     url: "http://localhost",
   });
@@ -51,8 +51,7 @@ test("mounted names view filters sources/search, retains failed navigation and r
   try {
     const React = await import("react"),
       { createRoot } = await import("react-dom/client");
-    const { NamesNeeded } = await import("../../../apps/web/src/names.tsx"),
-      { EntryList } = await import("../../../apps/web/src/entries.tsx");
+    const { NamesNeeded } = await import("../../../apps/web/src/names.tsx");
     root = createRoot(dom.window.document.getElementById("root")!);
     const doc = dom.window.document;
     const items = [
@@ -144,68 +143,6 @@ test("mounted names view filters sources/search, retains failed navigation and r
     await click(button("Check Again"));
     assert.match(doc.body.textContent!, /Refresh unavailable/);
     assert.equal(doc.querySelectorAll("li").length, 2);
-    const entries = [
-      {
-        id: "e",
-        name: "Keeper",
-        aliases: [],
-        entryType: "term",
-        updatedAt: "one",
-        scope: { kind: "book", id: "book" },
-        toBeNamed: true as const,
-      },
-      {
-        id: "other",
-        name: "Other",
-        aliases: [],
-        entryType: "term",
-        updatedAt: "two",
-        scope: { kind: "book", id: "book" },
-      },
-    ];
-    const props = {
-      bookId: "book",
-      catalog: { templates: [], fields: [] },
-      book: { id: "book" },
-      entries: [],
-      initialId: "e",
-      busy: true,
-      onSaved: () => {},
-      onPurged: async () => {},
-      onInspect: () => {},
-      action: async (w: any) => w(),
-    };
-    await React.act(async () =>
-      root.render(React.createElement(EntryList, props)),
-    );
-    await React.act(async () =>
-      root.render(
-        React.createElement(EntryList, { ...props, entries, busy: false }),
-      ),
-    );
-    assert.match(doc.body.textContent!, /Edit Keeper/);
-    await click(button("Cancel Edit"));
-    await React.act(async () =>
-      root.render(
-        React.createElement(EntryList, {
-          ...props,
-          entries: [...entries],
-          busy: false,
-        }),
-      ),
-    );
-    assert.equal(button("Cancel Edit"), undefined);
-    const label = Array.from(doc.querySelectorAll("label")).find(
-      (l) => l.textContent === "Only names still needed",
-    )!;
-    await click(label.querySelector("input")!);
-    assert.equal(
-      doc.querySelectorAll(".entry-row").length ||
-        Array.from(doc.querySelectorAll("button")).filter((b) =>
-          b.getAttribute("aria-label")?.startsWith("Edit "),
-        ).length,
-      1,
-    );
   } finally {
     if (root) {
       const { act } = await import("react");

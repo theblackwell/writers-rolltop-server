@@ -1112,3 +1112,93 @@ dialog textarea {
 .session-overlay .login {
   margin-top: 4vh;
 }
+.bible-binder label {
+  display: block;
+  font-size: 0.78rem;
+  margin: 10px 0;
+}
+.bible-binder label input:not([type="checkbox"]) {
+  width: 100%;
+  margin-top: 4px;
+}
+.bible-binder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+}
+.bible-binder-actions button {
+  font-size: 0.75rem;
+}
+.bible-group {
+  margin: 18px 0 4px;
+  padding: 0 6px;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #786344;
+}
+.bible-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bible-row {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 9px 6px;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+.bible-row.current {
+  background: #d7c9af;
+}
+.bible-row small {
+  color: #8b795b;
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+.bible-area {
+  max-width: 940px;
+}
+.entry-page-header h1 {
+  margin: 4px 0 10px;
+}
+.entry-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.entry-badge {
+  border: 1px solid #cdbfa7;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.72rem;
+  background: #f3ece0;
+  color: #5d4b30;
+}
+.entry-section {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid #d4c9b6;
+}
+.back-to-list {
+  display: none;
+  margin-bottom: 12px;
+}
+@media (max-width: 600px) {
+  .bible-workspace.showing-page .bible-binder,
+  .bible-workspace:not(.showing-page) .bible-area {
+    display: none;
+  }
+  .back-to-list {
+    display: inline-block;
+  }
+}

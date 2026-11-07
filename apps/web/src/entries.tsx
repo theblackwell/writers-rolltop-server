@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { sameFamilyName } from "../../../packages/studio/src/family-values.ts";
-import { useEffect, useRef, useState } from "react";
-import { EntryFields } from "./entry-fields.tsx";
-import type { Catalog } from "./entry-fields.tsx";
-import { api } from "./api.ts";
+import { useState } from "react";
 export type Entry = {
   attachments?: string[];
   id: string;
@@ -25,259 +21,31 @@ export type Entry = {
     [key: string]: unknown;
   }[];
 };
-export function EntryList({
-  bookId,
-  catalog,
-  book,
-  seriesWorld,
-  entries,
-  onSaved,
-  onPurged,
-  onInspect,
-  busy,
-  action,
-  initialId,
-}: {
-  initialId?: string;
-  bookId: string;
-  catalog: Catalog;
-  book: { id: string; universeId?: string; seriesId?: string };
-  seriesWorld?: string;
-  entries: Entry[];
-  onSaved: (entry: Entry) => void;
-  onPurged: (id: string) => Promise<void>;
-  onInspect: (entryId: string) => void;
-  busy: boolean;
-  action: (work: () => Promise<void>) => Promise<void>;
-}) {
-  const [namesOnly, setNamesOnly] = useState(false);
-  const [filter, setFilter] = useState("");
-  const [kind, setKind] = useState("");
-  const [trash, setTrash] = useState(false);
-  const [purging, setPurging] = useState<Entry>();
-  const [receipt, setReceipt] = useState("");
-  const [editing, setEditing] = useState<string>();
-  const [fieldsEditing, setFieldsEditing] = useState<string>();
-  const opened = useRef<string | undefined>(undefined);
-  const [navigationError, setNavigationError] = useState("");
-  useEffect(() => {
-    if (initialId && !busy && opened.current !== initialId) {
-      opened.current = initialId;
-      const target = entries.find((e) => e.id === initialId);
-      if (target && !target.deletedAt) setEditing(initialId);
-      else
-        setNavigationError(
-          "This entry is no longer live here. Review Trash or check names again.",
-        );
-    }
-  }, [initialId, entries, busy]);
-  const fieldEntry = entries.find((e) => e.id === fieldsEditing);
-  const selected = entries.find((e) => e.id === editing);
-  const shown = entries
-    .filter(
-      (e) =>
-        Boolean(e.deletedAt) === trash &&
-        (!namesOnly || e.toBeNamed === true) &&
-        (!kind || e.entryType === kind) &&
-        [e.name, ...e.aliases].some((s) =>
-          s.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()),
-        ),
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const save = async (entry: Entry, patch: object) => {
-    const updated = await api<Entry>(
-      `/books/${bookId}/entries/${entry.id}`,
-      "PUT",
-      {
-        ...patch,
-        expectedUpdatedAt: entry.updatedAt,
-        ...(entry.scope?.kind !== "book" ? { editSharedCanon: true } : {}),
-      },
-    );
-    onSaved(updated);
-    setEditing(undefined);
-    if (
-      (updated.name !== entry.name ||
-        updated.familyName !== entry.familyName) &&
-      !updated.deletedAt &&
-      entries.some(
-        (other) =>
-          other.id !== updated.id &&
-          !other.deletedAt &&
-          sameFamilyName(updated, other),
-      )
-    )
-      onInspect(updated.id);
-  };
-  return (
-    <section aria-label="Bible entry details">
-      {navigationError && <p role="alert">{navigationError}</p>}
-      <label>
-        Find name or alias
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} />
-      </label>
-      <label>
-        Entry type
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">All types</option>
-          {[...new Set(entries.map((e) => e.entryType))].sort().map((t) => (
-            <option key={t} value={t}>
-              {t === "worldRule"
-                ? "World rule"
-                : t[0].toUpperCase() + t.slice(1)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={namesOnly}
-          onChange={(e) => setNamesOnly(e.target.checked)}
-        />
-        Only names still needed
-      </label>
-      <label className="entry-toggle">
-        <input
-          type="checkbox"
-          checked={trash}
-          onChange={(e) => setTrash(e.target.checked)}
-        />
-        Show Entry Trash
-      </label>
-      {receipt && (
-        <p role="status">
-          Deleted permanently. Recovery backup: {receipt}. Keep this filename
-          for your administrator.
-        </p>
-      )}
-      {purging && (
-        <EntryPurge
-          entry={purging}
-          busy={busy}
-          onCancel={() => setPurging(undefined)}
-          onDelete={(confirmName, editSharedCanon) =>
-            action(async () => {
-              const result = await api<{ backup: string }>(
-                `/books/${bookId}/entries/${purging.id}/purge`,
-                "POST",
-                {
-                  confirmName,
-                  expectedUpdatedAt: purging.updatedAt,
-                  expectedDeletedAt: purging.deletedAt,
-                  editSharedCanon,
-                },
-              );
-              setReceipt(result.backup);
-              setPurging(undefined);
-              await onPurged(purging.id);
-            })
-          }
-        />
-      )}
-      {selected && (
-        <EntryForm
-          key={selected.id + selected.updatedAt}
-          entry={selected}
-          busy={busy}
-          onCancel={() => setEditing(undefined)}
-          onSave={(patch) => action(() => save(selected, patch))}
-        />
-      )}
-      {fieldEntry && (
-        <EntryFields
-          entry={fieldEntry}
-          entries={entries}
-          bookId={bookId}
-          book={book}
-          seriesWorld={seriesWorld}
-          catalog={catalog}
-          busy={busy}
-          action={action}
-          onSaved={onSaved}
-          onClose={() => setFieldsEditing(undefined)}
-        />
-      )}
-      {!shown.length && (
-        <p>{trash ? "No entries in Trash match." : "No entries match."}</p>
-      )}
-      <ul className="search-results">
-        {shown.map((entry) => (
-          <li key={entry.id}>
-            <strong>{entry.name}</strong> ({entry.entryType})
-            {entry.scope && entry.scope.kind !== "book" && (
-              <span>
-                {" "}
-                · Shared {entry.scope.kind === "universe"
-                  ? "world"
-                  : "series"}{" "}
-                entry
-              </span>
-            )}
-            {entry.toBeNamed && <span> · Name still to be decided</span>}
-            {!!entry.aliases.length && (
-              <p>Also known as: {entry.aliases.join(", ")}</p>
-            )}
-            <p style={{ whiteSpace: "pre-wrap" }}>{entry.summary}</p>
-            {!entry.deletedAt && (
-              <button
-                disabled={busy || !!editing || !!fieldsEditing || !!purging}
-                onClick={() => setEditing(entry.id)}
-                aria-label={`Edit ${entry.name}`}
-              >
-                {entry.scope?.kind !== "book" ? "Edit Shared Canon…" : "Edit…"}
-              </button>
-            )}
-            {!entry.deletedAt && (
-              <button
-                disabled={busy || !!editing || !!fieldsEditing || !!purging}
-                onClick={() => setFieldsEditing(entry.id)}
-                aria-label={`Fields for ${entry.name}`}
-              >
-                Fields…
-              </button>
-            )}
-            <button
-              disabled={busy || !!editing || !!fieldsEditing || !!purging}
-              onClick={() => onInspect(entry.id)}
-              aria-label={`Family and appearances for ${entry.name}`}
-            >
-              {entry.entryType === "character"
-                ? "Family and Appearances…"
-                : "Appearances…"}
-            </button>
-            <button
-              disabled={busy || !!editing || !!fieldsEditing || !!purging}
-              onClick={() =>
-                void action(() => save(entry, { deleted: !entry.deletedAt }))
-              }
-              aria-label={`${entry.deletedAt ? "Restore" : "Trash"} entry ${entry.name}`}
-            >
-              {entry.deletedAt
-                ? "Restore Entry"
-                : entry.scope?.kind !== "book"
-                  ? "Trash Shared Entry for All Books"
-                  : "Move Entry to Trash"}
-            </button>
-            {entry.deletedAt && (
-              <button
-                disabled={busy || !!editing || !!fieldsEditing || !!purging}
-                aria-label={`Delete entry ${entry.name} permanently`}
-                onClick={() => {
-                  setReceipt("");
-                  setPurging(entry);
-                }}
-              >
-                Delete Entry Permanently…
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-function EntryForm({
+export const entryTypes = [
+  "character",
+  "location",
+  "organization",
+  "object",
+  "event",
+  "plotline",
+  "worldRule",
+  "research",
+  "term",
+] as const;
+const typeLabels: Record<string, [string, string]> = {
+  character: ["Character", "Characters"],
+  location: ["Location", "Locations"],
+  organization: ["Organization", "Organizations"],
+  object: ["Object", "Objects"],
+  event: ["Event", "Events"],
+  plotline: ["Plotline", "Plotlines"],
+  worldRule: ["World rule", "World rules"],
+  research: ["Research", "Research"],
+  term: ["Term", "Terms"],
+};
+export const entryTypeLabel = (type: string, plural = false) =>
+  typeLabels[type]?.[plural ? 1 : 0] ?? type;
+export function EntryForm({
   entry,
   busy,
   onCancel,
@@ -285,7 +53,7 @@ function EntryForm({
 }: {
   entry: Entry;
   busy: boolean;
-  onCancel: () => void;
+  onCancel?: () => void;
   onSave: (patch: object) => Promise<void>;
 }) {
   const [name, setName] = useState(entry.name);
@@ -342,7 +110,6 @@ function EntryForm({
             <label>
               First name
               <input
-                autoFocus
                 maxLength={500}
                 value={given}
                 onChange={(e) => setGiven(e.target.value)}
@@ -366,7 +133,6 @@ function EntryForm({
           <label>
             Name
             <input
-              autoFocus
               required
               maxLength={500}
               value={name}
@@ -399,9 +165,11 @@ function EntryForm({
         </label>
         <p>Changes save explicitly. Entry type and scope stay the same.</p>
         <div className="dialog-actions">
-          <button type="button" onClick={onCancel}>
-            Cancel Edit
-          </button>
+          {onCancel && (
+            <button type="button" onClick={onCancel}>
+              Cancel Edit
+            </button>
+          )}
           <button
             className="primary"
             disabled={
@@ -420,7 +188,7 @@ function EntryForm({
   );
 }
 
-function EntryPurge({
+export function EntryPurge({
   entry,
   busy,
   onCancel,

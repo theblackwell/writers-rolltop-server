@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { JSDOM } from "jsdom";
 
-test("mounted Entry Trash requires exact name/shared consent, retains failed confirmation, supports cancel and shows recovery receipt", async () => {
+test("mounted Entry page Trash requires exact name/shared consent, retains failed confirmation, supports cancel and shows recovery receipt", async () => {
   const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", {
     url: "http://localhost",
   });
@@ -52,7 +52,7 @@ test("mounted Entry Trash requires exact name/shared consent, retains failed con
   try {
     const React = await import("react"),
       { createRoot } = await import("react-dom/client");
-    const { EntryList } = await import("../../../apps/web/src/entries.tsx");
+    const { EntryPage } = await import("../../../apps/web/src/entry-page.tsx");
     root = createRoot(dom.window.document.getElementById("root")!);
     const now = "2026-11-05T00:00:00.000Z",
       entry = {
@@ -68,11 +68,15 @@ test("mounted Entry Trash requires exact name/shared consent, retains failed con
       calls: any[] = [],
       failure = true,
       purged = "",
+      receipt = "",
       error = "";
     Object.defineProperty(globalThis, "fetch", {
       configurable: true,
       writable: true,
       value: async (_url: string, options: any) => {
+        // The page's family/appearances section loads with plain GETs.
+        if (!options?.body)
+          return new Response(JSON.stringify({ appearances: [], matches: [] }));
         calls.push(JSON.parse(options.body));
         return new Response(
           JSON.stringify(
@@ -89,18 +93,18 @@ test("mounted Entry Trash requires exact name/shared consent, retains failed con
     });
     const render = () =>
       root.render(
-        React.createElement(EntryList, {
+        React.createElement(EntryPage, {
           bookId: crypto.randomUUID(),
           book: { id: "book" },
           catalog: { templates: [], fields: [] },
+          entry: entries[0] ?? entry,
           entries,
           busy: false,
           onSaved: () => {},
-          onInspect: () => {},
-          onPurged: async (id: string) => {
+          onPurged: async (id: string, backup: string) => {
             purged = id;
+            receipt = backup;
             entries = [];
-            render();
           },
           action: async (work: () => Promise<void>) => {
             try {
@@ -118,11 +122,6 @@ test("mounted Entry Trash requires exact name/shared consent, retains failed con
         (b) => b.textContent === name,
       )!;
     const click = async (el: HTMLElement) => React.act(async () => el.click());
-    await click(
-      Array.from(doc.querySelectorAll("label"))
-        .find((l) => l.textContent?.includes("Show Entry Trash"))!
-        .querySelector("input")!,
-    );
     await click(button("Delete Entry Permanently…"));
     assert.equal(button("Delete Permanently").disabled, true);
     const input = doc.querySelector(
@@ -176,11 +175,8 @@ test("mounted Entry Trash requires exact name/shared consent, retains failed con
     failure = false;
     await click(button("Delete Permanently"));
     assert.equal(purged, entry.id);
-    assert.match(
-      doc.querySelector('[role="status"]')!.textContent!,
-      /verified.book-recovery.json/,
-    );
-    assert.equal(button("Delete Entry Permanently…"), undefined);
+    assert.equal(receipt, "verified.book-recovery.json");
+    assert.equal(doc.querySelector("form[aria-label]"), null);
   } finally {
     if (root) {
       const { act } = await import("react");

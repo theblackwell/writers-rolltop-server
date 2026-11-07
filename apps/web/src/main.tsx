@@ -31,7 +31,10 @@ import type { Target } from "./management.tsx";
 import { children, liveNodes, firstDocument, itemLabel } from "./manuscript.ts";
 import { BookProgress } from "./progress.tsx";
 import { wordCount } from "../../../packages/document-adapter/src/text.ts";
-import { References } from "./references.tsx";
+import { Dialog } from "./dialog.tsx";
+import { PassageLinks } from "./passage-links.tsx";
+import { StoryBible } from "./story-bible.tsx";
+import type { BibleTool } from "./story-bible.tsx";
 import { Knowledge } from "./knowledge.tsx";
 import { prepareContinuityPlace } from "./continuity-navigation.ts";
 import { warningCountsByNode } from "../../../packages/studio/src/continuity-values.ts";
@@ -69,38 +72,6 @@ function download(doc: CanonicalDocument) {
   a.download = `scene-draft-${doc.nodeId}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-function Dialog({
-  title,
-  children,
-  close,
-}: {
-  title: string;
-  children: React.ReactNode;
-  close: () => void;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
-  return (
-    <dialog
-      ref={dialog}
-      onCancel={(e) => {
-        e.preventDefault();
-        close();
-      }}
-      aria-label={title}
-    >
-      <header>
-        <h2>{title}</h2>
-        <button onClick={close} aria-label="Close dialog">
-          ×
-        </button>
-      </header>
-      {children}
-    </dialog>
-  );
 }
 // Sign-in after a 401. A real modal <dialog> so it enters the browser top
 // layer above any open Dialog; it lives outside the app wrapper so the editor
@@ -211,8 +182,8 @@ function App() {
   } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [namesOpen, setNamesOpen] = useState(false);
-  const [bibleTarget, setBibleTarget] = useState<string>();
-  const [bibleOpen, setBibleOpen] = useState(false);
+  const [bibleEntry, setBibleEntry] = useState<string>();
+  const [bibleTool, setBibleTool] = useState<BibleTool>(null);
   const [planningOpen, setPlanningOpen] = useState(false);
   const [planningPoint, setPlanningPoint] = useState<string>();
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
@@ -246,7 +217,9 @@ function App() {
       return "desk";
     }
   });
-  const [view, setView] = useState<"projects" | "manuscript">("projects");
+  const [view, setView] = useState<"projects" | "manuscript" | "bible">(
+    "projects",
+  );
   const [dialog, setDialog] = useState<
     | "library"
     | "book"
@@ -334,10 +307,29 @@ function App() {
         throw new Error(
           "This entry is no longer live here. Review Trash or check names again.",
         );
-      setBibleTarget(n.sourceId);
-      setBibleOpen(true);
+      setBibleTool(null);
+      setBibleEntry(n.sourceId);
+      setView("bible");
     }
     setNamesOpen(false);
+  }
+  async function openAppearance(nodeId: string, anchorId: string) {
+    if (!book) return;
+    if (!(await leave()))
+      throw new Error(
+        "Resolve the current scene's draft or save conflict before opening another passage.",
+      );
+    const data = await api(`/books/${book.id}`);
+    const target = liveNodes(data.nodes).find((n) => n.id === nodeId);
+    if (!target || data.book.deletedAt)
+      throw new Error(
+        "This scene is no longer available. Restore it from Trash before opening it.",
+      );
+    setBook(data.book);
+    setNodes(data.nodes);
+    setScene(target);
+    setView("manuscript");
+    setAppearance({ nodeId, anchorId, requestId: crypto.randomUUID() });
   }
   async function openWarningSubject(
     kind: "fact" | "question" | "event",
@@ -365,6 +357,10 @@ function App() {
     setContinuityOpen(false);
     setKnowledgeOpen(false);
   }
+  useEffect(() => {
+    setBibleEntry(undefined);
+    setBibleTool(null);
+  }, [book?.id]);
   useEffect(() => {
     api("/session")
       .then(() => setAuth(true))
@@ -599,7 +595,7 @@ function App() {
   const trashedNodes = nodes.filter((n) => n.deletedAt);
   return (
     <>
-      <div className={`app layout-${layout}`}>
+      <div className={`app layout-${view === "bible" ? "desk" : layout}`}>
         <header className="app-header">
           <a
             className="brand"
@@ -681,12 +677,25 @@ function App() {
                 </button>
                 <button
                   disabled={!book}
-                  onClick={() => {
-                    setBibleTarget(undefined);
-                    setBibleOpen(true);
+                  onClick={async () => {
+                    if (await leave()) {
+                      setBibleTool("relationships");
+                      setView("bible");
+                    }
                   }}
                 >
-                  Bible Entries…
+                  Relationships…
+                </button>
+                <button
+                  disabled={!book}
+                  onClick={async () => {
+                    if (await leave()) {
+                      setBibleTool("templates");
+                      setView("bible");
+                    }
+                  }}
+                >
+                  Templates and Fields…
                 </button>
                 <button disabled={!book} onClick={() => showWarnings()}>
                   Continuity Warnings…
@@ -803,6 +812,15 @@ function App() {
           >
             Manuscript
           </button>
+          <button
+            disabled={!book}
+            className={view === "bible" ? "selected" : ""}
+            onClick={async () => {
+              if (await leave()) setView("bible");
+            }}
+          >
+            Story Bible
+          </button>
           <span>Private by design. Yours to write.</span>
         </nav>
         {view === "projects" ? (
@@ -893,6 +911,16 @@ function App() {
               </section>
             )}
           </main>
+        ) : view === "bible" && book ? (
+          <StoryBible
+            key={book.id}
+            bookId={book.id}
+            selectedId={bibleEntry}
+            onSelect={setBibleEntry}
+            tool={bibleTool}
+            onTool={setBibleTool}
+            onOpenAppearance={openAppearance}
+          />
         ) : (
           <div className="writing-workspace">
             <aside className="binder" aria-label="Manuscript binder">
@@ -1259,39 +1287,6 @@ function App() {
               initialId={
                 recordTarget?.kind === "fact" ? recordTarget.id : undefined
               }
-            />
-          </Dialog>
-        )}
-        {bibleOpen && book && (
-          <Dialog title="Bible Entries" close={() => setBibleOpen(false)}>
-            <References
-              key={book.id + ":" + (bibleTarget ?? "list")}
-              initialEntryId={bibleTarget}
-              bookId={book.id}
-              onOpenAppearance={async (nodeId, anchorId) => {
-                if (!(await leave()))
-                  throw new Error(
-                    "Resolve the current scene's draft or save conflict before opening another passage.",
-                  );
-                const data = await api(`/books/${book.id}`);
-                const target = liveNodes(data.nodes).find(
-                  (n) => n.id === nodeId,
-                );
-                if (!target || data.book.deletedAt)
-                  throw new Error(
-                    "This scene is no longer available. Restore it from Trash before opening it.",
-                  );
-                setBook(data.book);
-                setNodes(data.nodes);
-                setScene(target);
-                setView("manuscript");
-                setAppearance({
-                  nodeId,
-                  anchorId,
-                  requestId: crypto.randomUUID(),
-                });
-                setBibleOpen(false);
-              }}
             />
           </Dialog>
         )}
@@ -1821,7 +1816,7 @@ const EditorPane = forwardRef<
             editor?.setEditable(!blocked.current);
           }}
         >
-          <References
+          <PassageLinks
             bookId={node.bookId!}
             nodeId={node.id}
             onReveal={(id) => {

@@ -21,7 +21,7 @@ export function EntryContext({
 }: {
   entry: Entry;
   bookId: string;
-  onClose: () => void;
+  onClose?: () => void;
   onOpen?: (nodeId: string, anchorId: string) => Promise<void>;
 }) {
   const [matches, setMatches] = useState<Match[]>([]),
@@ -159,7 +159,7 @@ export function EntryContext({
           {!appearances.length && (
             <p>
               No live linked passages yet. Mark a passage in the manuscript and
-              link it to this entry using References.
+              link it to this entry using Writing tools, References.
             </p>
           )}
           <ul className="search-results">
@@ -190,9 +190,11 @@ export function EntryContext({
           </ul>
         </>
       )}
-      <button disabled={busy} onClick={onClose}>
-        Close Family and Appearances
-      </button>
+      {onClose && (
+        <button disabled={busy} onClick={onClose}>
+          Close Family and Appearances
+        </button>
+      )}
     </section>
   );
 }
