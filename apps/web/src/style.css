@@ -1473,8 +1473,7 @@ dialog textarea {
   }
   dialog.sheet input,
   dialog.sheet select,
-  dialog.sheet textarea,
-  dialog.sheet button {
+  dialog.sheet textarea {
     font-size: 1rem;
   }
   dialog.sheet button {
