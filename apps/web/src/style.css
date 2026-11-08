@@ -1451,3 +1451,33 @@ dialog textarea {
 .entry-links li p {
   margin: 0.2rem 0;
 }
+
+/* Add flows open as sheets: bottom-anchored on phone width, as on iPhone. */
+@media (max-width: 600px) {
+  dialog.sheet {
+    position: fixed;
+    inset: auto 0 0 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 90dvh;
+    border-radius: 14px 14px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+  dialog.sheet header {
+    margin-bottom: 14px;
+  }
+  dialog.sheet header button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  dialog.sheet input,
+  dialog.sheet select,
+  dialog.sheet textarea,
+  dialog.sheet button {
+    font-size: 1rem;
+  }
+  dialog.sheet button {
+    min-height: 44px;
+  }
+}

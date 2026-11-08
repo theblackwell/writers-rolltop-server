@@ -629,7 +629,11 @@ export function StoryBible({
         )}
       </main>
       {creating && context && (
-        <Dialog title="New Bible Entry" close={() => setCreating(false)}>
+        <Dialog
+          sheet
+          title="New Bible Entry"
+          close={() => setCreating(false)}
+        >
           <NewEntryForm
             initialType={creating}
             bookId={bookId}

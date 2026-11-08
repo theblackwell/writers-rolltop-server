@@ -4,10 +4,13 @@ export function Dialog({
   title,
   children,
   close,
+  sheet = false,
 }: {
   title: string;
   children: React.ReactNode;
   close: () => void;
+  // A sheet slides up from the bottom edge on phone-width windows, as on iPhone.
+  sheet?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -16,6 +19,7 @@ export function Dialog({
   return (
     <dialog
       ref={dialog}
+      className={sheet ? "sheet" : undefined}
       onCancel={(e) => {
         e.preventDefault();
         close();

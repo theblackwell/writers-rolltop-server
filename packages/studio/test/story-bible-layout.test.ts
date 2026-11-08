@@ -105,6 +105,28 @@ test("the + menu offers each type, closes on Escape and presets the type in the 
   }
 });
 
+test("the New Entry add flow opens as a sheet and closes with Cancel", async () => {
+  const t = await setup();
+  try {
+    t.fake.entries = [entry("Mira Vale")];
+    await t.mount();
+    await t.menu("New entry", "New Character");
+    const dialog = t.doc.querySelector("dialog") as HTMLElement;
+    assert.ok(dialog.classList.contains("sheet"), "add flow is a sheet");
+    const cancel = t.button("Cancel", dialog);
+    await t.click(cancel);
+    await t.settle();
+    assert.equal(t.doc.querySelector("dialog"), null, "Cancel closes it");
+    assert.equal(
+      t.fake.calls.some((c) => c.method === "POST"),
+      false,
+      "Cancel posts nothing",
+    );
+  } finally {
+    await t.cleanup();
+  }
+});
+
 test("Bible settings holds relationship types and templates", async () => {
   const t = await setup();
   try {

@@ -500,3 +500,11 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Checks (lead re-ran): `tsc --noEmit` exit 0; `npm test` 250 of 250 (245 previous; 5 new in `story-bible-layout.test.ts`); `npm run build` exit 0.
 - Not checked in a browser: the look, 44 px targets, 2x2 switch, 600 px stacking, and the caption (it relies on `book.title` from `GET /books/:id`, which returns the book record, so the title is present).
 - Open: the stylesheet has no dark theme; contrast was checked by hand on light only. Record pages (B4) still use the old banner, so the web has two shared-canon patterns until B4.
+
+## B2 — Sheets for add flows (web bible layout) — 2026-11-08
+
+- The New Bible Entry add flow (from the "+" menu) opens as a sheet: bottom-anchored, full width, rounded top corners and a 90dvh cap on phone width (600 px and below); the centred dialog is unchanged on wider windows. Phone sheets use 44 px targets, 16 px inputs and the safe-area bottom inset. Shared `Dialog` gained an opt-in `sheet` prop, so the Library dialogs are unchanged.
+- No other add flow in the Story Bible tab opens a dialog; record, relationship, note and template adds are already inline or page forms.
+- Checks: `tsc --noEmit` exit 0; `npm test` 251 of 251 (250 previous, plus one new test: the sheet opens, and Cancel closes it without a POST); `npm run build` exit 0.
+- Not checked in a browser: the sheet's look and placement at 390 px, the safe-area inset on a device, and the 44 px targets.
+- Next: V1 (Server backend for record overrides) or the owner's pick.
