@@ -20,6 +20,7 @@ import { changeWarningDismissal } from "./warning-dismissals.ts";
 import { continuityCatalog } from "./continuity.ts";
 import { stateCatalog, saveStateChange } from "./state-changes.ts";
 import { eventCatalog, saveEvent } from "./events.ts";
+import { saveRecordOverride } from "./record-overrides-write.ts";
 import { questionCatalog, saveQuestion } from "./questions.ts";
 import {
   familyMatches,
@@ -354,6 +355,27 @@ export function studioServer(
           method === "GET"
             ? await eventCatalog(store.db, parts[1])
             : await saveEvent(store.db, parts[1], await body(req), parts[3]),
+        );
+      }
+      if (
+        parts[0] === "books" &&
+        ["facts", "questions", "events"].includes(parts[2]) &&
+        parts.length === 5 &&
+        parts[4] === "override" &&
+        method === "PUT"
+      ) {
+        if (!uuid.test(parts[3]))
+          throw new StudioError(400, "INVALID_ID", "Choose a valid record.");
+        return respond(
+          res,
+          200,
+          await saveRecordOverride(
+            store.db,
+            parts[2] as "facts" | "questions" | "events",
+            parts[1],
+            parts[3],
+            await body(req),
+          ),
         );
       }
       const binary = async (limit: number) => {

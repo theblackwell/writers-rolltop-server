@@ -518,3 +518,15 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - New `src/record-overrides.ts` (helpers); facts, questions, events and worlds updated; `test/record-overrides.test.ts` (5 tests).
 - Checks: `tsc --noEmit` exit 0; `npm test` 260 of 260 (251 previous, plus 4 conformance fixtures and 5 new tests).
 - Not yet: V1b, the write API (set/clear one key for one book, with CAS and the blank-title rule as for top-level events); V1c, effective-version reads for continuity, timeline, lists, names and bible exports. Until V1c, the Server shows canon values only, so per-book warnings are not yet correct for books with overrides.
+
+## V1b — Record override write API — 2026-11-08
+
+- Endpoint: `PUT /api/books/:bookId/{facts|questions|events}/:recordId/override`. Body: only the record's override keys (fact: text, truth; question: text, status, decision; event: title, summary, when, participants), plus `expectedUpdatedAt` and an optional `clear` list. Response: the whole updated record.
+- Clearing uses the explicit `clear` list, since values cannot be null. A key set and cleared together is refused, as is a request with nothing to set or clear. A clear that changes nothing returns the record unchanged with its `updatedAt`.
+- Refused: book-scoped records, a book outside the record's scope, a trashed book, a trashed record, a trashed scope, and an event override title that is empty. A stale `expectedUpdatedAt` returns 409 with the matching `*_CONFLICT` code.
+- Locks: book, then library, in one transaction, as the canon saves do. Only `overrides` and `updatedAt` change on the record. An override holding only `bookId` is never written, and an empty `overrides` array is never written.
+- Event override participants must be unique, live and visible to the book; the whole list is replaced on each write.
+- Shared `when` validation moved to `whenProblem` in `record-overrides.ts`, used by both canon events and overrides.
+- Reviews: `backend-engineer` implemented; `code-reviewer` found no high or medium defects; a no-op clear now returns the record unchanged.
+- Checks: `tsc --noEmit` exit 0; `npm test` 268 of 268; `npm run build` exit 0.
+- Not yet: concurrency test (two parallel writes with the same `expectedUpdatedAt`); chronology warnings still use top-level `when` only (V1c); effective-version reads (V1c).

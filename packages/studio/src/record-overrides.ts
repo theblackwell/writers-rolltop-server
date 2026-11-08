@@ -23,7 +23,10 @@ export function withoutRecordOverride(record: any, bookId: string): any {
  * Drop purged entries from event overrides' participants. An override whose
  * only other keys were participants is removed, as entry overrides are.
  */
-export function withoutOverrideParticipants(record: any, entries: string[]): any {
+export function withoutOverrideParticipants(
+  record: any,
+  entries: string[],
+): any {
   const hit = (record.overrides ?? []).some((o: any) =>
     (o.participants ?? []).some((p: any) => entries.includes(p.entryId)),
   );
@@ -41,4 +44,20 @@ export function withoutOverrideParticipants(record: any, entries: string[]): any
   if (overrides.length) next.overrides = overrides;
   else delete next.overrides;
   return next;
+}
+
+/** Same story-date rule as the top-level event `when`. Throws a message for the caller to wrap. */
+export function whenProblem(w: any): string | undefined {
+  if (
+    !w ||
+    typeof w !== "object" ||
+    Array.isArray(w) ||
+    Object.keys(w).some((k) => !["label", "calendar", "ordinal"].includes(k)) ||
+    typeof w.label !== "string" ||
+    !w.label.length ||
+    (w.calendar !== undefined &&
+      (typeof w.calendar !== "string" || !w.calendar.length)) ||
+    (w.ordinal !== undefined && !Number.isSafeInteger(w.ordinal))
+  )
+    return "Use a story date label, optional calendar and safe whole-number ordinal.";
 }

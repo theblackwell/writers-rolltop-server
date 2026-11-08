@@ -7,6 +7,7 @@ import { between } from "./order.ts";
 import {
   hasRecordOverride,
   withoutOverrideParticipants,
+  whenProblem,
   withoutRecordOverride,
 } from "./record-overrides.ts";
 const invalid = (message: string): never => {
@@ -301,23 +302,8 @@ export async function saveEvent(
     )
       invalid("Use plain text for the event title and summary.");
     if (data.when !== undefined) {
-      const w = data.when;
-      if (
-        !w ||
-        typeof w !== "object" ||
-        Array.isArray(w) ||
-        Object.keys(w).some(
-          (k) => !["label", "calendar", "ordinal"].includes(k),
-        ) ||
-        typeof w.label !== "string" ||
-        !w.label.length ||
-        (w.calendar !== undefined &&
-          (typeof w.calendar !== "string" || !w.calendar.length)) ||
-        (w.ordinal !== undefined && !Number.isSafeInteger(w.ordinal))
-      )
-        invalid(
-          "Use a story date label, optional calendar and safe whole-number ordinal.",
-        );
+      const problem = whenProblem(data.when);
+      if (problem) invalid(problem);
     }
     if (
       !Array.isArray(data.sceneIds) ||
