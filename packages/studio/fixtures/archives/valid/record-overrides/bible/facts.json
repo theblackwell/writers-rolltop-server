@@ -1,0 +1,102 @@
+[
+  {
+    "createdAt": "2026-11-02T12:00:00Z",
+    "entryIds": [
+      "b0000007-0000-4000-8000-000000000007"
+    ],
+    "id": "f0000201-0000-4000-8000-000000000201",
+    "knowledge": [
+      {
+        "knower": "b0000002-0000-4000-8000-000000000002"
+      },
+      {
+        "knower": "reader",
+        "nodeId": "50000006-0000-4000-8000-000000000006"
+      },
+      {
+        "knower": "b0000001-0000-4000-8000-000000000001",
+        "nodeId": "50000008-0000-4000-8000-000000000008"
+      }
+    ],
+    "nodeId": "50000006-0000-4000-8000-000000000006",
+    "orderKey": "h",
+    "scope": {
+      "id": "20000001-0000-4000-8000-000000000001",
+      "kind": "universe"
+    },
+    "text": "Ink remembers: written words can be scraped away but never fully erased.",
+    "truth": "true",
+    "updatedAt": "2026-11-02T12:00:00Z"
+  },
+  {
+    "createdAt": "2026-11-02T12:00:00Z",
+    "entryIds": [
+      "b0000001-0000-4000-8000-000000000001",
+      "b0000002-0000-4000-8000-000000000002"
+    ],
+    "id": "f0000202-0000-4000-8000-000000000202",
+    "knowledge": [
+      {
+        "knower": "b0000001-0000-4000-8000-000000000001",
+        "nodeId": "50000006-0000-4000-8000-000000000006"
+      }
+    ],
+    "nodeId": "50000006-0000-4000-8000-000000000006",
+    "orderKey": "p",
+    "overrides": [
+      {
+        "bookId": "40000002-0000-4000-8000-000000000002",
+        "text": "The lamp in the attic was never lit.",
+        "truth": "false"
+      }
+    ],
+    "scope": {
+      "id": "30000001-0000-4000-8000-000000000001",
+      "kind": "series"
+    },
+    "text": "The letter was written by Mara's mother.",
+    "truth": "false",
+    "updatedAt": "2026-11-02T12:00:00Z"
+  },
+  {
+    "createdAt": "2026-11-02T12:00:00Z",
+    "dismissedWarnings": [
+      {
+        "dismissedAt": "2026-11-02T12:00:00Z",
+        "note": "Corin's guess; settle it when the river is named.",
+        "warning": "undecidedButKnown"
+      }
+    ],
+    "entryIds": [],
+    "id": "f0000203-0000-4000-8000-000000000203",
+    "knowledge": [
+      {
+        "knower": "b0000002-0000-4000-8000-000000000002"
+      }
+    ],
+    "nodeId": "50000005-0000-4000-8000-000000000005",
+    "orderKey": "h",
+    "scope": {
+      "id": "40000001-0000-4000-8000-000000000001",
+      "kind": "book"
+    },
+    "text": "The village beyond [river name] has no chimneys.",
+    "truth": "undecided",
+    "updatedAt": "2026-11-02T12:00:00Z"
+  },
+  {
+    "createdAt": "2026-11-02T12:00:00Z",
+    "deletedAt": "2026-11-02T12:00:00Z",
+    "entryIds": [],
+    "id": "f0000204-0000-4000-8000-000000000204",
+    "knowledge": [],
+    "orderKey": "t",
+    "scope": {
+      "id": "20000001-0000-4000-8000-000000000001",
+      "kind": "universe"
+    },
+    "text": "An abandoned idea.",
+    "truth": "true",
+    "updatedAt": "2026-11-02T12:00:00Z"
+  }
+]

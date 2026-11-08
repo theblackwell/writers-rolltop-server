@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { StudioError, title } from "./store.ts";
 import type { Database, Query } from "./store.ts";
 import { between } from "./order.ts";
+import { hasRecordOverride } from "./record-overrides.ts";
 const invalid = (message: string): never => {
   throw new StudioError(400, "INVALID_INPUT", message);
 };
@@ -292,6 +293,24 @@ export async function bookMembership(db: Database, bookId: string, value: any) {
         invalid(
           "Clear this book's values on entries in the world or series it would leave first.",
         );
+      // Facts, questions and events carry book overrides too (archive-format-v1, "Book overrides on records").
+      for (const table of ["facts", "questions", "continuity_events"]) {
+        const records = (
+          await q(`SELECT data FROM ${table} WHERE library_id=$1`, [
+            row.library_id,
+          ])
+        ).rows;
+        if (
+          records.some(
+            (r) =>
+              left.includes(r.data.scope?.id) &&
+              hasRecordOverride(r.data, bookId),
+          )
+        )
+          invalid(
+            "Clear this book's values on facts, questions or events in the world or series it would leave first.",
+          );
+      }
     }
     // Local values and this-book overrides must still resolve after membership changes.
     const futureBook = { ...old, universeId, seriesId };

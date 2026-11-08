@@ -508,3 +508,13 @@ M4 device sync and M5 publishing exports remain separate. Don't claim M3 complet
 - Checks: `tsc --noEmit` exit 0; `npm test` 251 of 251 (250 previous, plus one new test: the sheet opens, and Cancel closes it without a POST); `npm run build` exit 0.
 - Not checked in a browser: the sheet's look and placement at 390 px, the safe-area inset on a device, and the 44 px targets.
 - Next: V1 (Server backend for record overrides) or the owner's pick.
+
+## V1a — Record override validation, guards and fixture sync — 2026-11-08
+
+- Synced Spec `bf58079` fixtures (record-override valid and invalid archives, schema). Conformance: 30 of 30; the two previously accepted invalid fixtures (book-scoped record, override outside scope) now fail with INTEGRITY_VIOLATION as the spec requires.
+- Validator: overrides on facts, questions and events must name a live book (REFERENCE_UNRESOLVED), at most once per book (INTEGRITY_VIOLATION), never on book-scoped records and only inside the record's scope; event override participants must be unique and resolve to entries.
+- Guards: leaving a world/series is refused while any fact, question or event holds this book's override (same rule as entries). Book purge removes that book's overrides from shared facts, questions and events and keeps other books' overrides. Entry purge removes the entry from event override participants; an override left with no keys is dropped, as entry overrides are. The `overrides` key is removed rather than left empty (minItems 1).
+- Import/export already keep each row's JSON as-is, so overrides survive round trips; not changed.
+- New `src/record-overrides.ts` (helpers); facts, questions, events and worlds updated; `test/record-overrides.test.ts` (5 tests).
+- Checks: `tsc --noEmit` exit 0; `npm test` 260 of 260 (251 previous, plus 4 conformance fixtures and 5 new tests).
+- Not yet: V1b, the write API (set/clear one key for one book, with CAS and the blank-title rule as for top-level events); V1c, effective-version reads for continuity, timeline, lists, names and bible exports. Until V1c, the Server shows canon values only, so per-book warnings are not yet correct for books with overrides.

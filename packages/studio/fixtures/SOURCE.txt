@@ -1,2 +1,2 @@
-Vendored from writers-rolltop-spec e221ec7 (Apache-2.0). Sync via scripts/sync-spec-fixtures.sh.
+Vendored from writers-rolltop-spec bf58079 (Apache-2.0). Sync via scripts/sync-spec-fixtures.sh.
 License and attribution: ../SPEC-LICENSE and ../SPEC-NOTICE.

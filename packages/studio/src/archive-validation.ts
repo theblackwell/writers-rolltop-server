@@ -358,6 +358,20 @@ export function validatePortable(s: Portable) {
       fail("INTEGRITY_VIOLATION", "Self relationship.");
     if (r.bookId) ref(books, r.bookId);
   }
+  // Book overrides on facts, questions and events (spec: "Book overrides on records").
+  const recordOverrides = (r: any) => {
+    if (!r.overrides) return;
+    unique(r.overrides.map((o: any) => o.bookId));
+    for (const o of r.overrides) {
+      const b = ref(books, o.bookId);
+      if (r.scope.kind === "book" || !inScope(r.scope, b))
+        fail("INTEGRITY_VIOLATION", "Override outside record scope.");
+      if (o.participants) {
+        unique(o.participants.map((p: any) => p.entryId));
+        for (const p of o.participants) ref(entries, p.entryId);
+      }
+    }
+  };
   const dismissed = (r: any) => {
     if (r.dismissedWarnings)
       unique(
@@ -378,6 +392,7 @@ export function validatePortable(s: Portable) {
     unique(e.participants.map((p: any) => p.entryId));
     for (const p of e.participants) ref(entries, p.entryId);
     dismissed(e);
+    recordOverrides(e);
   }
   for (const c of s.stateChanges) {
     if ((c.eventId === undefined) === (c.nodeId === undefined))
@@ -415,6 +430,7 @@ export function validatePortable(s: Portable) {
     unique(f.entryIds, "SCHEMA_VIOLATION");
     f.entryIds.forEach((id: string) => ref(entries, id));
     dismissed(f);
+    recordOverrides(f);
   }
   for (const f of s.facts) {
     unique(

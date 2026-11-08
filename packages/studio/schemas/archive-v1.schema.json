@@ -887,6 +887,51 @@
               }
             }
           },
+          "overrides": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bookId"
+              ],
+              "minProperties": 2,
+              "properties": {
+                "bookId": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/fictionalDate"
+                },
+                "participants": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "entryId"
+                    ],
+                    "properties": {
+                      "entryId": {
+                        "$ref": "#/$defs/uuid"
+                      },
+                      "role": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "dismissedWarnings": {
             "$ref": "#/$defs/dismissedWarnings"
           },
@@ -1129,6 +1174,35 @@
               }
             }
           },
+          "overrides": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bookId"
+              ],
+              "minProperties": 2,
+              "properties": {
+                "bookId": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20000
+                },
+                "truth": {
+                  "enum": [
+                    "true",
+                    "false",
+                    "undecided"
+                  ]
+                }
+              }
+            }
+          },
           "dismissedWarnings": {
             "$ref": "#/$defs/dismissedWarnings"
           },
@@ -1196,6 +1270,38 @@
           },
           "nodeId": {
             "$ref": "#/$defs/uuid"
+          },
+          "overrides": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bookId"
+              ],
+              "minProperties": 2,
+              "properties": {
+                "bookId": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20000
+                },
+                "status": {
+                  "enum": [
+                    "open",
+                    "decided"
+                  ]
+                },
+                "decision": {
+                  "type": "string",
+                  "maxLength": 20000
+                }
+              }
+            }
           },
           "dismissedWarnings": {
             "$ref": "#/$defs/dismissedWarnings"

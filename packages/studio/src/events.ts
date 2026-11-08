@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import { StudioError } from "./store.ts";
 import type { Database, Query } from "./store.ts";
 import { between } from "./order.ts";
+import {
+  hasRecordOverride,
+  withoutOverrideParticipants,
+  withoutRecordOverride,
+} from "./record-overrides.ts";
 const invalid = (message: string): never => {
   throw new StudioError(400, "INVALID_INPUT", message);
 };
@@ -409,7 +414,11 @@ export async function unlinkEvents(
     const hit =
       entries.includes(f.entryId) ||
       f.participants.some((p: any) => entries.includes(p.entryId)) ||
-      f.sceneIds.some((id: string) => nodes.includes(id));
+      f.sceneIds.some((id: string) => nodes.includes(id)) ||
+      (f.overrides ?? []).some((o: any) =>
+        (o.participants ?? []).some((p: any) => entries.includes(p.entryId)),
+      ) ||
+      (!!bookId && hasRecordOverride(f, bookId));
     const owned = bookId && f.scope.kind === "book" && f.scope.id === bookId;
     if (!hit && !owned) continue;
     if (row.library_id !== libraryId)
@@ -421,14 +430,20 @@ export async function unlinkEvents(
       await q("DELETE FROM continuity_events WHERE id=$1", [f.id]);
       continue;
     }
-    const data = {
-      ...f,
-      sceneIds: f.sceneIds.filter((id: string) => !nodes.includes(id)),
-      participants: f.participants.filter(
-        (p: any) => !entries.includes(p.entryId),
+    const data = withoutRecordOverride(
+      withoutOverrideParticipants(
+        {
+          ...f,
+          sceneIds: f.sceneIds.filter((id: string) => !nodes.includes(id)),
+          participants: f.participants.filter(
+            (p: any) => !entries.includes(p.entryId),
+          ),
+          updatedAt: stamp(f.updatedAt),
+        },
+        entries,
       ),
-      updatedAt: stamp(f.updatedAt),
-    };
+      bookId ?? "",
+    );
     if (entries.includes(data.entryId)) delete data.entryId;
     await q("UPDATE continuity_events SET data=$2 WHERE id=$1", [f.id, data]);
   }

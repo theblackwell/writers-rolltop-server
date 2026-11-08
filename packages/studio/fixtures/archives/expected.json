@@ -10,6 +10,9 @@
   "invalid/newer-document-version.rolltop": "DOCUMENT_UNSUPPORTED_VERSION",
   "invalid/not-rolltop.rolltop": "ARCHIVE_NOT_ROLLTOP",
   "invalid/override-outside-scope.rolltop": "INTEGRITY_VIOLATION",
+  "invalid/record-override-book-scoped.rolltop": "INTEGRITY_VIOLATION",
+  "invalid/record-override-outside-scope.rolltop": "INTEGRITY_VIOLATION",
+  "invalid/record-override-unknown-key.rolltop": "SCHEMA_VIOLATION",
   "invalid/scene-at-root.rolltop": "INTEGRITY_VIOLATION",
   "invalid/unsupported-version.rolltop": "ARCHIVE_UNSUPPORTED_VERSION",
   "malicious/absolute-path.rolltop": "ARCHIVE_PATH_TRAVERSAL",
@@ -22,6 +25,7 @@
   "malicious/unexpected-directory-file.rolltop": "ARCHIVE_UNEXPECTED_FILE",
   "malicious/unexpected-file.rolltop": "ARCHIVE_UNEXPECTED_FILE",
   "malicious/zip-bomb.rolltop": "ARCHIVE_TOO_LARGE",
+  "valid/record-overrides.rolltop": "VALID",
   "valid/sample-library.rolltop": "VALID",
   "valid/unknown-optional-fields.rolltop": "VALID"
 }

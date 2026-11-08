@@ -1,1 +1,1 @@
-Vendored from writers-rolltop-spec at e221ec7 on 2026-11-04 (Apache-2.0). Do not edit; run scripts/sync-spec-fixtures.sh.
+Vendored from writers-rolltop-spec at bf58079 on 2026-11-08 (Apache-2.0). Do not edit; run scripts/sync-spec-fixtures.sh.
