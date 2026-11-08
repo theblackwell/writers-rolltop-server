@@ -63,6 +63,11 @@ function matches(s: any, v: any): boolean {
   if (type === "object") {
     if ((s.required ?? []).some((k: string) => !Object.hasOwn(v, k)))
       return false;
+    if (
+      s.minProperties !== undefined &&
+      Object.keys(v).length < s.minProperties
+    )
+      return false;
     for (const [k, x] of Object.entries(v)) {
       if (Object.hasOwn(s.properties ?? {}, k)) {
         if (!matches(s.properties[k], x)) return false;

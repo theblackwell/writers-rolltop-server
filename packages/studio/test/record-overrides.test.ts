@@ -214,3 +214,26 @@ test("entry purge removes the purged entry from event overrides", async () => {
     await f.pg.close();
   }
 });
+
+test("an override must carry a key besides bookId, on facts, questions and events", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { checkArchiveSchema } = await import("../src/archive-validation.ts");
+  const dir = new URL("../fixtures/archives/valid/record-overrides/", import.meta.url);
+  const read = (p: string) => JSON.parse(readFileSync(new URL(p, dir), "utf8"));
+  const bookId = "b0000001-0000-4000-8000-000000000001";
+  const cases = [
+    ["facts", read("bible/facts.json")[0]],
+    ["questions", read("bible/questions.json")[0]],
+    ["events", read("continuity/events.json")[0]],
+  ] as const;
+  for (const [name, record] of cases) {
+    // The fixture record itself is valid.
+    checkArchiveSchema(name, [record]);
+    // bookId alone is not an override.
+    assert.throws(
+      () => checkArchiveSchema(name, [{ ...record, overrides: [{ bookId }] }]),
+      { code: "SCHEMA_VIOLATION" },
+      name,
+    );
+  }
+});
