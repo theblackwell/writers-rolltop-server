@@ -5,6 +5,8 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 spec="${SPEC_DIR:-$here/../../Spec}"
 dest="$here/../packages/document-adapter/test/spec"
+[ -d "$spec/fixtures" ] || { echo "Spec not found at $spec" >&2; exit 1; }
+[ -z "$(git -C "$spec" status --porcelain)" ] || { echo "Spec has uncommitted changes; commit them before vendoring" >&2; exit 1; }
 commit="$(git -C "$spec" rev-parse HEAD)"
 rm -rf "$dest"
 mkdir -p "$dest"
