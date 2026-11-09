@@ -1,0 +1,6 @@
+{
+  "name": "writers-rolltop-server",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "workspaces": ["packages/*"]
+}

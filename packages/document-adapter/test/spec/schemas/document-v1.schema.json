@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://writersrolltop.app/schemas/document-v1.schema.json",
+  "title": "Writers Rolltop canonical document v1",
+  "description": "Closed schema. Structural rules beyond JSON Schema (unique block ids, anchor contiguity, list structure, quote/list exclusivity, normalization) are in docs/document-format-v1.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "nodeId",
+    "blocks"
+  ],
+  "properties": {
+    "schema": {
+      "const": "writers-rolltop/document"
+    },
+    "version": {
+      "const": 1
+    },
+    "nodeId": {
+      "$ref": "#/$defs/uuid"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/block"
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "block": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "content"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "type": {
+              "const": "paragraph"
+            },
+            "content": {
+              "$ref": "#/$defs/inlines"
+            },
+            "align": {
+              "$ref": "#/$defs/align"
+            },
+            "quote": {
+              "const": true
+            },
+            "list": {
+              "$ref": "#/$defs/list"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "level",
+            "content"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "type": {
+              "const": "heading"
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            },
+            "content": {
+              "$ref": "#/$defs/inlines"
+            },
+            "align": {
+              "$ref": "#/$defs/align"
+            },
+            "quote": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "type": {
+              "const": "sceneBreak"
+            }
+          }
+        }
+      ]
+    },
+    "inlines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/inline"
+      }
+    },
+    "inline": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "marks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/mark"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "hardBreak"
+            }
+          }
+        }
+      ]
+    },
+    "mark": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "strong"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "emphasis"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "underline"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "href"
+          ],
+          "properties": {
+            "type": {
+              "const": "link"
+            },
+            "href": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "const": "anchor"
+            },
+            "id": {
+              "$ref": "#/$defs/uuid"
+            }
+          }
+        }
+      ]
+    },
+    "align": {
+      "enum": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "style",
+        "level"
+      ],
+      "properties": {
+        "style": {
+          "enum": [
+            "bullet",
+            "ordered"
+          ]
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        }
+      }
+    }
+  }
+}

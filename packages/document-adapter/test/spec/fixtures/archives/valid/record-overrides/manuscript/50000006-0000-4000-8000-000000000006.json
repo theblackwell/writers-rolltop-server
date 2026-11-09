@@ -1,0 +1,96 @@
+{
+  "blocks" : [
+    {
+      "content" : [
+        {
+          "text" : "The letter",
+          "type" : "text"
+        }
+      ],
+      "id" : "60000003-0000-4000-8000-000000000003",
+      "level" : 2,
+      "type" : "heading"
+    },
+    {
+      "content" : [
+        {
+          "text" : "The rain arrived ",
+          "type" : "text"
+        },
+        {
+          "marks" : [
+            {
+              "type" : "emphasis"
+            }
+          ],
+          "text" : "just",
+          "type" : "text"
+        },
+        {
+          "text" : " before the letter. ",
+          "type" : "text"
+        },
+        {
+          "marks" : [
+            {
+              "type" : "strong"
+            },
+            {
+              "id" : "70000001-0000-4000-8000-000000000001",
+              "type" : "anchor"
+            }
+          ],
+          "text" : "Mara Vell",
+          "type" : "text"
+        },
+        {
+          "text" : " read it twice by the window.",
+          "type" : "text"
+        },
+        {
+          "type" : "hardBreak"
+        },
+        {
+          "text" : "It was signed with a single initial.",
+          "type" : "text"
+        }
+      ],
+      "id" : "60000004-0000-4000-8000-000000000004",
+      "type" : "paragraph"
+    },
+    {
+      "content" : [
+
+      ],
+      "id" : "60000005-0000-4000-8000-000000000005",
+      "type" : "paragraph"
+    },
+    {
+      "content" : [
+        {
+          "text" : "She checked the ",
+          "type" : "text"
+        },
+        {
+          "marks" : [
+            {
+              "href" : "rolltop://attachment/60cecdc199783a603e055c91e855eee8628a67fdf8ffb3e7353bcf76e9ad6ade",
+              "type" : "link"
+            }
+          ],
+          "text" : "map",
+          "type" : "text"
+        },
+        {
+          "text" : " again — café, naïve, 雨, 🏮.",
+          "type" : "text"
+        }
+      ],
+      "id" : "60000006-0000-4000-8000-000000000006",
+      "type" : "paragraph"
+    }
+  ],
+  "nodeId" : "50000006-0000-4000-8000-000000000006",
+  "schema" : "writers-rolltop/document",
+  "version" : 1
+}

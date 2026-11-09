@@ -1,0 +1,22 @@
+{
+  "blocks" : [
+    {
+      "content" : [
+        {
+          "marks" : [
+            {
+              "type" : "emphasis"
+            }
+          ],
+          "text" : "For everyone who kept a desk drawer of unfinished pages.",
+          "type" : "text"
+        }
+      ],
+      "id" : "60000001-0000-4000-8000-000000000001",
+      "type" : "paragraph"
+    }
+  ],
+  "nodeId" : "50000001-0000-4000-8000-000000000001",
+  "schema" : "writers-rolltop/document",
+  "version" : 1
+}

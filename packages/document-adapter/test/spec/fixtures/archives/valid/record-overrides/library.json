@@ -1,0 +1,215 @@
+{
+  "books" : [
+    {
+      "authorName" : "A. Writer",
+      "bibleVersion" : "1.0",
+      "coverAttachment" : "f3041abf66c8f86cb98174c81cfb53fd97a18be4fbae2673838aaa93b33b7d27",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "description" : "A missing dictionary rewrites a village.",
+      "id" : "40000001-0000-4000-8000-000000000001",
+      "language" : "en",
+      "logline" : "An archivist's daughter reads a letter that should not exist.",
+      "orderKey" : "9",
+      "principles" : "The archive is never wholly safe or wholly lost.",
+      "seriesId" : "30000001-0000-4000-8000-000000000001",
+      "targetDate" : "2027-06-30",
+      "targetWordCount" : 90000,
+      "themes" : "What we keep, and what keeps us.",
+      "title" : "The Unsent Letter",
+      "universeId" : "20000001-0000-4000-8000-000000000001",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "authorName" : "A. Writer",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "40000002-0000-4000-8000-000000000002",
+      "language" : "en-GB",
+      "orderKey" : "i",
+      "seriesId" : "30000001-0000-4000-8000-000000000001",
+      "title" : "The Salt Archive",
+      "universeId" : "20000001-0000-4000-8000-000000000001",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "authorName" : "A. Writer",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "40000003-0000-4000-8000-000000000003",
+      "language" : "en",
+      "orderKey" : "q",
+      "title" : "Fleet Command",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    }
+  ],
+  "library" : {
+    "createdAt" : "2026-11-02T12:00:00Z",
+    "id" : "10000001-0000-4000-8000-000000000001",
+    "title" : "The Black Well Foundry Library",
+    "updatedAt" : "2026-11-02T12:00:00Z"
+  },
+  "manuscriptNodes" : [
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000001-0000-4000-8000-000000000001",
+      "kind" : "frontMatter",
+      "orderKey" : "7",
+      "title" : "Dedication",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000002-0000-4000-8000-000000000002",
+      "kind" : "part",
+      "orderKey" : "e",
+      "plan" : "Mara finds the letter.\nThe village closes ranks.",
+      "targetWordCount" : 30000,
+      "title" : "Part One: Ink",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000003-0000-4000-8000-000000000003",
+      "kind" : "backMatter",
+      "orderKey" : "s",
+      "title" : "Acknowledgements",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000004-0000-4000-8000-000000000004",
+      "kind" : "chapter",
+      "orderKey" : "7",
+      "parentId" : "50000002-0000-4000-8000-000000000002",
+      "targetWordCount" : 4000,
+      "title" : "Chapter 1 — The Letter",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000005-0000-4000-8000-000000000005",
+      "kind" : "chapter",
+      "orderKey" : "e",
+      "parentId" : "50000002-0000-4000-8000-000000000002",
+      "povEntryId" : "b0000001-0000-4000-8000-000000000001",
+      "title" : "Chapter 2 — The Village",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000006-0000-4000-8000-000000000006",
+      "kind" : "scene",
+      "orderKey" : "7",
+      "parentId" : "50000004-0000-4000-8000-000000000004",
+      "povEntryId" : "b0000001-0000-4000-8000-000000000001",
+      "settingEntryId" : "b0000003-0000-4000-8000-000000000003",
+      "status" : "draft",
+      "synopsis" : "Synopsis of The letter.",
+      "title" : "The letter",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000007-0000-4000-8000-000000000007",
+      "kind" : "scene",
+      "orderKey" : "e",
+      "parentId" : "50000004-0000-4000-8000-000000000004",
+      "status" : "draft",
+      "synopsis" : "Synopsis of A light upstairs.",
+      "title" : "A light upstairs",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000008-0000-4000-8000-000000000008",
+      "kind" : "scene",
+      "orderKey" : "7",
+      "parentId" : "50000005-0000-4000-8000-000000000005",
+      "status" : "draft",
+      "synopsis" : "Synopsis of The village.",
+      "title" : "The village",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000001-0000-4000-8000-000000000001",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "deletedAt" : "2026-11-02T12:00:00Z",
+      "id" : "50000009-0000-4000-8000-000000000009",
+      "kind" : "scene",
+      "orderKey" : "e",
+      "parentId" : "50000005-0000-4000-8000-000000000005",
+      "status" : "draft",
+      "synopsis" : "Synopsis of Cut scene.",
+      "title" : "Cut scene",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000002-0000-4000-8000-000000000002",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "5000000a-0000-4000-8000-00000000000a",
+      "kind" : "chapter",
+      "orderKey" : "i",
+      "title" : "Chapter 1 — Salt",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000002-0000-4000-8000-000000000002",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "5000000b-0000-4000-8000-00000000000b",
+      "kind" : "scene",
+      "orderKey" : "i",
+      "parentId" : "5000000a-0000-4000-8000-00000000000a",
+      "status" : "draft",
+      "synopsis" : "Synopsis of The archive burns.",
+      "title" : "The archive burns",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000003-0000-4000-8000-000000000003",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "5000000c-0000-4000-8000-00000000000c",
+      "kind" : "chapter",
+      "orderKey" : "i",
+      "title" : "Chapter 1 — Orders",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    },
+    {
+      "bookId" : "40000003-0000-4000-8000-000000000003",
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "5000000d-0000-4000-8000-00000000000d",
+      "kind" : "scene",
+      "orderKey" : "i",
+      "parentId" : "5000000c-0000-4000-8000-00000000000c",
+      "status" : "draft",
+      "synopsis" : "Synopsis of Bridge.",
+      "title" : "Bridge",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    }
+  ],
+  "series" : [
+    {
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "30000001-0000-4000-8000-000000000001",
+      "orderKey" : "9",
+      "title" : "The Lantern Cycle",
+      "universeId" : "20000001-0000-4000-8000-000000000001",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    }
+  ],
+  "universes" : [
+    {
+      "createdAt" : "2026-11-02T12:00:00Z",
+      "id" : "20000001-0000-4000-8000-000000000001",
+      "orderKey" : "9",
+      "summary" : "A shoreline of archivists and storms.",
+      "title" : "The Lantern Coast",
+      "updatedAt" : "2026-11-02T12:00:00Z"
+    }
+  ]
+}

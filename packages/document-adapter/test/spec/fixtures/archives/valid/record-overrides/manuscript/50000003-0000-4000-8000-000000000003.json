@@ -1,0 +1,17 @@
+{
+  "blocks" : [
+    {
+      "content" : [
+        {
+          "text" : "Thank you to the first readers.",
+          "type" : "text"
+        }
+      ],
+      "id" : "60000002-0000-4000-8000-000000000002",
+      "type" : "paragraph"
+    }
+  ],
+  "nodeId" : "50000003-0000-4000-8000-000000000003",
+  "schema" : "writers-rolltop/document",
+  "version" : 1
+}

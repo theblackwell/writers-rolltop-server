@@ -1,0 +1,17 @@
+{
+  "blocks" : [
+    {
+      "content" : [
+        {
+          "text" : "A scene the author cut but kept in the trash.",
+          "type" : "text"
+        }
+      ],
+      "id" : "60000011-0000-4000-8000-000000000011",
+      "type" : "paragraph"
+    }
+  ],
+  "nodeId" : "50000009-0000-4000-8000-000000000009",
+  "schema" : "writers-rolltop/document",
+  "version" : 1
+}

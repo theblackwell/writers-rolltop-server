@@ -1,0 +1,8 @@
+{ "schema": "writers-rolltop/document", "version": 1, "nodeId": "20000000-0000-4000-8000-000000000004",
+  "blocks": [ { "id": "b0000000-0000-4000-8000-000000000021", "type": "paragraph",
+    "content": [
+      { "type": "text", "text": "one", "marks": [ { "type": "emphasis" } ] }, { "type": "hardBreak" },
+      { "type": "text", "text": "two", "marks": [ { "type": "emphasis" } ] }, { "type": "hardBreak" },
+      { "type": "text", "text": "three", "marks": [ { "type": "emphasis" } ] }, { "type": "hardBreak" },
+      { "type": "text", "text": "four", "marks": [ { "type": "emphasis" } ] }, { "type": "hardBreak" },
+      { "type": "text", "text": "five", "marks": [ { "type": "emphasis" } ] }, { "type": "hardBreak" } ] } ] }
