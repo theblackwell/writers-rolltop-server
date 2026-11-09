@@ -2,5 +2,11 @@
   "name": "writers-rolltop-server",
   "private": true,
   "license": "AGPL-3.0-only",
-  "workspaces": ["packages/*"]
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
 }
