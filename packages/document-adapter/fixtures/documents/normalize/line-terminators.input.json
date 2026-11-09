@@ -1,3 +1,0 @@
-{ "schema": "writers-rolltop/document", "version": 1, "nodeId": "20000000-0000-4000-8000-000000000004",
-  "blocks": [ { "id": "b0000000-0000-4000-8000-000000000021", "type": "paragraph",
-    "content": [ { "type": "text", "text": "one\r\ntwo\nthree\rfour\u2028five\u2029", "marks": [ { "type": "emphasis" } ] } ] } ] }
