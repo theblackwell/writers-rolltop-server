@@ -132,5 +132,36 @@ export function checkShape(path: string, value: Json, into: IssueList = new Issu
   const def = defs[name];
   if (!def) throw new Error(`schema has no definition ${name}`);
   check(def, value, "", { list: into, prefix: path });
+  checkNoNul(path, value, into);
   return into;
 }
+
+/**
+ * U+0000 is refused in every string value and property name of every archive JSON file (owner decision,
+ * 2026-11-10): PostgreSQL text cannot hold it, and no editor writes it. It is reported as a shape problem
+ * (SCHEMA_VIOLATION). The message names the file, the record id and the field, never the text. Manuscript
+ * documents are not walked here: their canonical rules already refuse it (DOCUMENT_INVALID).
+ */
+function checkNoNul(file: string, root: Json, into: IssueList): void {
+  const stack: { value: Json; pointer: string; recordId?: string }[] = [{ value: root, pointer: "" }];
+  while (stack.length > 0 && !into.full) {
+    const { value, pointer, recordId } = stack.pop()!;
+    const report = (what: string) => into.add({
+      code: "SCHEMA_VIOLATION",
+      message: `${file}${pointer}: ${what} contains a NUL character${recordId ? ` (record ${recordId})` : ""}`,
+      ...(recordId ? { recordId } : {}),
+    });
+    if (typeof value === "string") {
+      if (value.includes("\u0000")) report("the value");
+    } else if (Array.isArray(value)) {
+      for (let i = value.length - 1; i >= 0; i--) stack.push({ value: value[i]!, pointer: `${pointer}/${i}`, recordId });
+    } else if (value !== null && typeof value === "object") {
+      const own = typeof value.id === "string" && UUID_OR_HASH.test(value.id) ? value.id : typeof value.sha256 === "string" && UUID_OR_HASH.test(value.sha256) ? value.sha256 : recordId;
+      for (const [k, v] of Object.entries(value)) {
+        if (k.includes("\u0000")) { into.add({ code: "SCHEMA_VIOLATION", message: `${file}${pointer}: a property name contains a NUL character${own ? ` (record ${own})` : ""}`, ...(own ? { recordId: own } : {}) }); continue; }
+        stack.push({ value: v, pointer: `${pointer}/${printable(k)}`, recordId: own });
+      }
+    }
+  }
+}
+const UUID_OR_HASH = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64})$/;

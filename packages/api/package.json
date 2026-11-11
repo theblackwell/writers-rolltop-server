@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@writers-rolltop/archive": "0.0.0",
+    "@writers-rolltop/store": "0.0.0",
     "fastify": "5.12.7"
   },
   "devDependencies": {

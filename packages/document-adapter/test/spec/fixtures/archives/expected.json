@@ -9,6 +9,7 @@
   "invalid/missing-file.rolltop": "ARCHIVE_MISSING_FILE",
   "invalid/newer-document-version.rolltop": "DOCUMENT_UNSUPPORTED_VERSION",
   "invalid/not-rolltop.rolltop": "ARCHIVE_NOT_ROLLTOP",
+  "invalid/nul-in-text.rolltop": "SCHEMA_VIOLATION",
   "invalid/override-outside-scope.rolltop": "INTEGRITY_VIOLATION",
   "invalid/record-override-book-scoped.rolltop": "INTEGRITY_VIOLATION",
   "invalid/record-override-outside-scope.rolltop": "INTEGRITY_VIOLATION",

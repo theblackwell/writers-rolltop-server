@@ -8,6 +8,9 @@ import { putAttachment, readAttachment } from "./attachments.ts";
 import type { AttachmentInput, AttachmentRecord } from "./attachments.ts";
 import { migrate } from "./migrate.ts";
 import type { Migration } from "./migrate.ts";
+import { exportArchive, importContents, readArchiveData } from "./archive-io.ts";
+import type { ArchiveImportResult } from "./archive-io.ts";
+import type { ArchiveContents, ArchiveData, WriteOptions, WriteResult } from "@writers-rolltop/archive";
 import { checkIntegrity } from "./integrity.ts";
 import type { IntegrityReport } from "./integrity.ts";
 
@@ -251,6 +254,21 @@ export class Store {
 
   readAttachment(sha256: string): Promise<AttachmentRecord & { bytes: Uint8Array }> {
     return readAttachment(this.pool, this.attachmentsDir, sha256);
+  }
+
+  /** Load a read-and-validated archive into this (empty) database in one transaction. LIBRARY_EXISTS if it already holds a library. */
+  importArchive(contents: ArchiveContents, signal?: AbortSignal): Promise<ArchiveImportResult> {
+    return importContents(this, contents, signal);
+  }
+
+  /** The whole library in the archive's in-memory form (a consistent snapshot). */
+  readArchiveData(): Promise<ArchiveData> {
+    return readArchiveData(this);
+  }
+
+  /** Write the library to a .rolltop file. */
+  exportArchive(destination: string, options?: WriteOptions): Promise<WriteResult> {
+    return exportArchive(this, destination, options);
   }
 
   checkIntegrity(): Promise<IntegrityReport> {

@@ -9,9 +9,9 @@ import { archiveFixtures, listFilesRecursive, readJSON, sha256, unpackedFiles, w
 // Every case comes from the vendored expected.json, never from a hand-written list.
 const expected: Record<string, string> = readJSON("archives", "expected.json");
 const folderExists = async (p: string): Promise<boolean> => (await stat(p).catch(() => undefined))?.isDirectory() === true;
-const groups = { valid: 3, invalid: 16, malicious: 10 } as const;
+const groups = { valid: 3, invalid: 17, malicious: 10 } as const;
 
-test("expected.json has the documented counts (3 valid, 16 invalid, 10 malicious)", () => {
+test("expected.json has the documented counts (3 valid, 17 invalid, 10 malicious)", () => {
   for (const [group, count] of Object.entries(groups)) {
     assert.equal(Object.keys(expected).filter((k) => k.startsWith(`${group}/`)).length, count, group);
   }

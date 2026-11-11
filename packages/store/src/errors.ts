@@ -9,7 +9,8 @@ export type StoreErrorCode =
   | "MIGRATION_FAILED"
   | "BACKUP_FAILED"
   | "ATTACHMENT_HASH_MISMATCH"
-  | "INTEGRITY_FAILED";
+  | "INTEGRITY_FAILED"
+  | "LIBRARY_EXISTS";
 
 /** Typed store failure. Messages never carry document text; `details` holds ids and numbers only. */
 export class StoreError extends Error {

@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@writers-rolltop/archive": "0.0.0",
     "@writers-rolltop/document-adapter": "0.0.0",
     "pg": "8.23.1"
   },

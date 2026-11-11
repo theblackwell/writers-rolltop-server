@@ -11,6 +11,7 @@
   "list-on-heading.json": "DOCUMENT_INVALID",
   "list-starts-indented.json": "DOCUMENT_INVALID",
   "newer-version.json": "DOCUMENT_UNSUPPORTED_VERSION",
+  "nul-in-href.json": "DOCUMENT_INVALID",
   "quote-and-list.json": "DOCUMENT_INVALID",
   "quote-false.json": "DOCUMENT_INVALID",
   "scene-break-with-content.json": "DOCUMENT_INVALID",

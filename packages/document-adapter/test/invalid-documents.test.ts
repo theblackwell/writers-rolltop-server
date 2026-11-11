@@ -18,3 +18,18 @@ for (const [f, code] of nonEmpty(Object.entries(expected), "invalid"))  {
     );
   });
 }
+
+test("U+0000 in a link href or an anchor id is DOCUMENT_INVALID", () => {
+  const base = readJSON("documents", "valid", "formatting.json") as any;
+  const withMark = (mark: unknown) => {
+    const d = structuredClone(base);
+    d.blocks[0].content = [{ type: "text", text: "x", marks: [mark] }];
+    return d;
+  };
+  for (const mark of [
+    { type: "link", href: "http://a\u0000b" },
+    { type: "anchor", id: "70000001-0000-4000-8000-00000000000\u0000" },
+  ]) {
+    assert.throws(() => canonicalToEditor(withMark(mark)), (e) => e instanceof DocumentError && e.code === "DOCUMENT_INVALID");
+  }
+});

@@ -7,3 +7,6 @@ export type { Migration, MigrateOptions, MigrateResult } from "./migrate.ts";
 export { checkIntegrity } from "./integrity.ts";
 export type { IntegrityProblem, IntegrityProblemCode, IntegrityReport } from "./integrity.ts";
 export type { AttachmentInput, AttachmentRecord } from "./attachments.ts";
+export { importArchiveBytes } from "./archive-io.ts";
+export type { ArchiveImportResult } from "./archive-io.ts";
+export { sweepAttachmentTemps } from "./attachments.ts";

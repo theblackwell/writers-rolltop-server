@@ -58,6 +58,7 @@ function parseMark(v: unknown): Mark {
     case "link":
       closed(v, ["type", "href"], "link mark");
       if (typeof v.href !== "string" || v.href === "") invalid("link href must be a non-empty string");
+      if ((v.href as string).includes("\u0000")) invalid("link href contains a NUL character"); // Spec rule 3 (document-format-v1.md)
       return { type: "link", href: v.href as string };
     case "anchor":
       closed(v, ["type", "id"], "anchor mark");

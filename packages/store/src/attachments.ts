@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type pg from "pg";
 import { StoreError, mapPgError } from "./errors.ts";
@@ -53,9 +53,13 @@ async function fsyncDir(dir: string): Promise<void> {
   } catch { /* directory fsync is best effort (not supported everywhere) */ }
 }
 
-export async function putAttachment(
-  pool: pg.Pool, dir: string, bytes: Uint8Array, input: AttachmentInput,
-): Promise<AttachmentRecord> {
+const TEMP_NAME = /^[0-9a-f]{64}\.tmp-[0-9a-f-]{36}$/;
+
+/**
+ * Write the bytes to `<dir>/<sha256>` if no such file exists. An existing file is hashed and must match;
+ * it is never overwritten. `created` is true only if this call made the file.
+ */
+export async function writeAttachmentFile(dir: string, bytes: Uint8Array): Promise<{ sha256: string; created: boolean }> {
   const sha256 = hashBytes(bytes);
   const path = attachmentPath(dir, sha256);
   await mkdir(dir, { recursive: true });
@@ -66,18 +70,37 @@ export async function putAttachment(
     if (existing.sha256 !== sha256) {
       throw new StoreError("ATTACHMENT_HASH_MISMATCH", "an attachment file with this name holds different bytes; refusing to overwrite", { sha256 });
     }
-  } else {
-    const tmp = join(dir, `${sha256}.tmp-${randomUUID()}`);
-    try {
-      const h = await open(tmp, "wx", 0o600);
-      try { await h.writeFile(bytes); await h.sync(); } finally { await h.close(); }
-      await rename(tmp, path);
-      await fsyncDir(dir);
-    } catch (e) {
-      await rm(tmp, { force: true }).catch(() => {});
-      throw e;
-    }
+    return { sha256, created: false };
   }
+  const tmp = join(dir, `${sha256}.tmp-${randomUUID()}`);
+  try {
+    const h = await open(tmp, "wx", 0o600);
+    try { await h.writeFile(bytes); await h.sync(); } finally { await h.close(); }
+    await rename(tmp, path);
+    await fsyncDir(dir);
+  } catch (e) {
+    await rm(tmp, { force: true }).catch(() => {});
+    throw e;
+  }
+  return { sha256, created: true };
+}
+
+/** Startup sweep: remove temp files a crash left behind. Returns how many were removed. */
+export async function sweepAttachmentTemps(dir: string): Promise<number> {
+  let names: string[];
+  try { names = await readdir(dir); } catch { return 0; }
+  let removed = 0;
+  for (const name of names) {
+    if (!TEMP_NAME.test(name)) continue;
+    try { await rm(join(dir, name), { force: true }); removed++; } catch { /* best effort */ }
+  }
+  return removed;
+}
+
+export async function putAttachment(
+  pool: pg.Pool, dir: string, bytes: Uint8Array, input: AttachmentInput,
+): Promise<AttachmentRecord> {
+  const { sha256 } = await writeAttachmentFile(dir, bytes);
   try {
     await pool.query(
       `INSERT INTO attachment (sha256, media_type, byte_length, original_name, extension, created_at)

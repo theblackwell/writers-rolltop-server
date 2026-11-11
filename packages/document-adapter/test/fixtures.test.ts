@@ -23,13 +23,14 @@ test("document fixture counts", () => {
   assert.equal(normalize.filter((f) => f.endsWith(".input.json")).length, 3);
   assert.equal(normalize.filter((f) => f.endsWith(".expected.json")).length, 3);
   const invalid = list("fixtures/documents/invalid").filter((f) => f.endsWith(".json") && f !== "expected.json");
-  assert.equal(invalid.length, 19);
+  assert.equal(invalid.length, 20);
 });
 
 test("archive fixture counts", () => {
   const n = (d: string) => list(`fixtures/archives/${d}`).filter((f) => f.endsWith(".rolltop")).length;
   // Actual counts in Spec 781612e: valid is 3 (task brief said 2), invalid is 16 (brief said 13).
+  // Spec 0246358 adds invalid/nul-in-text.rolltop (owner-approved NUL tightening, 2026-11-10): invalid is 17.
   assert.equal(n("valid"), 3);
-  assert.equal(n("invalid"), 16);
+  assert.equal(n("invalid"), 17);
   assert.equal(n("malicious"), 10);
 });

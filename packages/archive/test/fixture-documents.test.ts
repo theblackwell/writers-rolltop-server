@@ -30,9 +30,9 @@ const invalid = jsonFiles("documents", "invalid").filter((f) => f !== "expected.
 const invalidExpected: Record<string, string> = readJSON("documents", "invalid", "expected.json");
 const normalizeNames = jsonFiles("documents", "normalize").filter((f) => f.endsWith(".input.json")).map((f) => f.replace(/\.input\.json$/, ""));
 
-test("document fixture counts: 4 valid, 19 invalid, 3 normalize pairs", () => {
+test("document fixture counts: 4 valid, 20 invalid, 3 normalize pairs", () => {
   assert.equal(valid.length, 4);
-  assert.equal(invalid.length, 19);
+  assert.equal(invalid.length, 20);
   assert.equal(normalizeNames.length, 3);
   assert.deepEqual(Object.keys(invalidExpected).sort(), invalid);
 });
