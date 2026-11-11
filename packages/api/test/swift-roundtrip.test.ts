@@ -54,9 +54,9 @@ test("the Swift CLI's own sample, and the checked-in fixtures: import, export, v
       const fresh = await server(); // one library per database
       try {
         // 2. The server imports it and exports it again.
-        const imp = await fresh.app.inject({ method: "POST", url: "/api/import", payload: await readFile(input), headers: { "content-type": "application/zip" } });
+        const imp = await fresh.inject({ method: "POST", url: "/api/import", payload: await readFile(input), headers: { "content-type": "application/zip" } });
         assert.equal(imp.statusCode, 201, `${label}: ${imp.body}`);
-        const exp = await fresh.app.inject({ method: "GET", url: "/api/export" });
+        const exp = await fresh.inject({ method: "GET", url: "/api/export" });
         assert.equal(exp.statusCode, 200);
         const exported = path.join(dir, `${label.replace(/\W+/g, "-")}-server.rolltop`);
         await writeFile(exported, exp.rawPayload);

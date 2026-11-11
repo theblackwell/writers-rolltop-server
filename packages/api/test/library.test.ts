@@ -9,7 +9,7 @@ import { archiveFixtures, rowCount, server } from "./helpers.ts";
 
 const expected: Record<string, string> = JSON.parse(await readFile(path.join(archiveFixtures, "expected.json"), "utf8"));
 const post = (s: Awaited<ReturnType<typeof server>>, payload: Buffer | string, contentType = "application/zip") =>
-  s.app.inject({ method: "POST", url: "/api/import", payload, headers: { "content-type": contentType } });
+  s.inject({ method: "POST", url: "/api/import", payload, headers: { "content-type": contentType } });
 
 for (const name of ["sample-library", "record-overrides", "unknown-optional-fields"]) {
   test(`${name}: import over HTTP, then export over HTTP, is semantically identical`, async () => {
@@ -22,7 +22,7 @@ for (const name of ["sample-library", "record-overrides", "unknown-optional-fiel
       const body = res.json();
       assert.equal(typeof body.summary.libraryId, "string");
       assert.ok(Array.isArray(body.warnings));
-      const exp = await s.app.inject({ method: "GET", url: "/api/export" });
+      const exp = await s.inject({ method: "GET", url: "/api/export" });
       assert.equal(exp.statusCode, 200);
       assert.equal(exp.headers["content-type"], "application/zip");
       assert.match(String(exp.headers["content-disposition"]), /attachment; filename="library\.rolltop"/);
@@ -45,7 +45,7 @@ for (const name of ["sample-library", "record-overrides", "unknown-optional-fiel
 test("export with no library is a 404 with a stable code", async () => {
   const s = await server();
   try {
-    const res = await s.app.inject({ method: "GET", url: "/api/export" });
+    const res = await s.inject({ method: "GET", url: "/api/export" });
     assert.equal(res.statusCode, 404);
     assert.equal(res.json().error.code, "LIBRARY_NOT_FOUND");
   } finally { await s.drop(); }
@@ -150,7 +150,7 @@ test("crafted input: a huge JSON file trips the worker's memory cap, and the dat
     assert.equal(res.statusCode, 422, res.body);
     assert.equal(res.json().error.code, "IMPORT_MEMORY_EXCEEDED");
     assert.equal(await rowCount(s), 0);
-    const ok = await s.app.inject({ method: "GET", url: "/api/health" });
+    const ok = await s.inject({ method: "GET", url: "/api/health" });
     assert.equal(ok.statusCode, 200);
   } finally { await s.drop(); }
 });
@@ -160,12 +160,12 @@ test("unknown routes and server faults answer with the generic error envelope", 
   try {
     await rm(s.exportsDir, { recursive: true });
     await writeFile(s.exportsDir, "a file where the exports folder should be");
-    const nope = await s.app.inject({ method: "GET", url: "/nope/../secret" });
+    const nope = await s.inject({ method: "GET", url: "/nope/../secret" });
     assert.equal(nope.statusCode, 404);
     assert.deepEqual(nope.json(), { error: { code: "NOT_FOUND", message: "There is nothing at this address." } });
     // An internal failure (the exports folder cannot be created) must not leak the path.
     await post(s, await readFile(path.join(archiveFixtures, "valid", "sample-library.rolltop")));
-    const res = await s.app.inject({ method: "GET", url: "/api/export" });
+    const res = await s.inject({ method: "GET", url: "/api/export" });
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.json(), { error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } });
     assert.doesNotMatch(JSON.stringify(s.logs) + res.body, /exports|\/(Users|private|tmp|var)\//);

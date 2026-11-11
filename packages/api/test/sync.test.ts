@@ -23,7 +23,7 @@ const MISSING = "99999999-9999-4999-8999-999999999999";
 
 const state = async (s: Server) => (await s.query("SELECT epoch, head FROM sync_state"))[0] as { epoch: string; head: string };
 const push = (s: Server, epoch: string, deviceId: string, ops: unknown[]) =>
-  s.app.inject({ method: "POST", url: "/api/sync/v1/push", payload: { epoch, deviceId, ops } });
+  s.inject({ method: "POST", url: "/api/sync/v1/push", payload: { epoch, deviceId, ops } });
 const results = (res: { json(): any }) => res.json().results as any[];
 const codes = (res: { json(): any }) => results(res).map((r) => r.code ?? r.status);
 
@@ -66,7 +66,7 @@ const counts = async (s: Server) =>
       + (SELECT count(*) FROM scene_document) + (SELECT count(*) FROM bible_entry) AS rows`))[0];
 
 const importSample = (s: Server) => readFile(path.join(archiveFixtures, "valid", "sample-library.rolltop")).then((payload) =>
-  s.app.inject({ method: "POST", url: "/api/import", payload, headers: { "content-type": "application/zip" } }));
+  s.inject({ method: "POST", url: "/api/import", payload, headers: { "content-type": "application/zip" } }));
 
 const normalize = (data: ArchiveData): string => JSON.stringify(data, (_k, v) => (v instanceof Map ? Object.fromEntries([...v].sort()) : v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v));
 const byId = (rs: any[], id: string) => rs.find((r) => r.id === id);
@@ -145,7 +145,7 @@ test("sync keeps no copy of any record: there is no sync_record table, and the l
     assert.equal((await s.query(`SELECT count(*) AS n FROM document_revision WHERE node_id = '${x.scene}'`))[0].n, "1");
     // A document change holds no text of its own: the pull reads it from document_revision.
     assert.equal((await s.query("SELECT value FROM sync_change WHERE change = 'document'"))[0].value, null);
-    const feed = (await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}` })).json();
+    const feed = (await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}` })).json();
     assert.equal(textOf(feed.changes.find((c: any) => c.change === "document").value), "First");
   } finally { await s.drop(); }
 });
@@ -177,7 +177,7 @@ test("every record kind is written to its own table, and archive export contains
     }
     assert.equal(textOf(data.documents.get(I.scene!)), "The meeting");
     // The real export, over HTTP, read back and validated by the archive reader (schema, integrity, checksums).
-    const res = await s.app.inject({ method: "GET", url: "/api/export" });
+    const res = await s.inject({ method: "GET", url: "/api/export" });
     assert.equal(res.statusCode, 200, res.body);
     const contents = await readArchive(res.rawPayload);
     try {
@@ -197,10 +197,10 @@ test("a scene still waiting for its document makes the export refuse, and the do
     const [l, b, c, sc] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
     await push(s, epoch, A, [create("library", lib(l)), create("book", book(b)), create("manuscriptNode", chapter(c, b)), create("manuscriptNode", scene(sc, b, c))]);
     // Sync allows the node before its text (the client creates first); the archive needs the document, so the export waits.
-    assert.equal((await s.app.inject({ method: "GET", url: "/api/export" })).statusCode, 500);
+    assert.equal((await s.inject({ method: "GET", url: "/api/export" })).statusCode, 500);
     assert.ok(s.logs.some((e) => e.code === "INTEGRITY_VIOLATION" || e.message === "INTEGRITY_VIOLATION"), JSON.stringify(s.logs));
     await push(s, epoch, A, [docOp(sc, 0)]);
-    assert.equal((await s.app.inject({ method: "GET", url: "/api/export" })).statusCode, 200);
+    assert.equal((await s.inject({ method: "GET", url: "/api/export" })).statusCode, 200);
   } finally { await s.drop(); }
 });
 
@@ -209,9 +209,9 @@ test("round trip: an archive that holds sync-written records imports into a new 
   const s2 = await server({ clock: () => T });
   try {
     const { I, sent } = await writeEverything(s1);
-    const exported = await s1.app.inject({ method: "GET", url: "/api/export" });
+    const exported = await s1.inject({ method: "GET", url: "/api/export" });
     assert.equal(exported.statusCode, 200);
-    const imp = await s2.app.inject({ method: "POST", url: "/api/import", payload: exported.rawPayload, headers: { "content-type": "application/zip" } });
+    const imp = await s2.inject({ method: "POST", url: "/api/import", payload: exported.rawPayload, headers: { "content-type": "application/zip" } });
     assert.equal(imp.statusCode, 201, imp.body);
     // The imported library is the same library, record for record.
     assert.equal(normalize(await s2.store.readArchiveData()), normalize(await s1.store.readArchiveData()));
@@ -219,7 +219,7 @@ test("round trip: an archive that holds sync-written records imports into a new 
     const e1 = await state(s1), e2 = await state(s2);
     assert.notEqual(e2.epoch, e1.epoch);
     assert.equal(e2.head, "0");
-    const pull = (await s2.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${e2.epoch}` })).json();
+    const pull = (await s2.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${e2.epoch}` })).json();
     assert.deepEqual([pull.head, pull.changes, pull.next], [0, [], 0]);
     // The note was trashed by sync on s1 and arrives trashed on s2, with no tombstone change in the new epoch (seq 0): no base is
     // older than it, so an edit is RECORD_DELETED and never the restore branch.
@@ -492,7 +492,7 @@ test("tombstone and restore write deletedAt on the record's own row; a trashed p
     const save = await push(s, x.epoch, A, [docOp(x.scene, 1, "Saved while hidden")]);
     assert.equal(results(save)[0].status, "conflict");
     assert.deepEqual(results(save)[0].current, { seq: tombSeq, revision: 1 });
-    const open = (await s.app.inject({ method: "GET", url: `/api/sync/v1/conflicts?epoch=${x.epoch}` })).json().conflicts;
+    const open = (await s.inject({ method: "GET", url: `/api/sync/v1/conflicts?epoch=${x.epoch}` })).json().conflicts;
     assert.equal(open.length, 1);
     assert.equal(open[0].kind, "document");
     assert.equal(textOf(open[0].losing.value), "Saved while hidden", "the full value");
@@ -514,7 +514,7 @@ test("request-level errors use the envelope, with short generic messages", async
   const s = await server({ clock: () => T });
   try {
     const { epoch } = await state(s);
-    const post = (payload: string | Buffer, type = "application/json") => s.app.inject({ method: "POST", url: "/api/sync/v1/push", payload, headers: { "content-type": type } });
+    const post = (payload: string | Buffer, type = "application/json") => s.inject({ method: "POST", url: "/api/sync/v1/push", payload, headers: { "content-type": type } });
     const bad = async (res: Awaited<ReturnType<typeof post>>, status: number, code: string) => {
       assert.equal(res.statusCode, status, res.body);
       const b = res.json();
@@ -540,19 +540,19 @@ test("request-level errors use the envelope, with short generic messages", async
     assert.equal((await counts(s)).changes, "0");
     // GET parameters.
     for (const q of [`epoch=${epoch}&after=01`, `epoch=${epoch}&after=-1`, `epoch=${epoch}&after=1.5`, `epoch=${epoch}&after=`, `epoch=${epoch}&limit=0`, `epoch=${epoch}&limit=1001`, `epoch=${epoch}&limit=abc`, "after=0", "epoch=nope"]) {
-      await bad(await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?${q}` }), 400, "INVALID_REQUEST");
+      await bad(await s.inject({ method: "GET", url: `/api/sync/v1/changes?${q}` }), 400, "INVALID_REQUEST");
     }
-    await bad(await s.app.inject({ method: "GET", url: "/api/sync/v1/conflicts" }), 400, "INVALID_REQUEST");
-    const past = await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${epoch}&after=1` });
+    await bad(await s.inject({ method: "GET", url: "/api/sync/v1/conflicts" }), 400, "INVALID_REQUEST");
+    const past = await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${epoch}&after=1` });
     assert.equal(past.statusCode, 409);
     assert.equal(past.json().head, 0);
-    const wrong = await s.app.inject({ method: "GET", url: `/api/sync/v1/conflicts?epoch=${randomUUID()}` });
+    const wrong = await s.inject({ method: "GET", url: `/api/sync/v1/conflicts?epoch=${randomUUID()}` });
     assert.equal(wrong.statusCode, 409);
     assert.equal(wrong.json().epoch, epoch);
-    await bad(await s.app.inject({ method: "GET", url: "/api/sync/v1/nothing" }), 404, "NOT_FOUND");
-    await bad(await s.app.inject({ method: "GET", url: "/api/sync/v1/push" }), 404, "NOT_FOUND");
+    await bad(await s.inject({ method: "GET", url: "/api/sync/v1/nothing" }), 404, "NOT_FOUND");
+    await bad(await s.inject({ method: "GET", url: "/api/sync/v1/push" }), 404, "NOT_FOUND");
     // 1000 is allowed.
-    assert.equal((await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${epoch}&limit=1000` })).statusCode, 200);
+    assert.equal((await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${epoch}&limit=1000` })).statusCode, 200);
   } finally { await s.drop(); }
 });
 
@@ -561,7 +561,7 @@ test("values the database cannot hold are rejected per op, and never reach a rec
   try {
     const x = await seed(s);
     const h = Number((await state(s)).head);
-    const raw = (ops: string) => s.app.inject({ method: "POST", url: "/api/sync/v1/push", headers: { "content-type": "application/json" }, payload: `{"epoch":"${x.epoch}","deviceId":"${A}","ops":${ops}}` });
+    const raw = (ops: string) => s.inject({ method: "POST", url: "/api/sync/v1/push", headers: { "content-type": "application/json" }, payload: `{"epoch":"${x.epoch}","deviceId":"${A}","ops":${ops}}` });
     const res = await push(s, x.epoch, A, [
       set("manuscriptNode", x.chapter, "title", "a\u0000b", h),
       set("manuscriptNode", x.chapter, "title", "x", h),
@@ -592,7 +592,7 @@ test("parallel pushes get gapless unique seqs; parallel saves of one base: one a
     assert.equal(Number((await state(s)).head), base + 48);
     const saves = await Promise.all(["one", "two", "three", "four"].map((t, i) => push(s, x.epoch, i % 2 ? A : B, [docOp(x.scene, 1, t)])));
     assert.deepEqual(saves.map((r) => results(r)[0].status).sort(), ["applied", "conflict", "conflict", "conflict"]);
-    const open = (await s.app.inject({ method: "GET", url: `/api/sync/v1/conflicts?epoch=${x.epoch}` })).json().conflicts;
+    const open = (await s.inject({ method: "GET", url: `/api/sync/v1/conflicts?epoch=${x.epoch}` })).json().conflicts;
     assert.equal(open.length, 3);
     const stored = (await s.query(`SELECT document FROM document_revision WHERE node_id = '${x.scene}' AND revision = 2`))[0].document;
     const kept = [textOf(stored), ...open.map((c: any) => textOf(c.losing.value))].sort();
@@ -606,7 +606,7 @@ test("the log is append-only and document revisions keep every text", async () =
   try {
     const x = await seed(s);
     for (const [rev, t] of [[1, "two"], [2, "three"]] as const) assert.equal(results(await push(s, x.epoch, A, [docOp(x.scene, rev, t)]))[0].revision, rev + 1);
-    const feed = (await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}` })).json();
+    const feed = (await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}` })).json();
     assert.deepEqual(feed.changes.filter((c: any) => c.change === "document").map((c: any) => [c.revision, textOf(c.value)]), [[1, "First"], [2, "two"], [3, "three"]]);
     assert.deepEqual(feed.changes.map((c: any) => c.at), feed.changes.map(() => "2026-11-11T12:00:00Z"));
     await assert.rejects(s.query("UPDATE sync_change SET value = '{}'"), /immutable/);
@@ -642,14 +642,14 @@ test("sync routes keep the host and cross-site guards, and exist only with libra
   try {
     const { epoch } = await state(s);
     const payload = { epoch, deviceId: A, ops: [create("universe", universe())] };
-    const host = await s.app.inject({ method: "POST", url: "/api/sync/v1/push", payload, headers: { host: "evil.example" } });
+    const host = await s.inject({ method: "POST", url: "/api/sync/v1/push", payload, headers: { host: "evil.example" } });
     assert.equal(host.statusCode, 403);
     assert.equal(host.json().error.code, "FORBIDDEN_HOST");
-    const site = await s.app.inject({ method: "POST", url: "/api/sync/v1/push", payload, headers: { "sec-fetch-site": "cross-site" } });
+    const site = await s.inject({ method: "POST", url: "/api/sync/v1/push", payload, headers: { "sec-fetch-site": "cross-site" } });
     assert.equal(site.statusCode, 403);
     for (const url of [`/api/sync/v1/changes?epoch=${epoch}`, `/api/sync/v1/conflicts?epoch=${epoch}`]) {
-      assert.equal((await s.app.inject({ method: "GET", url, headers: { host: "evil.example" } })).statusCode, 403);
-      assert.equal((await s.app.inject({ method: "GET", url, headers: { "sec-fetch-site": "cross-site" } })).statusCode, 403);
+      assert.equal((await s.inject({ method: "GET", url, headers: { host: "evil.example" } })).statusCode, 403);
+      assert.equal((await s.inject({ method: "GET", url, headers: { "sec-fetch-site": "cross-site" } })).statusCode, 403);
     }
     assert.equal((await counts(s)).changes, "0");
   } finally { await s.drop(); }
@@ -663,11 +663,11 @@ test("migration 0003 on a library made by 0002: data kept, a backup taken, new e
   const s = await scratch();
   try {
     const all = await loadMigrations();
-    assert.deepEqual(all.map((m) => m.id), ["0001-initial", "0002-archive-tables", "0003-sync"]);
+    assert.deepEqual(all.map((m) => m.id), ["0001-initial", "0002-archive-tables", "0003-sync", "0004-auth"]);
     await migrate({ url: s.url, backupDir: path.join(s.dir, "b"), pgDump: pgDumpPath(), migrations: all.slice(0, 2) });
     await s.pool.query("INSERT INTO library (id, title, created_at, updated_at) VALUES ($1, 'Kept', now(), now())", [randomUUID()]);
     const r = await migrate({ url: s.url, backupDir: path.join(s.dir, "b"), pgDump: pgDumpPath() });
-    assert.deepEqual(r.applied, ["0003-sync"]);
+    assert.deepEqual(r.applied, ["0003-sync", "0004-auth"]);
     assert.ok(r.backupFile, "a backup was taken before the pending migration");
     assert.equal((await s.pool.query("SELECT title FROM library")).rows[0].title, "Kept");
     const st = (await s.pool.query("SELECT epoch, head FROM sync_state")).rows;
@@ -687,7 +687,7 @@ test("a pull pages with next until it reaches head", async () => {
     let after = 0;
     const seen: number[] = [];
     for (;;) {
-      const page = (await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${epoch}&after=${after}&limit=2` })).json();
+      const page = (await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${epoch}&after=${after}&limit=2` })).json();
       seen.push(...page.changes.map((c: any) => c.seq));
       if (page.next >= page.head) break;
       after = page.next;
@@ -755,7 +755,7 @@ test("F5: a document nested 2000 levels deep is DOCUMENT_INVALID, nothing is sto
     assert.deepEqual(codes(res), ["DOCUMENT_INVALID", "INVALID_VALUE", "applied"], res.body);
     // So deep that JSON.stringify itself would overflow the stack: sent as raw text.
     const n = 200_000;
-    const raw = await s.app.inject({
+    const raw = await s.inject({
       method: "POST", url: "/api/sync/v1/push", headers: { "content-type": "application/json" },
       payload: `{"epoch":"${x.epoch}","deviceId":"${A}","ops":[{"opId":"${randomUUID()}","op":"document","recordKind":"document","recordId":"${x.scene}","baseRevision":1,"value":{"schema":"writers-rolltop/document","version":1,"nodeId":"${x.scene}","blocks":[],"extra":${"[".repeat(n)}${"]".repeat(n)}}},{"opId":"${randomUUID()}","op":"set","recordKind":"manuscriptNode","recordId":"${x.chapter}","field":"synopsis","baseSeq":0,"value":${"[".repeat(n)}${"]".repeat(n)}}]}`,
     });
@@ -809,7 +809,7 @@ test("F6: a pull page stops at 8 MiB, always returns one change, and paging from
     const pages: any[] = [];
     let after = 0;
     for (let guard = 0; guard < 50; guard++) {
-      const res = await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}&after=${after}` });
+      const res = await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}&after=${after}` });
       assert.equal(res.statusCode, 200);
       const page = res.json();
       assert.ok(page.changes.length >= 1, "a page always makes progress");
@@ -831,7 +831,7 @@ test("F6: a pull page stops at 8 MiB, always returns one change, and paging from
     assert.ok(Buffer.byteLength(JSON.stringify(loneChange.changes[0]), "utf8") > 8 * MiB);
     assert.equal(loneChange.next, 11);
     // The limit still applies, and a page smaller than the cap is cut by it.
-    const small = (await s.app.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}&after=0&limit=3` })).json();
+    const small = (await s.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${x.epoch}&after=0&limit=3` })).json();
     assert.deepEqual(small.changes.map((c: any) => c.seq), [1, 2, 3]);
   } finally { await s.drop(); }
 });

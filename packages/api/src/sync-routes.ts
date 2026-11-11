@@ -1,6 +1,6 @@
 // Sync protocol v1 routes (Spec/docs/sync-protocol-v1.md). The engine lives in @writers-rolltop/store; this file
-// only maps HTTP to it. NO AUTHENTICATION until M1-7: these routes must not be published before then. The host
-// and cross-site checks of app.ts and the bind refusal in bind.ts apply to them exactly as they do to import/export.
+// only maps HTTP to it. Like every /api route they need a session (the guard in auth.ts); the sync protocol's request and
+// response shapes are unchanged, and a request without a session gets the generic 401 UNAUTHENTICATED before any of this runs.
 import type { FastifyInstance } from "fastify";
 import type { Store } from "@writers-rolltop/store";
 import { ApiError } from "./api-errors.ts";

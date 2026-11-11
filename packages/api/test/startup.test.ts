@@ -81,8 +81,19 @@ test("startup migrates, sweeps leftovers, and then serves", async () => {
     assert.deepEqual(await readdir(exportsDir), []);
     assert.deepEqual((await readdir(data)).filter((n) => /^\.import-[0-9a-f]{8}-/.test(n)), []);
     assert.match(stderr, /STARTUP_SWEEP/);
-    // The API answers library routes (no library yet).
-    assert.equal((await fetch(`http://127.0.0.1:${port}/api/export`)).status, 404);
+    // Library routes need a session. Setup with the token from the log, then sign in: the export then says "no library yet".
+    const base = `http://127.0.0.1:${port}`;
+    assert.equal((await fetch(`${base}/api/export`)).status, 401);
+    const token = /valid until [^)]*\): ([A-Za-z0-9_-]{43})/.exec(stderr)?.[1];
+    assert.ok(token, "the setup token is printed at startup");
+    const json = { "content-type": "application/json" };
+    assert.equal((await fetch(`${base}/api/auth/setup`, { method: "POST", headers: json, body: JSON.stringify({ token, password: "correct horse battery staple" }) })).status, 201);
+    const login = await fetch(`${base}/api/auth/login`, { method: "POST", headers: json, body: JSON.stringify({ password: "correct horse battery staple" }) });
+    assert.equal(login.status, 200);
+    const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+    const exp = await fetch(`${base}/api/export`, { headers: { cookie } });
+    assert.equal(exp.status, 404);
+    assert.equal(((await exp.json()) as { error: { code: string } }).error.code, "LIBRARY_NOT_FOUND");
   } finally {
     child?.kill("SIGKILL");
     await new Promise((r) => setTimeout(r, 100));
@@ -158,4 +169,73 @@ test("startup refuses a database that is ahead of this build", async () => {
     await admin.end();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---- cookie-secure flag at startup (M1-7 review) ----
+
+/** Starts the real server on a scratch database. Returns what it printed and its exit code, or the port if it stays up. */
+async function startWith(env: Record<string, string>) {
+  const dir = await mkdtemp(join(tmpdir(), "rolltop-cookie-"));
+  const name = `rt_test_cookie_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const admin = new pg.Client({ connectionString: adminUrl() });
+  await admin.connect();
+  await admin.query(`CREATE DATABASE ${name}`);
+  const u = new URL(adminUrl());
+  u.pathname = `/${name}`;
+  const port = await freePort();
+  const child = spawn(process.execPath, [entry], { env: { ...process.env, PORT: String(port), DATABASE_URL: u.toString(), ROLLTOP_DATA_DIR: join(dir, "data"), ...env }, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+  const exited = new Promise<number | null>((r) => child.on("exit", (c) => r(c)));
+  let up = false;
+  let code: number | null | undefined;
+  void exited.then((c) => { code = c; });
+  for (let i = 0; i < 200 && !up && code === undefined; i++) {
+    try { up = (await fetch(`http://127.0.0.1:${port}/api/health`)).ok; } catch { await new Promise((r) => setTimeout(r, 50)); }
+  }
+  child.kill("SIGKILL");
+  await exited;
+  const c = new pg.Client({ connectionString: u.toString() });
+  await c.connect();
+  const migrated = (await c.query("SELECT to_regclass('public.schema_migrations') AS t")).rows[0].t !== null;
+  await c.end();
+  await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+  await admin.end();
+  await rm(dir, { recursive: true, force: true });
+  return { up, code, stderr, migrated };
+}
+
+test("ROLLTOP_COOKIE_SECURE=0 on a non-loopback HOST is refused before the database is opened, unless ROLLTOP_INSECURE_BIND=1", async () => {
+  const refused = await startWith({ HOST: "0.0.0.0", ROLLTOP_COOKIE_SECURE: "0" });
+  assert.equal(refused.up, false);
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /Refusing to start/);
+  assert.match(refused.stderr, /ROLLTOP_COOKIE_SECURE/);
+  assert.match(refused.stderr, /ROLLTOP_INSECURE_BIND=1/);
+  assert.equal(refused.migrated, false, "refused before Store.open ran any migration");
+  const falseValue = await startWith({ HOST: "0.0.0.0", ROLLTOP_COOKIE_SECURE: "false" });
+  assert.equal(falseValue.code, 1);
+  assert.equal(falseValue.migrated, false);
+
+  const allowed = await startWith({ HOST: "0.0.0.0", ROLLTOP_COOKIE_SECURE: "0", ROLLTOP_INSECURE_BIND: "1" });
+  assert.equal(allowed.up, true, `with the override the server starts: ${allowed.stderr}`);
+  assert.equal(allowed.migrated, true);
+
+  const loopback = await startWith({ HOST: "127.0.0.1", ROLLTOP_COOKIE_SECURE: "0" });
+  assert.equal(loopback.up, true, `loopback with Secure off starts: ${loopback.stderr}`);
+});
+
+test("a bad ROLLTOP_COOKIE_SECURE value stops startup before any migration runs", async () => {
+  const bad = await startWith({ HOST: "127.0.0.1", ROLLTOP_COOKIE_SECURE: "maybe" });
+  assert.equal(bad.up, false);
+  assert.equal(bad.code, 1);
+  assert.match(bad.stderr, /ROLLTOP_COOKIE_SECURE must be 1, true, 0 or false/);
+  assert.equal(bad.migrated, false);
+});
+
+test("the refusal texts say plain HTTP, TLS-terminating proxy, ROLLTOP_ALLOWED_HOSTS and ROLLTOP_COOKIE_SECURE, and no longer claim there is no authentication", async () => {
+  const { bindRefusal } = await import("../src/bind.ts");
+  const text = bindRefusal("0.0.0.0", true, undefined)!;
+  for (const part of [/plain HTTP/, /TLS-terminating/, /ROLLTOP_ALLOWED_HOSTS/, /ROLLTOP_COOKIE_SECURE/, /ROLLTOP_INSECURE_BIND=1/]) assert.match(text, part);
+  assert.doesNotMatch(text, /no authentication/);
 });

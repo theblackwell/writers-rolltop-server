@@ -26,8 +26,8 @@ async function until(check: () => Promise<boolean>, ms = 10_000): Promise<void> 
     await sleep(50);
   }
 }
-async function getExport(port: number): Promise<{ status: number; length: number }> {
-  const res = await fetch(`http://127.0.0.1:${port}/api/export`);
+async function getExport(port: number, cookie: string): Promise<{ status: number; length: number }> {
+  const res = await fetch(`http://127.0.0.1:${port}/api/export`, { headers: { cookie } });
   return { status: res.status, length: (await res.arrayBuffer()).byteLength };
 }
 
@@ -37,18 +37,18 @@ test("a client that aborts an export, mid-download or before the answer, frees t
   const s = await server();
   try {
     const port = await listen(s);
-    const imp = await s.app.inject({ method: "POST", url: "/api/import", payload: await sampleBytes(), headers: { "content-type": "application/zip" } });
+    const imp = await s.inject({ method: "POST", url: "/api/import", payload: await sampleBytes(), headers: { "content-type": "application/zip" } });
     assert.equal(imp.statusCode, 201);
     await s.store.putAttachment(randomBytes(40 * 1024 ** 2), { mediaType: "application/octet-stream", createdAt: T0 }); // big enough that the download cannot finish in the socket buffers
 
     // (a) leaves in the middle of the download
     await new Promise<void>((resolve) => {
-      const req = http.get({ port, host: "127.0.0.1", path: "/api/export" }, (res) => { res.pause(); res.socket.destroy(); resolve(); });
+      const req = http.get({ port, host: "127.0.0.1", path: "/api/export", headers: { cookie: s.cookie } }, (res) => { res.pause(); res.socket.destroy(); resolve(); });
       req.on("error", () => {});
     });
     await until(async () => (await readdir(s.exportsDir)).length === 0);
     // (b) leaves while the file is still being built
-    const early = http.get({ port, host: "127.0.0.1", path: "/api/export" });
+    const early = http.get({ port, host: "127.0.0.1", path: "/api/export", headers: { cookie: s.cookie } });
     early.on("error", () => {});
     await sleep(15);
     early.destroy();
@@ -56,7 +56,7 @@ test("a client that aborts an export, mid-download or before the answer, frees t
 
     // The slot is free again and an export works start to finish.
     let result = { status: 0, length: 0 };
-    await until(async () => { result = await getExport(port); return result.status !== 429; });
+    await until(async () => { result = await getExport(port, s.cookie); return result.status !== 429; });
     assert.equal(result.status, 200);
     assert.ok(result.length > 40 * 1024 ** 2);
     await until(async () => (await readdir(s.exportsDir)).length === 0);
@@ -68,11 +68,11 @@ test("a client that aborts an export, mid-download or before the answer, frees t
 test("an export fault is a generic 500 (never 422), logged by code only, and the slot is released", async () => {
   const s = await server();
   try {
-    assert.equal((await s.app.inject({ method: "POST", url: "/api/import", payload: await sampleBytes(), headers: { "content-type": "application/zip" } })).statusCode, 201);
+    assert.equal((await s.inject({ method: "POST", url: "/api/import", payload: await sampleBytes(), headers: { "content-type": "application/zip" } })).statusCode, 201);
     const [file] = (await readdir(s.attachmentsDir)).sort();
     await rm(path.join(s.attachmentsDir, file!));
     for (let i = 0; i < 2; i++) {
-      const res = await s.app.inject({ method: "GET", url: "/api/export" });
+      const res = await s.inject({ method: "GET", url: "/api/export" });
       assert.equal(res.statusCode, 500);
       assert.deepEqual(res.json(), { error: { code: "INTERNAL_ERROR", message: "The server could not complete the request." } });
     }
@@ -112,7 +112,7 @@ test("a second concurrent upload gets 429 as soon as its headers arrive, without
   try {
     const port = await listen(s);
     const first = new Promise<{ status?: number; body: string }>((resolve) => {
-      const req = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { "content-type": "application/zip" } }, (res) => {
+      const req = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { cookie: s.cookie, "content-type": "application/zip" } }, (res) => {
         let body = "";
         res.on("data", (d) => { body += d; });
         res.on("end", () => resolve({ status: res.statusCode, body }));
@@ -122,7 +122,7 @@ test("a second concurrent upload gets 429 as soon as its headers arrive, without
     await sleep(300); // the first import is now being processed by the (spinning) worker
     const started = Date.now();
     const second = await new Promise<number | undefined>((resolve, reject) => {
-      const req = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { "content-type": "application/zip", "content-length": String(500 * 1024 ** 2) } }, (res) => {
+      const req = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { cookie: s.cookie, "content-type": "application/zip", "content-length": String(500 * 1024 ** 2) } }, (res) => {
         resolve(res.statusCode);
         req.destroy();
       });
@@ -141,7 +141,7 @@ test("a second concurrent upload gets 429 as soon as its headers arrive, without
 test("a rejected or dropped upload gives the import slot back", async () => {
   const s = await server({ maxImportBytes: 64 });
   try {
-    const post = (payload: Buffer | string, type = "application/zip") => s.app.inject({ method: "POST", url: "/api/import", payload, headers: { "content-type": type } });
+    const post = (payload: Buffer | string, type = "application/zip") => s.inject({ method: "POST", url: "/api/import", payload, headers: { "content-type": type } });
     assert.equal((await post(Buffer.alloc(1000))).statusCode, 413);
     assert.equal((await post("hello", "text/plain")).statusCode, 415);
     const small = await post(Buffer.from("not a zip"));
@@ -179,7 +179,7 @@ test("a worker killed with its transaction open leaves no rows and no lock, and 
     await until(async () => (await s.query("SELECT 1 FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname = 'library' AND l.pid <> pg_backend_pid()")).length === 0, 8000);
     assert.equal(await rowCount(s), 0, "the held transaction's row is not visible");
     const started = Date.now();
-    const ok = await s.app.inject({ method: "POST", url: "/api/import", payload: await sampleBytes(), headers: { "content-type": "application/zip" } });
+    const ok = await s.inject({ method: "POST", url: "/api/import", payload: await sampleBytes(), headers: { "content-type": "application/zip" } });
     assert.equal(ok.statusCode, 201, ok.body);
     assert.ok(Date.now() - started < 8000, "not blocked on the lock");
   } finally { await s.drop(); }
@@ -201,7 +201,7 @@ test("archives with U+0000 in a title, a synopsis or a plan are refused over HTT
       const lib = JSON.parse(files.get("library.json")!.toString("utf8"));
       edit(lib);
       files.set("library.json", Buffer.from(JSON.stringify(lib)));
-      const res = await s.app.inject({ method: "POST", url: "/api/import", payload: archiveFromFiles(files), headers: { "content-type": "application/zip" } });
+      const res = await s.inject({ method: "POST", url: "/api/import", payload: archiveFromFiles(files), headers: { "content-type": "application/zip" } });
       assert.equal(res.statusCode, 422);
       assert.equal(res.json().error.code, "SCHEMA_VIOLATION");
       assert.doesNotMatch(res.body, /secret-text/);
@@ -217,14 +217,14 @@ test("a client that leaves after its body arrived does not free the slot while i
   const s = await server({ timeoutMs: 2500, fault: "spin" });
   try {
     const port = await listen(s);
-    const first = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { "content-type": "application/zip" } });
+    const first = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { cookie: s.cookie, "content-type": "application/zip" } });
     first.on("error", () => {});
     first.end(Buffer.from("x"));
     await sleep(400); // body delivered, worker spinning
     first.destroy();
     await sleep(100);
     const status = await new Promise<number | undefined>((resolve, reject) => {
-      const req = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { "content-type": "application/zip", "content-length": "1" } }, (res) => { resolve(res.statusCode); req.destroy(); });
+      const req = http.request({ port, host: "127.0.0.1", path: "/api/import", method: "POST", headers: { cookie: s.cookie, "content-type": "application/zip", "content-length": "1" } }, (res) => { resolve(res.statusCode); req.destroy(); });
       req.on("error", () => {});
       req.flushHeaders();
       setTimeout(() => reject(new Error("no answer")), 2000);
@@ -232,7 +232,7 @@ test("a client that leaves after its body arrived does not free the slot while i
     assert.equal(status, 429, "the first import is still running, so no second one may start");
     // Once the worker's budget ends, the slot is free again.
     await until(async () => {
-      const r = await s.app.inject({ method: "POST", url: "/api/import", payload: Buffer.from("x"), headers: { "content-type": "application/zip" } });
+      const r = await s.inject({ method: "POST", url: "/api/import", payload: Buffer.from("x"), headers: { "content-type": "application/zip" } });
       return r.statusCode !== 429;
     }, 10_000);
   } finally { await s.drop(); }

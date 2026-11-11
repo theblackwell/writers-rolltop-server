@@ -67,7 +67,7 @@ for (const file of files) {
       assert.ok(scenario.steps.length > 0);
       for (const [i, step] of scenario.steps.entries()) {
         const { method, path: url, body } = step.request;
-        const res = await s.app.inject({ method, url, ...(body === undefined ? {} : { payload: substitute(body, captures) }) });
+        const res = await s.inject({ method, url, ...(body === undefined ? {} : { payload: substitute(body, captures) }) });
         const errors: string[] = [];
         if (!step.response) errors.push("step has no expected response");
         else {

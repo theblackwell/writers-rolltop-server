@@ -11,7 +11,9 @@ export class ApiError extends Error {
   readonly issuesTruncated?: boolean;
   /** For the log only: a sanitised, bounded description of the real cause. */
   readonly logMessage?: string;
-  constructor(status: number, code: string, message: string, extra: { issues?: PublicIssue[]; issuesTruncated?: boolean; logMessage?: string } = {}) {
+  /** Extra response headers (for example Retry-After). */
+  readonly headers?: Record<string, string>;
+  constructor(status: number, code: string, message: string, extra: { issues?: PublicIssue[]; issuesTruncated?: boolean; logMessage?: string; headers?: Record<string, string> } = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -19,6 +21,7 @@ export class ApiError extends Error {
     this.issues = extra.issues;
     this.issuesTruncated = extra.issuesTruncated;
     this.logMessage = extra.logMessage;
+    this.headers = extra.headers;
   }
 }
 

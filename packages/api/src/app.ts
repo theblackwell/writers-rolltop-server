@@ -10,6 +10,8 @@ import type { Store } from "@writers-rolltop/store";
 import { ApiError, publicBody, sanitizeForLog } from "./api-errors.ts";
 import { runImport } from "./import-runner.ts";
 import { registerSyncRoutes, SYNC_PREFIX } from "./sync-routes.ts";
+import { AUTH_PREFIX, installAuthGuard, registerAuthRoutes } from "./auth.ts";
+import type { Auth } from "./auth.ts";
 import type { ImportConfig } from "./import-runner.ts";
 
 export const APP_VERSION = "0.0.0";
@@ -18,6 +20,8 @@ export interface LogEntry { code: string; message: string; issues?: { code: stri
 
 export interface LibraryRoutes {
   store: Store;
+  /** Owner account, sessions and the guard. Required: library routes are never served without it. */
+  auth: Auth;
   /** Private folder for in-flight export files. */
   exportsDir: string;
   /** Largest accepted import body, in bytes. */
@@ -57,9 +61,10 @@ export function buildApp(options: AppOptions = {}) {
   const toApiError = (error: unknown, url = ""): ApiError => {
     if (error instanceof ApiError) return error;
     const e = error as Partial<FastifyError> & { validation?: unknown };
-    // Sync routes (protocol v1) speak JSON and name a malformed request INVALID_REQUEST.
-    if (url.startsWith(SYNC_PREFIX) && e?.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") return new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "Send the request with the content type application/json.");
-    if (url.startsWith(SYNC_PREFIX) && e?.code !== "FST_ERR_CTP_BODY_TOO_LARGE" && typeof e?.statusCode === "number" && e.statusCode >= 400 && e.statusCode < 500) {
+    // Sync and auth routes speak JSON and name a malformed request INVALID_REQUEST.
+    const jsonRoute = url.startsWith(SYNC_PREFIX) || url.startsWith(AUTH_PREFIX);
+    if (jsonRoute && e?.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") return new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "Send the request with the content type application/json.");
+    if (jsonRoute && e?.code !== "FST_ERR_CTP_BODY_TOO_LARGE" && typeof e?.statusCode === "number" && e.statusCode >= 400 && e.statusCode < 500) {
       return new ApiError(400, "INVALID_REQUEST", "The request is not valid.", { logMessage: sanitizeForLog(e?.code) });
     }
     if (e?.code === "FST_ERR_CTP_BODY_TOO_LARGE") return new ApiError(413, "PAYLOAD_TOO_LARGE", "The request body is larger than this server accepts.");
@@ -82,23 +87,35 @@ export function buildApp(options: AppOptions = {}) {
     if (api.status >= 500 || api.logMessage) {
       log({ code: api.code, message: api.logMessage ?? api.message, ...(api.issues?.length ? { issues: api.issues } : {}) });
     }
+    if (api.headers) reply.headers(api.headers);
     return reply.status(api.status).send(publicBody(api));
   });
   app.setNotFoundHandler((_req, reply) => reply.status(404).send(publicBody(new ApiError(404, "NOT_FOUND", "There is nothing at this address."))));
 
-  // DNS-rebinding and cross-site defence until authentication exists (M1-7): only loopback names, or names the operator allowed.
+  // DNS-rebinding and cross-site defence (it stays with authentication, as defence in depth): only loopback names, or names the operator allowed.
   app.addHook("onRequest", async (req) => {
     const host = String(req.headers.host ?? "");
     if (!LOOPBACK_HOST.test(host) && !extraHosts.has(host.toLowerCase().replace(/:\d{1,5}$/, ""))) {
       throw new ApiError(403, "FORBIDDEN_HOST", "This server does not answer to that host name.");
     }
-    if (req.headers["sec-fetch-site"] === "cross-site") throw new ApiError(403, "FORBIDDEN_ORIGIN", "Cross-site requests are not accepted.");
+    // Cross-site and same-site, for every method (a GET that reads library content too). Same-origin, "none" and no
+    // header at all (native clients, curl) pass.
+    const site = req.headers["sec-fetch-site"];
+    if (site === "cross-site" || site === "same-site") throw new ApiError(403, "FORBIDDEN_ORIGIN", "Cross-site requests are not accepted.");
+  });
+
+  // Responses under /api/ may carry library content (export, sync) or session state: no cache, shared or private, may keep them.
+  app.addHook("onSend", async (req, reply) => {
+    if (req.url.startsWith("/api/")) reply.header("cache-control", "no-store");
   });
 
   app.get("/api/health", async () => ({ status: "ok", version: APP_VERSION }));
 
   const lib = options.library;
   if (lib) {
+    // After the Host check above, before every other route hook (the import slot is taken in a route hook).
+    installAuthGuard(app, lib.auth);
+    registerAuthRoutes(app, lib.auth);
     registerSyncRoutes(app, lib.store);
     // Both routes do heavy work, so one runs at a time.
     /** The request that holds the import slot. Only the holder ever gives it back. */

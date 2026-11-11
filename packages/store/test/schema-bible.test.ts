@@ -70,12 +70,12 @@ test("migration 0002 is additive: the library written by 0001 alone still migrat
   const s = await mk();
   try {
     const all = await loadMigrations();
-    assert.deepEqual(all.map((m) => m.id), ["0001-initial", "0002-archive-tables", "0003-sync"]);
+    assert.deepEqual(all.map((m) => m.id), ["0001-initial", "0002-archive-tables", "0003-sync", "0004-auth"]);
     await migrate({ url: s.url, backupDir: path.join(s.dir, "b"), pgDump: pgDumpPath(), migrations: [all[0]!] });
     const id = uuid();
     await s.pool.query("INSERT INTO library (id, title, created_at, updated_at) VALUES ($1,'Kept',now(),now())", [id]);
     const r = await migrate({ url: s.url, backupDir: path.join(s.dir, "b"), pgDump: pgDumpPath() });
-    assert.deepEqual(r.applied, ["0002-archive-tables", "0003-sync"]);
+    assert.deepEqual(r.applied, ["0002-archive-tables", "0003-sync", "0004-auth"]);
     assert.ok(r.backupFile, "a backup was taken before the pending migration");
     assert.equal((await s.pool.query("SELECT title FROM library WHERE id=$1", [id])).rows[0].title, "Kept");
   } finally { await s.drop(); }
