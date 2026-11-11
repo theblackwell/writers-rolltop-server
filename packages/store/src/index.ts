@@ -1,0 +1,9 @@
+export { Store } from "./store.ts";
+export type { OpenOptions, StoreOptions, StoredDocument, NodeKind, LiveNode, Stamps } from "./store.ts";
+export { StoreError } from "./errors.ts";
+export type { StoreErrorCode } from "./errors.ts";
+export { migrate, loadMigrations, checksum, assertNoTransactionControl } from "./migrate.ts";
+export type { Migration, MigrateOptions, MigrateResult } from "./migrate.ts";
+export { checkIntegrity } from "./integrity.ts";
+export type { IntegrityProblem, IntegrityProblemCode, IntegrityReport } from "./integrity.ts";
+export type { AttachmentInput, AttachmentRecord } from "./attachments.ts";
