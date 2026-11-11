@@ -10,3 +10,4 @@ export type { AttachmentInput, AttachmentRecord } from "./attachments.ts";
 export { importArchiveBytes } from "./archive-io.ts";
 export type { ArchiveImportResult } from "./archive-io.ts";
 export { sweepAttachmentTemps } from "./attachments.ts";
+export type { ChangesOutcome, ConflictsOutcome, OpResult, PushOutcome, SyncChange, SyncConflict } from "./sync.ts";

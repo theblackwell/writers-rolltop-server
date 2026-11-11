@@ -1,0 +1,349 @@
+{
+  "description": "A stale document save is kept as a conflict and never overwrites; a later good save does not close it; only a resolve does.",
+  "epoch": "11111111-1111-4111-8111-111111111111",
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a1",
+              "op": "create",
+              "recordKind": "library",
+              "recordId": "33333333-3333-4333-8333-333333333333",
+              "value": {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "title": "Fixture library",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            },
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a2",
+              "op": "create",
+              "recordKind": "book",
+              "recordId": "44444444-4444-4444-8444-444444444444",
+              "value": {
+                "id": "44444444-4444-4444-8444-444444444444",
+                "title": "Fixture book",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 2,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a1",
+              "status": "applied",
+              "seq": 1
+            },
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a2",
+              "status": "applied",
+              "seq": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "create",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "value": {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "bookId": "44444444-4444-4444-8444-444444444444",
+                "kind": "frontMatter",
+                "title": "Chapter",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 3,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "status": "applied",
+              "seq": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000002",
+              "op": "document",
+              "recordKind": "document",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "baseRevision": 0,
+              "value": {
+                "schema": "writers-rolltop/document",
+                "version": 1,
+                "nodeId": "22222222-2222-4222-8222-222222222222",
+                "blocks": [
+                  {
+                    "id": "b0000000-0000-4000-8000-000000000001",
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "A text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 4,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000002",
+              "status": "applied",
+              "seq": 4,
+              "revision": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000003",
+              "op": "document",
+              "recordKind": "document",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "baseRevision": 0,
+              "value": {
+                "schema": "writers-rolltop/document",
+                "version": 1,
+                "nodeId": "22222222-2222-4222-8222-222222222222",
+                "blocks": [
+                  {
+                    "id": "b0000000-0000-4000-8000-000000000002",
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "B text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 4,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000003",
+              "status": "conflict",
+              "conflictId": "@c1",
+              "current": {
+                "seq": 4,
+                "revision": 1
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000004",
+              "op": "document",
+              "recordKind": "document",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "baseRevision": 1,
+              "value": {
+                "schema": "writers-rolltop/document",
+                "version": 1,
+                "nodeId": "22222222-2222-4222-8222-222222222222",
+                "blocks": [
+                  {
+                    "id": "b0000000-0000-4000-8000-000000000003",
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "A text again"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 5,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000004",
+              "status": "applied",
+              "seq": 5,
+              "revision": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/sync/v1/conflicts?epoch=11111111-1111-4111-8111-111111111111"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "conflicts": [
+            {
+              "conflictId": "@c1",
+              "kind": "document",
+              "recordKind": "document",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "losing": {
+                "opId": "00000000-0000-4000-8000-000000000003",
+                "deviceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                "change": "document",
+                "baseRevision": 0,
+                "value": {
+                  "schema": "writers-rolltop/document",
+                  "version": 1,
+                  "nodeId": "22222222-2222-4222-8222-222222222222",
+                  "blocks": [
+                    {
+                      "id": "b0000000-0000-4000-8000-000000000002",
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "B text"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "current": {
+                "seq": 4,
+                "revision": 1
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000005",
+              "op": "resolve",
+              "conflictId": "@c1"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 5,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000005",
+              "status": "applied"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/sync/v1/conflicts?epoch=11111111-1111-4111-8111-111111111111"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "conflicts": []
+        }
+      }
+    }
+  ]
+}

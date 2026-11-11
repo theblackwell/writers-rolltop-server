@@ -1,0 +1,295 @@
+{
+  "description": "An edit that arrives after another device's delete wins: the record is restored and the delete is kept as a conflict.",
+  "epoch": "11111111-1111-4111-8111-111111111111",
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a1",
+              "op": "create",
+              "recordKind": "library",
+              "recordId": "33333333-3333-4333-8333-333333333333",
+              "value": {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "title": "Fixture library",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            },
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a2",
+              "op": "create",
+              "recordKind": "book",
+              "recordId": "44444444-4444-4444-8444-444444444444",
+              "value": {
+                "id": "44444444-4444-4444-8444-444444444444",
+                "title": "Fixture book",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 2,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a1",
+              "status": "applied",
+              "seq": 1
+            },
+            {
+              "opId": "00000000-0000-4000-8000-0000000000a2",
+              "status": "applied",
+              "seq": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "create",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "value": {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "bookId": "44444444-4444-4444-8444-444444444444",
+                "kind": "chapter",
+                "title": "Chapter",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 3,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "status": "applied",
+              "seq": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000002",
+              "op": "tombstone",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "baseSeq": 3
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 4,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000002",
+              "status": "applied",
+              "seq": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000003",
+              "op": "set",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "field": "title",
+              "baseSeq": 3,
+              "value": "B title"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 6,
+          "results": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000003",
+              "status": "applied",
+              "seq": 6,
+              "conflictId": "@c1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/sync/v1/conflicts?epoch=11111111-1111-4111-8111-111111111111"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "conflicts": [
+            {
+              "conflictId": "@c1",
+              "kind": "tombstone",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "losing": {
+                "opId": "00000000-0000-4000-8000-000000000002",
+                "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "change": "tombstone",
+                "seq": 4
+              },
+              "current": {
+                "seq": 6
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/sync/v1/changes?epoch=11111111-1111-4111-8111-111111111111&after=0"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 6,
+          "next": 6,
+          "changes": [
+            {
+              "seq": 1,
+              "at": "2026-11-11T12:00:00Z",
+              "opId": "00000000-0000-4000-8000-0000000000a1",
+              "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "change": "create",
+              "recordKind": "library",
+              "recordId": "33333333-3333-4333-8333-333333333333",
+              "value": {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "title": "Fixture library",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            },
+            {
+              "seq": 2,
+              "at": "2026-11-11T12:00:00Z",
+              "opId": "00000000-0000-4000-8000-0000000000a2",
+              "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "change": "create",
+              "recordKind": "book",
+              "recordId": "44444444-4444-4444-8444-444444444444",
+              "value": {
+                "id": "44444444-4444-4444-8444-444444444444",
+                "title": "Fixture book",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            },
+            {
+              "seq": 3,
+              "at": "2026-11-11T12:00:00Z",
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "change": "create",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "value": {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "bookId": "44444444-4444-4444-8444-444444444444",
+                "kind": "chapter",
+                "title": "Chapter",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            },
+            {
+              "seq": 4,
+              "at": "2026-11-11T12:00:00Z",
+              "opId": "00000000-0000-4000-8000-000000000002",
+              "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "change": "tombstone",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222"
+            },
+            {
+              "seq": 5,
+              "at": "2026-11-11T12:00:00Z",
+              "opId": "00000000-0000-4000-8000-000000000003",
+              "deviceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              "change": "restore",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222"
+            },
+            {
+              "seq": 6,
+              "at": "2026-11-11T12:00:00Z",
+              "opId": "00000000-0000-4000-8000-000000000003",
+              "deviceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              "change": "set",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "field": "title",
+              "value": "B title"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import { StoreError } from "@writers-rolltop/store";
 import type { Store } from "@writers-rolltop/store";
 import { ApiError, publicBody, sanitizeForLog } from "./api-errors.ts";
 import { runImport } from "./import-runner.ts";
+import { registerSyncRoutes, SYNC_PREFIX } from "./sync-routes.ts";
 import type { ImportConfig } from "./import-runner.ts";
 
 export const APP_VERSION = "0.0.0";
@@ -25,7 +26,7 @@ export interface LibraryRoutes {
 }
 
 export interface AppOptions {
-  /** Library routes (import, export). Without it the app serves only the health route. */
+  /** Library routes (import, export, sync). Without it the app serves only the health route. */
   library?: LibraryRoutes;
   /** Receives code, sanitised message and issues. Never a cause object. Default: one JSON line on stderr. */
   log?: (entry: LogEntry) => void;
@@ -53,9 +54,14 @@ export function buildApp(options: AppOptions = {}) {
   });
   const extraHosts = new Set((options.allowedHosts ?? []).map((h) => h.toLowerCase()));
 
-  const toApiError = (error: unknown): ApiError => {
+  const toApiError = (error: unknown, url = ""): ApiError => {
     if (error instanceof ApiError) return error;
     const e = error as Partial<FastifyError> & { validation?: unknown };
+    // Sync routes (protocol v1) speak JSON and name a malformed request INVALID_REQUEST.
+    if (url.startsWith(SYNC_PREFIX) && e?.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") return new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "Send the request with the content type application/json.");
+    if (url.startsWith(SYNC_PREFIX) && e?.code !== "FST_ERR_CTP_BODY_TOO_LARGE" && typeof e?.statusCode === "number" && e.statusCode >= 400 && e.statusCode < 500) {
+      return new ApiError(400, "INVALID_REQUEST", "The request is not valid.", { logMessage: sanitizeForLog(e?.code) });
+    }
     if (e?.code === "FST_ERR_CTP_BODY_TOO_LARGE") return new ApiError(413, "PAYLOAD_TOO_LARGE", "The request body is larger than this server accepts.");
     if (e?.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") return new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "Send the archive with the content type application/zip.");
     if (e?.validation || (typeof e?.statusCode === "number" && e.statusCode >= 400 && e.statusCode < 500)) {
@@ -71,8 +77,8 @@ export function buildApp(options: AppOptions = {}) {
     return new ApiError(500, "INTERNAL_ERROR", GENERIC_500.message, { logMessage: sanitizeForLog((error as Error)?.name) });
   };
 
-  app.setErrorHandler((error, _req, reply) => {
-    const api = toApiError(error);
+  app.setErrorHandler((error, req, reply) => {
+    const api = toApiError(error, req.url);
     if (api.status >= 500 || api.logMessage) {
       log({ code: api.code, message: api.logMessage ?? api.message, ...(api.issues?.length ? { issues: api.issues } : {}) });
     }
@@ -93,6 +99,7 @@ export function buildApp(options: AppOptions = {}) {
 
   const lib = options.library;
   if (lib) {
+    registerSyncRoutes(app, lib.store);
     // Both routes do heavy work, so one runs at a time.
     /** The request that holds the import slot. Only the holder ever gives it back. */
     let importHolder: object | undefined;

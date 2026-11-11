@@ -1,9 +1,9 @@
 // Callers must run migrate() (or use Store.open) and refuse on SCHEMA_TOO_NEW before using a Store: a bare
 // `new Store(...)` does not check the schema version of the database it is given.
 import pg from "pg";
-import { DocumentError, normalizeDocument } from "@writers-rolltop/document-adapter/canonical";
 import type { CanonicalDocument } from "@writers-rolltop/document-adapter/canonical";
 import { StoreError, mapPgError } from "./errors.ts";
+import { UUID, insertFirstRevision, live, prepareDocument, swapRevision } from "./documents.ts";
 import { putAttachment, readAttachment } from "./attachments.ts";
 import type { AttachmentInput, AttachmentRecord } from "./attachments.ts";
 import { migrate } from "./migrate.ts";
@@ -12,6 +12,8 @@ import { exportArchive, importContents, readArchiveData } from "./archive-io.ts"
 import type { ArchiveImportResult } from "./archive-io.ts";
 import type { ArchiveContents, ArchiveData, WriteOptions, WriteResult } from "@writers-rolltop/archive";
 import { checkIntegrity } from "./integrity.ts";
+import { syncChanges, syncConflicts, syncPush } from "./sync.ts";
+import type { ChangesOutcome, ConflictsOutcome, PushOutcome } from "./sync.ts";
 import type { IntegrityReport } from "./integrity.ts";
 
 export interface StoreOptions {
@@ -26,14 +28,6 @@ export type NodeKind = "part" | "chapter" | "scene" | "frontMatter" | "backMatte
 export interface Stamps { createdAt: Date; updatedAt?: Date }
 export interface LiveNode { id: string; parentId: string | null; kind: NodeKind; title: string; orderKey: string }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-function toDocumentError(e: unknown): unknown {
-  return e instanceof DocumentError
-    ? new StoreError("DOCUMENT_INVALID", e.message.replace(/^[A-Z_]+: /, ""))
-    : e;
-}
-
 export interface OpenOptions {
   url: string;
   attachmentsDir: string;
@@ -42,26 +36,6 @@ export interface OpenOptions {
   migrations?: readonly Migration[];
   clock?: () => Date;
 }
-
-/** True if any string in the value (or any key) holds a lone UTF-16 surrogate or U+0000, neither of which jsonb can store. */
-function hasLoneSurrogate(v: unknown): boolean {
-  if (typeof v === "string") return !v.isWellFormed() || v.includes("\u0000");
-  if (Array.isArray(v)) return v.some(hasLoneSurrogate);
-  if (v !== null && typeof v === "object") {
-    return Object.entries(v).some(([k, x]) => !k.isWellFormed() || k.includes("\u0000") || hasLoneSurrogate(x));
-  }
-  return false;
-}
-
-/**
- * SQL predicate: the node `idExpr` and all its ancestors are undeleted. Hiding is by ancestry, so deleting a
- * parent hides its descendants and clearing the parent's deleted_at restores them with no further write.
- */
-const live = (idExpr: string): string =>
-  `NOT EXISTS (WITH RECURSIVE chain(parent_id, deleted_at) AS (
-     SELECT m.parent_id, m.deleted_at FROM manuscript_node m WHERE m.id = ${idExpr}
-     UNION ALL SELECT p.parent_id, p.deleted_at FROM manuscript_node p JOIN chain c ON p.id = c.parent_id)
-   SELECT 1 FROM chain WHERE deleted_at IS NOT NULL)`;
 
 export class Store {
   readonly pool: pg.Pool;
@@ -118,17 +92,11 @@ export class Store {
 
   /** Create revision 1 of a node's document. CONFLICT if the node already has one. */
   async createDocument(nodeId: string, input: unknown, signal?: AbortSignal): Promise<StoredDocument> {
-    const doc = this.prepare(nodeId, input);
+    const doc = prepareDocument(nodeId, input);
     const at = this.clock();
     await this.tx(signal, async (c) => {
       await this.requireLiveNode(c, nodeId);
-      const ins = await c.query(
-        `INSERT INTO scene_document (node_id, revision, document, updated_at) VALUES ($1, 1, $2::jsonb, $3)
-         ON CONFLICT (node_id) DO NOTHING RETURNING revision`, [nodeId, JSON.stringify(doc), at]);
-      if (ins.rowCount === 0) throw new StoreError("CONFLICT", "node already has a document", { nodeId });
-      await c.query(
-        "INSERT INTO document_revision (node_id, revision, document, created_at) VALUES ($1, 1, $2::jsonb, $3)",
-        [nodeId, JSON.stringify(doc), at]);
+      if (!(await insertFirstRevision(c, nodeId, doc, at))) throw new StoreError("CONFLICT", "node already has a document", { nodeId });
     });
     return { nodeId, revision: 1, document: doc, updatedAt: at };
   }
@@ -138,21 +106,9 @@ export class Store {
     if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
       throw new StoreError("INVARIANT_VIOLATED", "expectedRevision must be a positive integer");
     }
-    const doc = this.prepare(nodeId, input);
+    const doc = prepareDocument(nodeId, input);
     const at = this.clock();
-    const revision = await this.tx(signal, async (c) => {
-        const upd = await c.query(
-          `UPDATE scene_document sd SET revision = sd.revision + 1, document = $3::jsonb, updated_at = $4
-           WHERE sd.node_id = $1 AND sd.revision = $2
-             AND ${live("sd.node_id")}
-           RETURNING sd.revision`, [nodeId, expectedRevision, JSON.stringify(doc), at]);
-        const row = upd.rows[0];
-        if (!row) return undefined;
-        await c.query(
-          "INSERT INTO document_revision (node_id, revision, document, created_at) VALUES ($1, $2, $3::jsonb, $4)",
-          [nodeId, row.revision, JSON.stringify(doc), at]);
-        return row.revision as number;
-      });
+    const revision = await this.tx(signal, (c) => swapRevision(c, nodeId, expectedRevision, doc, at));
     if (revision === undefined) {
       const cur = await this.pool.query(
         `SELECT sd.revision, ${live("sd.node_id")} AS live FROM scene_document sd WHERE sd.node_id = $1`, [nodeId]);
@@ -170,16 +126,6 @@ export class Store {
     const row = rows[0];
     if (!row) throw new StoreError("NOT_FOUND", "document not found", { nodeId });
     return { nodeId, revision: row.revision, document: row.document, updatedAt: row.updated_at };
-  }
-
-  private prepare(nodeId: string, input: unknown): CanonicalDocument {
-    if (!UUID.test(nodeId)) throw new StoreError("NOT_FOUND", "document not found");
-    let doc: CanonicalDocument;
-    try { doc = normalizeDocument(input); } catch (e) { throw toDocumentError(e); }
-    if (doc.nodeId !== nodeId) throw new StoreError("DOCUMENT_INVALID", "document nodeId does not match the node");
-    // jsonb cannot hold a lone surrogate; refuse it here instead of failing inside PostgreSQL.
-    if (hasLoneSurrogate(doc)) throw new StoreError("DOCUMENT_INVALID", "document text contains an unpaired surrogate or NUL");
-    return doc;
   }
 
   private async requireLiveNode(c: pg.PoolClient, nodeId: string): Promise<void> {
@@ -269,6 +215,23 @@ export class Store {
   /** Write the library to a .rolltop file. */
   exportArchive(destination: string, options?: WriteOptions): Promise<WriteResult> {
     return exportArchive(this, destination, options);
+  }
+
+  // ---- Sync protocol v1 (see sync.ts) ----
+
+  /** POST /api/sync/v1/push. `body` is the parsed JSON, unchecked: it is validated here. */
+  syncPush(body: unknown, signal?: AbortSignal): Promise<PushOutcome> {
+    return syncPush({ pool: this.pool, clock: this.clock }, body, signal);
+  }
+
+  /** GET /api/sync/v1/changes. Query values are the raw strings (null when absent). */
+  syncChanges(query: { epoch: string | null; after: string | null; limit: string | null }, signal?: AbortSignal): Promise<ChangesOutcome> {
+    return syncChanges({ pool: this.pool, clock: this.clock }, query, signal);
+  }
+
+  /** GET /api/sync/v1/conflicts. */
+  syncConflicts(query: { epoch: string | null }, signal?: AbortSignal): Promise<ConflictsOutcome> {
+    return syncConflicts({ pool: this.pool, clock: this.clock }, query, signal);
   }
 
   checkIntegrity(): Promise<IntegrityReport> {

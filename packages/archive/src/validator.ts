@@ -8,6 +8,8 @@
 
 import { IssueList } from "./errors.ts";
 import type { Issue } from "./errors.ts";
+import { checkRecordShape } from "./schema.ts";
+import type { RecordKind } from "./schema.ts";
 import { stableStringify } from "./json.ts";
 import type { ArchiveData, Rec } from "./model.ts";
 import { printable } from "./paths.ts";
@@ -50,6 +52,62 @@ export function validateArchiveData(data: ArchiveData): ValidationReport {
   return new Run(data).run();
 }
 
+/**
+ * The records a record can point at, as archive records. Only what the rules read is needed (see
+ * validateRecord); a list may be absent or partial.
+ */
+export interface RecordContext {
+  universes?: Rec[]; series?: Rec[]; books?: Rec[]; manuscriptNodes?: Rec[]; templates?: Rec[]; fields?: Rec[]; entries?: Rec[];
+  relationshipTypes?: Rec[]; relationships?: Rec[]; facts?: Rec[]; questions?: Rec[]; events?: Rec[]; stateChanges?: Rec[];
+  references?: Rec[]; notes?: Rec[];
+  /** The hashes of the attachments that exist. */
+  attachmentHashes?: string[];
+}
+
+/**
+ * Validate one record against everything the archive says about a record of its kind: the archive schema, then the
+ * integrity rules (scope, hierarchy, references, field typing, uniqueness among `context`). It is the whole-archive
+ * validator run on `context` plus the record, reporting only the problems of the record itself, so the rules are
+ * the same ones and cannot drift. Returns no issues when the record is valid.
+ *
+ * What it does not check: that a scene, front matter or back matter node has its document (a node is created before
+ * its text arrives, so the rule belongs to the archive as a whole); the advisory warnings; and the records in
+ * `context`, which are not re-validated. The caller supplies the records the rules read: for a node its book, parent
+ * and point-of-view and setting entries; for an entry its template, the fields its values name, its override books
+ * and the entries it points at; and so on for the other kinds. A record the context lacks is reported as unresolved.
+ */
+export function validateRecord(kind: RecordKind, record: Rec, context: RecordContext = {}): Issue[] {
+  const shape = checkRecordShape(kind, record);
+  if (shape.items.length > 0) return shape.items;
+  if (kind === "library") return [];
+  const id = record.id as string;
+  const rest = (list: Rec[] | undefined): Rec[] => (list ?? []).filter((r) => r.id !== id);
+  const lists = {
+    universes: rest(context.universes), series: rest(context.series), books: rest(context.books),
+    manuscriptNodes: rest(context.manuscriptNodes), templates: rest(context.templates), fields: rest(context.fields),
+    entries: rest(context.entries), relationshipTypes: rest(context.relationshipTypes), relationships: rest(context.relationships),
+    facts: rest(context.facts), questions: rest(context.questions), events: rest(context.events),
+    stateChanges: rest(context.stateChanges), references: rest(context.references), notes: rest(context.notes),
+  };
+  const slot: Record<string, keyof typeof lists> = {
+    universe: "universes", series: "series", book: "books", manuscriptNode: "manuscriptNodes", template: "templates", field: "fields",
+    entry: "entries", relationshipType: "relationshipTypes", relationship: "relationships", fact: "facts", question: "questions",
+    event: "events", stateChange: "stateChanges", reference: "references", note: "notes",
+  };
+  lists[slot[kind]!].push(record);
+  const data: ArchiveData = {
+    manifestExtra: {},
+    library: { library: {}, universes: lists.universes, series: lists.series, books: lists.books, manuscriptNodes: lists.manuscriptNodes },
+    references: lists.references, notes: lists.notes,
+    attachments: (context.attachmentHashes ?? []).map((sha256) => ({ sha256 })),
+    entries: lists.entries, templates: lists.templates, fields: lists.fields,
+    relationships: { relationshipTypes: lists.relationshipTypes, relationships: lists.relationships },
+    facts: lists.facts, questions: lists.questions, events: lists.events, stateChanges: lists.stateChanges,
+    documents: new Map(),
+  };
+  return new Run(data, { only: id }).run().errors;
+}
+
 /** Untrusted text in a message: sanitised and short (ids, keys, names from the archive). */
 const sh = printable;
 
@@ -79,9 +137,12 @@ class Run {
   private dismissedKeys = new Map<Rec, Set<string>>();
 
   private readonly d: ArchiveData;
+  /** Set by validateRecord: only the problems of this record are collected, and the document-presence rule is skipped. */
+  private readonly only: string | undefined;
 
-  constructor(d: ArchiveData) {
+  constructor(d: ArchiveData, options: { only?: string } = {}) {
     this.d = d;
+    this.only = options.only;
     this.universes = index(d.library.universes ?? []);
     this.series = index(d.library.series ?? []);
     this.books = index(d.library.books ?? []);
@@ -121,7 +182,7 @@ class Run {
     this.checkNotes();
     this.checkAttachments();
     // The advisory passes only matter for an archive that is otherwise acceptable; a failing archive is refused anyway.
-    if (this.errors.items.length === 0) {
+    if (this.errors.items.length === 0 && this.only === undefined) {
       this.checkAnchorWarnings();
       this.checkStateConflicts();
       this.checkChronology();
@@ -131,9 +192,11 @@ class Run {
 
   // ---- reporting ----
   private err(code: string, message: string, recordId?: string): void {
+    if (this.only !== undefined && recordId !== this.only) return;
     this.errors.add(recordId === undefined ? { code, message } : { code, message, recordId });
   }
   private warn(code: string, message: string, recordId?: string, bookId?: string): void {
+    if (this.only !== undefined) return;
     const w: Issue = { code, message };
     if (recordId !== undefined) w.recordId = recordId;
     if (bookId !== undefined) w.bookId = bookId;
@@ -256,7 +319,7 @@ class Run {
 
   /** Every scene, frontMatter and backMatter node has exactly one document naming it; other kinds have none. */
   private checkDocuments(): void {
-    for (const n of this.d.library.manuscriptNodes ?? []) {
+    for (const n of this.only !== undefined ? [] : this.d.library.manuscriptNodes ?? []) {
       if (HAS_DOCUMENT.has(n.kind) && !this.d.documents.has(n.id)) this.err("INTEGRITY_VIOLATION", `Node ${sh(n.id)}: a ${sh(n.kind)} needs a document`, n.id);
     }
     for (const [key, doc] of [...this.d.documents].sort((a, b) => cmpCodeUnits(a[0], b[0]))) {

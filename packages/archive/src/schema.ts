@@ -165,3 +165,39 @@ function checkNoNul(file: string, root: Json, into: IssueList): void {
   }
 }
 const UUID_OR_HASH = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64})$/;
+
+/** The record kinds of the archive (the sync protocol names them the same way). */
+export const RECORD_KINDS = [
+  "library", "universe", "series", "book", "manuscriptNode", "reference", "note", "template", "field",
+  "entry", "fact", "question", "relationshipType", "relationship", "event", "stateChange",
+] as const;
+export type RecordKind = (typeof RECORD_KINDS)[number];
+
+/** The schema of one record of a kind: the def itself, or the items of the file's array. */
+function recordDef(kind: RecordKind): Schema {
+  switch (kind) {
+    case "library": return defs.library!.properties.library;
+    case "universe": case "series": case "book": case "manuscriptNode": return defs[kind]!;
+    case "reference": return defs.references!.items;
+    case "note": return defs.notes!.items;
+    case "template": return defs.templates!.items;
+    case "field": return defs.fields!.items;
+    case "entry": return defs.entries!.items;
+    case "fact": return defs.facts!.items;
+    case "question": return defs.questions!.items;
+    case "event": return defs.events!.items;
+    case "stateChange": return defs.stateChanges!.items;
+    case "relationshipType": return defs.relationships!.properties.relationshipTypes.items;
+    case "relationship": return defs.relationships!.properties.relationships.items;
+  }
+}
+
+/**
+ * Shape problems of one record against its archive def (the same schema and NUL rule as the whole file), as
+ * SCHEMA_VIOLATION issues added to `into`. Nothing is added when the shape is right.
+ */
+export function checkRecordShape(kind: RecordKind, value: Json, into: IssueList = new IssueList()): IssueList {
+  check(recordDef(kind), value, "", { list: into, prefix: kind });
+  checkNoNul(kind, value, into);
+  return into;
+}

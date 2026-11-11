@@ -8,5 +8,5 @@ export const isLoopbackHost = (host: string): boolean => LOOPBACK.test(host);
  */
 export function bindRefusal(host: string, libraryRoutesEnabled: boolean, insecureBind: string | undefined): string | undefined {
   if (!libraryRoutesEnabled || isLoopbackHost(host) || insecureBind === "1") return undefined;
-  return `Refusing to start: HOST=${host} is not a loopback address and the library routes (import, export) have no authentication yet. Use 127.0.0.1, or set ROLLTOP_INSECURE_BIND=1 to accept the risk.`;
+  return `Refusing to start: HOST=${host} is not a loopback address and the library routes (import, export, sync) have no authentication yet. Use 127.0.0.1, or set ROLLTOP_INSECURE_BIND=1 to accept the risk.`;
 }

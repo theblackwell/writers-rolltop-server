@@ -1,0 +1,381 @@
+{
+  "description": "Pushes that do not match the schema (missing or extra properties, a string or fractional or negative baseSeq, an unknown op, a bad op shape) are rejected whole with 400 INVALID_REQUEST. A later pull shows head 0: no op was applied.",
+  "epoch": "11111111-1111-4111-8111-111111111111",
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "create",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "value": {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "bookId": "44444444-4444-4444-8444-444444444444",
+                "kind": "chapter",
+                "title": "Chapter",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "move",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222"
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "set",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "field": "title",
+              "baseSeq": "0",
+              "value": "x"
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "set",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "field": "title",
+              "baseSeq": 1.5,
+              "value": "x"
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "set",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "field": "title",
+              "baseSeq": -1,
+              "value": "x"
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "set",
+              "recordKind": "manuscriptNode",
+              "field": "title",
+              "baseSeq": 0,
+              "value": "x"
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "set",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "field": "title",
+              "baseSeq": 0,
+              "value": "x",
+              "extra": 1
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": []
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            "not an object"
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "create",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "value": "text"
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "document",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "baseRevision": 0,
+              "value": {}
+            }
+          ]
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/sync/v1/push",
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "deviceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "ops": [
+            {
+              "opId": "00000000-0000-4000-8000-000000000001",
+              "op": "create",
+              "recordKind": "manuscriptNode",
+              "recordId": "22222222-2222-4222-8222-222222222222",
+              "value": {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "bookId": "44444444-4444-4444-8444-444444444444",
+                "kind": "chapter",
+                "title": "Chapter",
+                "orderKey": "m",
+                "createdAt": "2026-11-11T12:00:00Z",
+                "updatedAt": "2026-11-11T12:00:00Z"
+              }
+            }
+          ],
+          "extra": true
+        }
+      },
+      "invalid_request": true,
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "INVALID_REQUEST",
+            "message": "*"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/sync/v1/changes?epoch=11111111-1111-4111-8111-111111111111&after=0"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "epoch": "11111111-1111-4111-8111-111111111111",
+          "head": 0,
+          "next": 0,
+          "changes": []
+        }
+      }
+    }
+  ]
+}

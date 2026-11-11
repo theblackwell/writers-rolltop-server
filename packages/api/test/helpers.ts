@@ -10,6 +10,8 @@ import type { LogEntry } from "../src/app.ts";
 
 export const archiveFixtures = fileURLToPath(new URL("../../document-adapter/test/spec/fixtures/archives", import.meta.url));
 
+export const syncFixtures = fileURLToPath(new URL("../../document-adapter/test/spec/fixtures/sync", import.meta.url));
+
 export function adminUrl(): string {
   const url = process.env.ROLLTOP_TEST_DATABASE_URL;
   if (!url) throw new Error("ROLLTOP_TEST_DATABASE_URL is not set. Point it at an admin connection of a scratch PostgreSQL server, e.g. postgres://postgres@127.0.0.1:55432/postgres");
@@ -31,7 +33,7 @@ export interface Server {
 /** A scratch database, a migrated Store on it, and an app with the library routes. */
 export async function server(opts: {
   maxImportBytes?: number; timeoutMs?: number; maxHeapMb?: number; exportsDir?: string; limits?: object; fault?: "spin" | "allocate" | "hold-transaction" | "show-settings";
-  requestTimeoutMs?: number; connectionTimeoutMs?: number;
+  requestTimeoutMs?: number; connectionTimeoutMs?: number; clock?: () => Date;
 } = {}): Promise<Server> {
   const admin = new pg.Client({ connectionString: adminUrl() });
   await admin.connect();
@@ -44,7 +46,7 @@ export async function server(opts: {
   const attachmentsDir = join(dir, "attachments");
   const exportsDir = opts.exportsDir ?? join(dir, "exports");
   await mkdir(exportsDir, { recursive: true });
-  const store = await Store.open({ url, attachmentsDir, backupDir: join(dir, "backups") });
+  const store = await Store.open({ url, attachmentsDir, backupDir: join(dir, "backups"), ...(opts.clock ? { clock: opts.clock } : {}) });
   const logs: LogEntry[] = [];
   const app = buildApp({
     log: (e) => logs.push(e),

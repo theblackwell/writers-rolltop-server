@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://writersrolltop.app/schemas/sync-v1.schema.json",
+  "title": "Writers Rolltop sync protocol v1",
+  "description": "Wire shapes of the sync protocol (docs/sync-protocol-v1.md): push request and response, change feed, list of open conflicts and error bodies. Request and response objects are closed. Values carried inside operations are validated by the archive and document rules, not here.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
+    "recordKind": {
+      "enum": [
+        "library",
+        "universe",
+        "series",
+        "book",
+        "manuscriptNode",
+        "reference",
+        "note",
+        "template",
+        "field",
+        "entry",
+        "fact",
+        "question",
+        "relationshipType",
+        "relationship",
+        "event",
+        "stateChange"
+      ]
+    },
+    "changeRecordKind": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/recordKind"
+        },
+        {
+          "const": "document"
+        }
+      ]
+    },
+    "field": {
+      "type": "string",
+      "pattern": "^([A-Za-z][A-Za-z0-9]*|values/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|overrides/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+      "maxLength": 128
+    },
+    "conflictId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "errorCode": {
+      "enum": [
+        "INVALID_REQUEST",
+        "RESYNC_REQUIRED",
+        "PAYLOAD_TOO_LARGE",
+        "RECORD_EXISTS",
+        "RECORD_UNKNOWN",
+        "RECORD_DELETED",
+        "RECORD_NOT_DELETED",
+        "FIELD_UNKNOWN",
+        "INVALID_VALUE",
+        "REFERENCE_UNRESOLVED",
+        "INTEGRITY_VIOLATION",
+        "DOCUMENT_INVALID",
+        "OP_UNSUPPORTED",
+        "CONFLICT_UNKNOWN"
+      ]
+    },
+    "rejectCode": {
+      "enum": [
+        "RECORD_EXISTS",
+        "RECORD_UNKNOWN",
+        "RECORD_DELETED",
+        "RECORD_NOT_DELETED",
+        "FIELD_UNKNOWN",
+        "INVALID_VALUE",
+        "REFERENCE_UNRESOLVED",
+        "INTEGRITY_VIOLATION",
+        "DOCUMENT_INVALID",
+        "OP_UNSUPPORTED",
+        "CONFLICT_UNKNOWN"
+      ]
+    },
+    "createOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "recordKind", "recordId", "value"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "create" },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "value": { "type": "object" }
+      }
+    },
+    "setOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "recordKind", "recordId", "field", "baseSeq", "value"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "set" },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "field": { "$ref": "#/$defs/field" },
+        "baseSeq": { "$ref": "#/$defs/seq" },
+        "value": {}
+      }
+    },
+    "unsetOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "recordKind", "recordId", "field", "baseSeq"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "unset" },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "field": { "$ref": "#/$defs/field" },
+        "baseSeq": { "$ref": "#/$defs/seq" }
+      }
+    },
+    "tombstoneOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "recordKind", "recordId", "baseSeq"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "tombstone" },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "baseSeq": { "$ref": "#/$defs/seq" }
+      }
+    },
+    "restoreOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "recordKind", "recordId"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "restore" },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "documentOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "recordKind", "recordId", "baseRevision", "value"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "document" },
+        "recordKind": { "const": "document" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "baseRevision": { "$ref": "#/$defs/seq" },
+        "value": { "type": "object" }
+      }
+    },
+    "resolveOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "op", "conflictId"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "op": { "const": "resolve" },
+        "conflictId": { "$ref": "#/$defs/conflictId" }
+      }
+    },
+    "op": {
+      "oneOf": [
+        { "$ref": "#/$defs/createOp" },
+        { "$ref": "#/$defs/setOp" },
+        { "$ref": "#/$defs/unsetOp" },
+        { "$ref": "#/$defs/tombstoneOp" },
+        { "$ref": "#/$defs/restoreOp" },
+        { "$ref": "#/$defs/documentOp" },
+        { "$ref": "#/$defs/resolveOp" }
+      ]
+    },
+    "pushRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "deviceId", "ops"],
+      "properties": {
+        "epoch": { "$ref": "#/$defs/uuid" },
+        "deviceId": { "$ref": "#/$defs/uuid" },
+        "ops": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/op" }
+        }
+      }
+    },
+    "current": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq"],
+      "properties": {
+        "seq": { "$ref": "#/$defs/seq" },
+        "revision": { "$ref": "#/$defs/seq" }
+      }
+    },
+    "appliedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "status"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "applied" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "revision": { "$ref": "#/$defs/seq" },
+        "conflictId": { "$ref": "#/$defs/conflictId" }
+      }
+    },
+    "duplicateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "status", "firstStatus"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "duplicate" },
+        "firstStatus": { "enum": ["applied", "conflict", "rejected"] },
+        "seq": { "$ref": "#/$defs/seq" },
+        "revision": { "$ref": "#/$defs/seq" },
+        "conflictId": { "$ref": "#/$defs/conflictId" },
+        "code": { "$ref": "#/$defs/rejectCode" }
+      },
+      "oneOf": [
+        { "properties": { "firstStatus": { "const": "applied" } } },
+        { "properties": { "firstStatus": { "const": "conflict" } }, "required": ["conflictId"] },
+        { "properties": { "firstStatus": { "const": "rejected" } }, "required": ["code"] }
+      ]
+    },
+    "conflictResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "status", "conflictId", "current"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "conflict" },
+        "conflictId": { "$ref": "#/$defs/conflictId" },
+        "current": { "$ref": "#/$defs/current" }
+      }
+    },
+    "rejectedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "status", "code", "message"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "rejected" },
+        "code": { "$ref": "#/$defs/rejectCode" },
+        "message": { "$ref": "#/$defs/message" }
+      }
+    },
+    "opResult": {
+      "oneOf": [
+        { "$ref": "#/$defs/appliedResult" },
+        { "$ref": "#/$defs/duplicateResult" },
+        { "$ref": "#/$defs/conflictResult" },
+        { "$ref": "#/$defs/rejectedResult" }
+      ]
+    },
+    "pushResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "head", "results"],
+      "properties": {
+        "epoch": { "$ref": "#/$defs/uuid" },
+        "head": { "$ref": "#/$defs/seq" },
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/opResult" }
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "at", "opId", "deviceId", "change", "recordKind", "recordId"],
+      "properties": {
+        "seq": { "$ref": "#/$defs/seq" },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "opId": { "$ref": "#/$defs/uuid" },
+        "deviceId": { "$ref": "#/$defs/uuid" },
+        "change": { "enum": ["create", "set", "unset", "tombstone", "restore", "document"] },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "field": { "$ref": "#/$defs/field" },
+        "value": {},
+        "revision": { "$ref": "#/$defs/seq" }
+      }
+    },
+    "changesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "head", "changes", "next"],
+      "properties": {
+        "epoch": { "$ref": "#/$defs/uuid" },
+        "head": { "$ref": "#/$defs/seq" },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/change" }
+        },
+        "next": { "$ref": "#/$defs/seq" }
+      }
+    },
+    "losing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opId", "deviceId", "change"],
+      "properties": {
+        "opId": { "$ref": "#/$defs/uuid" },
+        "deviceId": { "$ref": "#/$defs/uuid" },
+        "change": { "enum": ["set", "unset", "tombstone", "document"] },
+        "baseSeq": { "$ref": "#/$defs/seq" },
+        "baseRevision": { "$ref": "#/$defs/seq" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "value": {}
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conflictId", "kind", "recordKind", "recordId", "losing", "current"],
+      "properties": {
+        "conflictId": { "$ref": "#/$defs/conflictId" },
+        "kind": { "enum": ["field", "tombstone", "document"] },
+        "recordKind": { "$ref": "#/$defs/changeRecordKind" },
+        "recordId": { "$ref": "#/$defs/uuid" },
+        "field": { "$ref": "#/$defs/field" },
+        "losing": { "$ref": "#/$defs/losing" },
+        "current": { "$ref": "#/$defs/current" }
+      }
+    },
+    "conflictsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "conflicts"],
+      "properties": {
+        "epoch": { "$ref": "#/$defs/uuid" },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/conflict" }
+        }
+      }
+    },
+    "errorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "$ref": "#/$defs/errorCode" },
+            "message": { "$ref": "#/$defs/message" }
+          }
+        }
+      }
+    },
+    "resyncError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "epoch", "head"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "const": "RESYNC_REQUIRED" },
+            "message": { "$ref": "#/$defs/message" }
+          }
+        },
+        "epoch": { "$ref": "#/$defs/uuid" },
+        "head": { "$ref": "#/$defs/seq" }
+      }
+    }
+  }
+}
