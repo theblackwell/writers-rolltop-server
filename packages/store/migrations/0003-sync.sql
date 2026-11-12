@@ -10,7 +10,8 @@
 -- The runner wraps this file in one transaction: do not add BEGIN or COMMIT.
 
 -- One row: the library's epoch (a uuid naming one lineage) and the last assigned seq. A new database gets
--- a new epoch here; every archive import rotates it (importContents).
+-- a new epoch here; every archive import rotates it (importContents) and writes its records as the new epoch's first
+-- changes (the import baseline, sync.ts writeImportBaseline), under one import device id.
 CREATE TABLE sync_state (
   singleton boolean PRIMARY KEY DEFAULT true CONSTRAINT sync_state_single CHECK (singleton),
   epoch uuid NOT NULL,

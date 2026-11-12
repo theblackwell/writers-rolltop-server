@@ -8,6 +8,7 @@ import { readArchive, writeArchive, ArchiveError } from "@writers-rolltop/archiv
 import type { ArchiveContents, ArchiveData, ArchiveLimits, ArchiveSummary, Issue, Json, Rec, RecordKind, WriteOptions, WriteResult } from "@writers-rolltop/archive";
 import { StoreError, mapPgError } from "./errors.ts";
 import { writeAttachmentFile } from "./attachments.ts";
+import { writeImportBaseline } from "./sync.ts";
 import { build, extraOf, insertMany, insertRecords, readRecords, T } from "./records.ts";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -58,7 +59,7 @@ export async function importContents(store: Store, contents: ArchiveContents, si
     }
     // The import starts a new sync epoch (sync-protocol-v1.md, "Epoch"): head 0, and no stored op result or open
     // conflict of the old epoch survives. The change log is empty here (checked above), so nothing is discarded that
-    // an import could not replace.
+    // an import could not replace. The baseline changes are written after the records, below.
     await client.query("DELETE FROM sync_result");
     await client.query("DELETE FROM sync_conflict");
     await client.query("UPDATE sync_state SET epoch = gen_random_uuid(), head = 0");
@@ -71,6 +72,10 @@ export async function importContents(store: Store, contents: ArchiveContents, si
       if (written.created) created.push(written.sha256);
     }
     await loadData(client, data, signal);
+    signal?.throwIfAborted();
+    // The records become the epoch's first changes (sync-protocol-v1.md, "Import baseline"), in the same transaction: a failure
+    // anywhere above or here rolls back the records, the changes and the new epoch together.
+    await writeImportBaseline(client, data, store.clock(), signal);
     signal?.throwIfAborted();
     commitSent = true;
     await client.query("COMMIT");

@@ -215,17 +215,20 @@ test("round trip: an archive that holds sync-written records imports into a new 
     assert.equal(imp.statusCode, 201, imp.body);
     // The imported library is the same library, record for record.
     assert.equal(normalize(await s2.store.readArchiveData()), normalize(await s1.store.readArchiveData()));
-    // A new epoch for the new library; nothing of the old epoch; and no snapshot of the imported records in the feed (see the report).
+    // A new epoch for the new library; nothing of the old epoch; and the import's records are the new epoch's baseline in the feed.
     const e1 = await state(s1), e2 = await state(s2);
     assert.notEqual(e2.epoch, e1.epoch);
-    assert.equal(e2.head, "0");
-    const pull = (await s2.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${e2.epoch}` })).json();
-    assert.deepEqual([pull.head, pull.changes, pull.next], [0, [], 0]);
-    // The note was trashed by sync on s1 and arrives trashed on s2, with no tombstone change in the new epoch (seq 0): no base is
-    // older than it, so an edit is RECORD_DELETED and never the restore branch.
+    const pull = (await s2.inject({ method: "GET", url: `/api/sync/v1/changes?epoch=${e2.epoch}&limit=1000` })).json();
+    assert.equal(pull.head, Number(e2.head));
+    assert.ok(pull.head > 0 && pull.changes.length === pull.head, "every change of the baseline, from seq 1");
+    assert.equal((await counts(s2)).changes, e2.head, "head names every row of the new epoch's log");
+    assert.deepEqual(pull.changes.map((c: any) => c.seq), Array.from({ length: pull.head }, (_, i) => i + 1), "gapless from 1");
+    // The note was trashed by sync on s1 and arrives trashed on s2, with a create and then a tombstone change of the import device: a
+    // client that pulled the feed has a base at or past it, so an edit is RECORD_DELETED, never the restore branch.
     assert.ok((await s2.store.readArchiveData()).notes.find((n: any) => n.id === I.note)!.deletedAt);
+    assert.deepEqual(pull.changes.filter((c: any) => c.recordId === I.note).map((c: any) => c.change), ["create", "tombstone"]);
     const e = await state(s2);
-    assert.equal(codes(await push(s2, e.epoch, B, [set("note", I.note!, "text", "edit", 0)]))[0], "RECORD_DELETED");
+    assert.equal(codes(await push(s2, e.epoch, B, [set("note", I.note!, "text", "edit", Number(e.head))]))[0], "RECORD_DELETED");
     // Sync sees every record on both servers: create says RECORD_EXISTS, restore finds the live record (the library has no trash).
     for (const s of [s1, s2]) {
       const { epoch } = await state(s);
@@ -243,14 +246,15 @@ test("an imported library is visible to sync: edits, trash and documents work ag
     const imp = await importSample(s);
     assert.equal(imp.statusCode, 201, imp.body);
     const { epoch, head } = await state(s);
-    assert.equal(head, "0");
+    assert.equal((await counts(s)).changes, head, "the import wrote its baseline: head names every row of the log, from seq 1");
+    assert.ok(Number(head) > 0);
     const scene = (await s.query("SELECT id, title FROM manuscript_node WHERE kind = 'scene' ORDER BY id LIMIT 1"))[0];
     const revision = (await s.query(`SELECT revision FROM scene_document WHERE node_id = '${scene.id}'`))[0].revision;
     assert.equal(revision, 1, "an imported document is revision 1");
     const bookId = (await s.query("SELECT id FROM book ORDER BY id LIMIT 1"))[0].id;
     const note = randomUUID();
     const out = await push(s, epoch, A, [
-      set("manuscriptNode", scene.id, "title", "Renamed"), // base 0: nothing newer exists
+      set("manuscriptNode", scene.id, "title", "Renamed", Number(head)), // a base at head: the client has seen the baseline
       docOp(scene.id, 0, "stale"), // the imported text is revision 1: a base of 0 is stale, kept as a conflict
       docOp(scene.id, 1, "fresh"),
       create("note", { id: note, bookId, nodeId: scene.id, text: "New", orderKey: "m", ...STAMPS }),
@@ -270,7 +274,7 @@ test("an imported library is visible to sync: edits, trash and documents work ag
     assert.equal(byId(data.library.manuscriptNodes, scene.id).title, "Renamed");
     assert.ok(byId(data.notes, note));
     // Trash an imported node: the tombstone is deleted_at on its own row, and the export carries it.
-    const t = await push(s, epoch, A, [tombstone("manuscriptNode", scene.id, 0)]);
+    const t = await push(s, epoch, A, [tombstone("manuscriptNode", scene.id, Number(head))]);
     assert.equal(results(t)[0].status, "applied");
     assert.equal((await s.query(`SELECT deleted_at IS NOT NULL AS d FROM manuscript_node WHERE id = '${scene.id}'`))[0].d, true);
     assert.ok(byId((await s.store.readArchiveData()).library.manuscriptNodes, scene.id).deletedAt);
@@ -287,11 +291,13 @@ test("an archive import starts a new epoch, and is refused when sync has written
     assert.equal(imp.statusCode, 201, imp.body);
     const after = await state(s);
     assert.notEqual(after.epoch, before);
-    assert.equal(after.head, "0");
-    assert.equal((await counts(s)).results, "0", "no result of the old epoch survives");
+    const c = await counts(s);
+    assert.ok(Number(after.head) > 0 && c.changes === after.head, "the baseline is the new epoch's log, from seq 1 to head");
+    assert.equal(c.results, "0", "no result of the old epoch survives, and the import makes none");
+    assert.equal(c.conflicts, "0");
     const stale = await push(s, before, A, [create("universe", universe())]);
     assert.equal(stale.statusCode, 409);
-    assert.deepEqual(stale.json(), { error: { code: "RESYNC_REQUIRED", message: stale.json().error.message }, epoch: after.epoch, head: 0 });
+    assert.deepEqual(stale.json(), { error: { code: "RESYNC_REQUIRED", message: stale.json().error.message }, epoch: after.epoch, head: Number(after.head) });
   } finally { await s.drop(); }
   // A library that sync created is a library: the import is refused and changes nothing.
   const s2 = await server({ clock: () => T });
@@ -880,7 +886,7 @@ test("F4: a push and an archive import at the same time never deadlock, and the 
     assert.equal(n, Number(st.head), "head names the log");
     if (i === "imported") {
       assert.notEqual(st.epoch, epoch);
-      assert.equal(n, 0, "the import's epoch starts with an empty log");
+      assert.ok(n > 0, "the import's epoch starts with its baseline");
       assert.equal((await e.query("SELECT count(*) AS n FROM library"))[0].n, "1");
     } else {
       assert.equal(st.epoch, epoch);

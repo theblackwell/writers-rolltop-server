@@ -15,9 +15,13 @@
 // names an attachment the library does not hold is rejected REFERENCE_UNRESOLVED, with a message that says so. Attachments
 // reach a library by archive import only.
 //
+// Not in the feed: the store's own trash and restore (setTrash called outside a sync op) write no sync_change row, so
+// tombstoneOf cannot see them. An imported record with a baseline tombstone at seq 5 that the store restores and trashes
+// again keeps seq 5, and a client with baseSeq below 5 takes the restore branch. Recorded as a limit of v1 (Spec, "Not
+// covered in v1"); the store's trash path is deliberately unchanged.
+//
 // Known gaps (recorded, not fixed here): a scene created by sync without its document makes archive export fail (500)
-// until the document is saved; an imported library has no change-feed snapshot (a client pulls the library by export);
-// dependents of a record are not rechecked after it changes (a later set can leave a record that points at it invalid).
+// until the document is saved; dependents of a record are not rechecked after it changes (a later set can leave a record that points at it invalid).
 //
 // Transactions: every op runs in its own transaction, which first locks the sync_state row. That serialises all
 // writers (seq is gapless and in acceptance order) and makes each op atomic with its stored result and its
@@ -26,10 +30,10 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { validateRecord } from "@writers-rolltop/archive";
-import type { Rec, RecordContext, RecordKind } from "@writers-rolltop/archive";
+import type { ArchiveData, Rec, RecordContext, RecordKind } from "@writers-rolltop/archive";
 import { StoreError, mapPgError } from "./errors.ts";
 import { insertFirstRevision, prepareDocument, swapRevision } from "./documents.ts";
-import { canTrash, insertRecords, kindsOf, readRecords, recordTable, setTrash, updateRecord } from "./records.ts";
+import { canTrash, insertMany, insertRecords, kindsOf, readRecords, recordTable, setTrash, updateRecord } from "./records.ts";
 import type { Db } from "./records.ts";
 import { RESERVED_FIELDS, isAfter, isLimit, isValidPush, unstorableValue, UUID } from "./sync-validate.ts";
 import type { PushBody, SyncOp } from "./sync-validate.ts";
@@ -86,8 +90,10 @@ export type ConflictsOutcome =
 
 export interface SyncDeps { pool: pg.Pool; clock: () => Date }
 
-/** RFC 3339 UTC to the second ("2026-11-11T12:00:00Z"). Informational: server time, never used to order changes. */
+/** RFC 3339 UTC to the second ("2026-11-11T12:00:00Z"), truncated, not rounded. Informational: server time, never used to order changes. */
 const stamp = (d: Date): string => d.toISOString().replace(/\.\d+Z$/, "Z");
+/** The same instant cut to the whole second, as a pull reports it (a baseline tombstone's `at` is stored this way). */
+const toSecond = (d: Date): Date => new Date(Math.floor(d.getTime() / 1000) * 1000);
 const num = (v: unknown): number => Number(v);
 
 /** Serialised size of a document value that unstorableValue accepted (at most 64 levels deep). A RangeError counts as 0: the op itself then rejects the value (guarded). */
@@ -210,14 +216,71 @@ const rangeRejection = (op: SyncOp): Outcome => reject(op.op === "document" ? "D
 const lastSeq = (changes: { seq: number }[]): number => Math.max(...changes.map((x) => x.seq));
 const isOutcome = (x: Found | Outcome): x is Outcome => "status" in x;
 
+const CHANGE_COLUMNS = ["seq", "at", "op_id", "device_id", "change", "record_kind", "record_id", "field", "value", "revision"];
+
 async function append(ctx: Ctx, f: { change: string; recordKind: string; recordId: string; field?: string; value?: unknown; revision?: number }): Promise<number> {
   const seq = ++ctx.head;
   await ctx.c.query(
-    `INSERT INTO sync_change (seq, at, op_id, device_id, change, record_kind, record_id, field, value, revision)
+    `INSERT INTO sync_change (${CHANGE_COLUMNS.join(", ")})
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)`,
     [seq, ctx.at, ctx.op.opId, ctx.deviceId, f.change, f.recordKind, f.recordId, f.field ?? null,
       f.value === undefined ? null : JSON.stringify(f.value), f.revision ?? null]);
   return seq;
+}
+
+/** The device id every change of an import baseline carries (sync-protocol-v1.md, "Import baseline"). Not a client: it never pushes. */
+export const IMPORT_DEVICE_ID = "1b0b0000-0000-4000-8000-00000000c0de";
+
+// Dependency order of an import baseline: a client that applies the feed in sequence never meets a reference to a record
+// it has not seen. The library comes first; manuscript nodes follow the bible (a node's pov and setting point at entries)
+// and come before everything that points at a node (notes, references, facts, questions, events, state changes).
+const BASELINE_ORDER: [RecordKind, (d: ArchiveData) => Rec[]][] = [
+  ["universe", (d) => d.library.universes as Rec[]], ["series", (d) => d.library.series as Rec[]], ["book", (d) => d.library.books as Rec[]],
+  ["template", (d) => d.templates], ["field", (d) => d.fields], ["entry", (d) => d.entries],
+  ["relationshipType", (d) => d.relationships.relationshipTypes as Rec[]], ["relationship", (d) => d.relationships.relationships as Rec[]],
+  ["manuscriptNode", nodesParentsFirst],
+  ["note", (d) => d.notes], ["reference", (d) => d.references],
+  ["fact", (d) => d.facts], ["question", (d) => d.questions], ["event", (d) => d.events], ["stateChange", (d) => d.stateChanges],
+];
+const NODE_RANK: Record<string, number> = { part: 0, frontMatter: 0, backMatter: 0, chapter: 1, scene: 2 };
+function nodesParentsFirst(d: ArchiveData): Rec[] {
+  return [...(d.library.manuscriptNodes as Rec[])].sort((a, b) => NODE_RANK[a.kind as string]! - NODE_RANK[b.kind as string]!);
+}
+
+/**
+ * Write the changes of an archive import into the log, inside the import's transaction (archive-io.ts), after the records
+ * and their document revisions are written and the new epoch is set with head 0. Each record becomes a `create` change whose
+ * value is the archive record without `deletedAt`; a trashed record is followed by a `tombstone` change (at = its
+ * deletedAt to the second, as a pull reports it); each stored document becomes a `document` change at revision 1 (its text is read from document_revision, as for
+ * any document change). All carry IMPORT_DEVICE_ID and a fresh opId, and no sync_result or sync_conflict row is made: an import
+ * is not a client op. Returns the new head. The caller holds the sync_state lock.
+ */
+export async function writeImportBaseline(c: Db, data: ArchiveData, at: Date, signal?: AbortSignal): Promise<number> {
+  let head = 0;
+  let rows: unknown[][] = [];
+  const flush = async (): Promise<void> => {
+    await insertMany(c, "sync_change", CHANGE_COLUMNS, rows);
+    rows = [];
+    signal?.throwIfAborted();
+  };
+  const add = async (when: Date, change: string, recordKind: string, recordId: string, value?: unknown, revision?: number): Promise<void> => {
+    rows.push([++head, when, randomUUID(), IMPORT_DEVICE_ID, change, recordKind, recordId, null, value === undefined ? null : JSON.stringify(value), revision ?? null]);
+    if (rows.length >= 500) await flush();
+  };
+  const addRecord = async (kind: RecordKind, rec: Rec): Promise<void> => {
+    const { deletedAt, ...live } = rec;
+    await add(at, "create", kind, rec.id as string, live);
+    if (deletedAt !== undefined && canTrash(kind)) {
+      const when = new Date(deletedAt as string);
+      await add(Number.isNaN(when.getTime()) ? at : toSecond(when), "tombstone", kind, rec.id as string);
+    }
+  };
+  await addRecord("library", data.library.library as Rec);
+  for (const [kind, list] of BASELINE_ORDER) for (const rec of list(data)) await addRecord(kind, rec);
+  for (const node of nodesParentsFirst(data)) if (data.documents.has(node.id as string)) await add(at, "document", "document", node.id as string, undefined, 1);
+  await flush();
+  await c.query("UPDATE sync_state SET head = $1", [head]);
+  return head;
 }
 
 async function openConflict(ctx: Ctx, p: { kind: string; recordKind: string; recordId: string; field?: string; losing: Obj; current: { seq: number; revision?: number } }): Promise<string> {
@@ -363,8 +426,10 @@ interface Tombstone { seq: number; opId: string | null; deviceId: string | null 
 
 /**
  * The change that put a trashed record in the trash: the latest tombstone change, if no restore change follows it. A
- * record that is in the trash without such a change (trashed in the archive that was imported, or by the store
- * itself) has seq 0: no base can be older than it, so an edit of it is RECORD_DELETED, never the restore branch.
+ * record that is in the trash without such a change (trashed by the store itself, outside sync) has seq 0: no base can
+ * be older than it, so an edit of it is RECORD_DELETED, never the restore branch. A record trashed in an archive that was
+ * imported has its baseline tombstone change. The store's own trash and restore are not in the feed: a record restored
+ * and trashed again by the store keeps the seq of its older tombstone (see the header).
  */
 async function tombstoneOf(c: Db, recordId: string): Promise<Tombstone> {
   const { rows } = await c.query(

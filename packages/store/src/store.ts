@@ -40,7 +40,7 @@ export interface OpenOptions {
 export class Store {
   readonly pool: pg.Pool;
   readonly attachmentsDir: string;
-  private readonly clock: () => Date;
+  readonly clock: () => Date;
 
   constructor(options: StoreOptions) {
     this.pool = options.pool;
