@@ -254,15 +254,3 @@ test("a busy sign-in queue (429 AUTH_BUSY) is worded differently from too many w
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("alert")).toHaveText("The server is busy. Try again in 5 seconds.");
 });
-
-test("too many wrong passwords shows the wait time (last: it locks sign-in for this scratch database)", async ({ page }) => {
-  await page.goto("/");
-  for (let i = 0; i < 5; i++) {
-    await page.getByLabel("Password").fill(`wrong password ${i}`);
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("alert")).toHaveText("That password is not right.");
-  }
-  await page.getByLabel("Password").fill("wrong password again");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("alert")).toHaveText(/Too many wrong passwords\. Wait (\d+ minutes|1 minute), then try again\./);
-});

@@ -3,6 +3,7 @@ import { AuthFailure, getSession, logout } from "./api.ts";
 import { Plaque } from "./Plaque.tsx";
 import { SignIn, Setup } from "./AuthScreens.tsx";
 import { Shell } from "./Shell.tsx";
+import type { SessionEndInfo } from "./sync/client.ts";
 
 type Phase =
   | { name: "checking" }
@@ -40,7 +41,14 @@ export function App() {
     }
   }, []);
 
-  if (phase.name === "shell") return <Shell onSignOut={signOut} signOutError={signOutError} />;
+  const sessionEnded = useCallback((info: SessionEndInfo) => {
+    const more = info.lost
+      ? " This browser could not keep a copy of the text you had not saved, so that text is lost."
+      : info.kept ? " Text that was not saved is kept on this device, and comes back when you open that scene." : "";
+    setPhase({ name: "sign-in", notice: `Your sign-in ended. Sign in again.${more}` });
+  }, []);
+
+  if (phase.name === "shell") return <Shell onSignOut={signOut} signOutError={signOutError} onSessionEnded={sessionEnded} />;
 
   return (
     <div className="frame frame--auth">

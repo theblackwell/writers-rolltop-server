@@ -20,6 +20,6 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@tiptap/pm": "3.33.0"
+    "@tiptap/pm": "3.32.0"
   }
 }
