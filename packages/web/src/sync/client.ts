@@ -8,10 +8,12 @@ import type { CanonicalDocument } from "@writers-rolltop/document-adapter";
 import { SessionError, fitsKeepalive, getChanges, getConflicts, libraryExists, pushOps } from "./http.ts";
 import type { ChangesAnswer } from "./http.ts";
 import type { Conflict, Op, OpResult, PushAnswer } from "./http.ts";
-import { applyChange, emptyModel, hasAnyRecord, sceneDocument, sceneIsLive } from "./model.ts";
+import { applyChange, emptyModel, fieldBase, hasAnyRecord, sceneDocument, sceneIsLive } from "./model.ts";
 import type { Model, Rec } from "./model.ts";
-import { getDeviceId, openLibraryDb } from "./local.ts";
-import type { Attempt, Held, LibraryDb, RecoveryItem } from "./local.ts";
+import { DB_BLOCKED_MESSAGE, DB_WAIT_MS, DbBlockedError, getDeviceId, openLibraryDb } from "./local.ts";
+import type { Attempt, FieldDraft, Held, LibraryDb, RecoveryItem } from "./local.ts";
+import { bibleReady, checkEntryField, newEntryValue, seedOps } from "./bible.ts";
+import type { EntryType } from "./bible.ts";
 
 export type Phase = "loading" | "ready" | "empty" | "no-baseline" | "unreachable";
 export type SceneStatus = "idle" | "saving" | "saved" | "unsaved" | "review";
@@ -29,7 +31,26 @@ export interface ClientState {
   otherConflicts: number;
   /** False if this browser cannot keep a copy on the device (IndexedDB blocked). */
   keepsCopies: boolean;
+  /** Why this device cannot keep copies, when the reason is something the author can fix (a second tab holds the database). */
+  storageMessage: string | undefined;
+  /** The history the studio is reading. A change of it means the server's library was restored or replaced. */
+  epoch: string | undefined;
+  /** Whether the built-in templates are in the library. They are made when the story bible is first opened. */
+  bible: "idle" | "setting-up" | "ready" | "failed";
+  bibleMessage: string | undefined;
+  /** The save state of each bible field the author has edited, by "<entryId>/<field>". */
+  fields: ReadonlyMap<string, FieldStatus>;
 }
+
+export interface FieldStatus { state: "saving" | "saved" | "unsaved" | "refused" | "conflict" | "invalid"; message?: string }
+export type FieldOutcome = { kind: "saved" | "nothing" | "unsaved" | "invalid" | "refused" | "conflict"; message?: string };
+/** `lost`: the server may have applied the create and its answer was lost (offline): a retry must use the same op id. */
+export type CreateOutcome = { ok: true; id: string } | { ok: false; message: string; lost?: boolean };
+/** What one open bible field holds, read when the epoch changes or the session ends. Undefined when the field has nothing unsent. */
+export type FieldSnapshot = { entryId: string; field: string; input: unknown; base: number } | undefined;
+export const HISTORY_REASON = "The server's library was restored or replaced.";
+export const RETRY_MESSAGE = "The server did not have the version it was expecting. Try again.";
+export const HISTORY_MESSAGE = "The server's library changed while you were typing. Your text is kept on this device. Choose which text to keep.";
 
 export type SaveOutcome = { kind: "saved"; revision: number } | { kind: "unsaved" } | { kind: "recovery" } | { kind: "nothing" };
 export type ResolveOutcome = { ok: true } | { ok: false; message: string };
@@ -87,6 +108,13 @@ export class SyncClient {
   private held = new Map<string, Held>();
   private bases = new Map<string, number>();
   private keepers = new Map<string, Keeper>();
+  private fieldKeepers = new Map<string, () => FieldSnapshot>(); // mounted bible fields, by "<entryId>/<field>"
+  private dbWaitMs = DB_WAIT_MS;
+  // Saves of one bible field run one after another, each with the newest input (see saveEntryField).
+  private fieldChains = new Map<string, Promise<unknown>>();
+  private fieldLatest = new Map<string, { entryId: string; field: string; value: unknown; input: unknown; base: number; gen: number }>();
+  private fieldPending = new Map<string, number>();
+  private fieldOwnSeq = new Map<string, number>();
   private epochHolds: Promise<unknown>[] = [];
   private active = false;
   private chains = new Map<string, Promise<unknown>>();
@@ -96,8 +124,11 @@ export class SyncClient {
   private timer: ReturnType<typeof setInterval> | undefined;
   private runId = 0;
   private state: ClientState = {
-    phase: "loading", message: undefined, libraryId: undefined, version: 0, recovery: [], status: new Map(), otherConflicts: 0, keepsCopies: true,
+    phase: "loading", message: undefined, libraryId: undefined, version: 0, recovery: [], status: new Map(), otherConflicts: 0, keepsCopies: true, storageMessage: undefined, epoch: undefined,
+    bible: "idle", bibleMessage: undefined, fields: new Map(),
   };
+  private drafts = new Map<string, FieldDraft>();
+  private seeding: Promise<void> | undefined;
 
   private readonly pollMs: number;
   private readonly io: ClientIo;
@@ -178,19 +209,33 @@ export class SyncClient {
     this.db = undefined;
     let db: LibraryDb | undefined;
     try {
-      db = await this.io.openLibraryDb(libraryId);
+      db = await this.openWithin(libraryId);
       if (run !== this.runId) { db.close(); return; } // stopped while the database was opening
       this.db = db;
       const held = await db.allHeld();
       const stored = await db.allRecovery();
+      const drafts = await db.allDrafts();
       if (run !== this.runId) return;
+      for (const d of drafts) if (!this.drafts.has(d.key)) this.drafts.set(d.key, d);
       for (const h of held) if (!this.held.has(h.sceneId)) this.held.set(h.sceneId, h);
       for (const h of held) if (h.status === "review") this.bases.set(h.sceneId, h.baseRevision);
       const keys = new Set(this.state.recovery.map((r) => `${r.sceneId}/${r.conflictId}`));
-      this.set({ recovery: [...this.state.recovery, ...stored.filter((r) => !keys.has(`${r.sceneId}/${r.conflictId}`))], keepsCopies: true });
-    } catch {
-      if (run === this.runId) this.set({ keepsCopies: false });
+      this.set({ recovery: [...this.state.recovery, ...stored.filter((r) => !keys.has(`${r.sceneId}/${r.conflictId}`))], keepsCopies: true, storageMessage: undefined });
+    } catch (e) {
+      if (run === this.runId) this.set({ keepsCopies: false, storageMessage: e instanceof DbBlockedError ? DB_BLOCKED_MESSAGE : undefined });
     }
+  }
+
+  /** Opens the database, but never waits for it for long: a database that opens late is closed and the studio goes on without it. */
+  private openWithin(libraryId: string): Promise<LibraryDb> {
+    return new Promise<LibraryDb>((ok, no) => {
+      let late = false;
+      const timer = setTimeout(() => { late = true; no(new DbBlockedError("The database did not open in time.")); }, this.dbWaitMs);
+      this.io.openLibraryDb(libraryId).then(
+        (db) => { clearTimeout(timer); if (late) db.close(); else ok(db); },
+        (e) => { clearTimeout(timer); if (!late) no(e); },
+      );
+    });
   }
 
   // ----- pulling the feed -----
@@ -256,12 +301,16 @@ export class SyncClient {
       // Client rule 2: the text on screen was made against the old history. Every open editor puts its unsaved text into
       // held now (the calls start at once, while the old bases are still known), and the old bases are forgotten.
       this.epochGen++;
-      this.epochHolds.push(this.holdOpenText());
+      this.epochHolds.push(this.holdOpenText("history"));
       this.bases.clear();
+      this.fieldOwnSeq.clear();
     }
     this.epoch = epoch;
     this.epochKnown = true;
     Object.assign(this.model, emptyModel());
+    // The templates and entries are read again from the new history, so the story bible is set up again if it lacks them.
+    if (wasKnown && !sameEpoch) this.set({ epoch, bible: "idle", bibleMessage: undefined });
+    else if (!sameEpoch) this.set({ epoch });
   }
 
   /** The server's library was restored or replaced. Texts that were never confirmed go to the author; none is re-sent. */
@@ -365,10 +414,36 @@ export class SyncClient {
     if (keep) this.keepers.set(sceneId, keep); else this.keepers.delete(sceneId);
   }
 
-  /** Every open editor holds its unsaved text on this device. Returns how many had some. */
-  private async holdOpenText(): Promise<number> {
+  /** A mounted bible field tells the client how to read its unsent input. Mounted fields are held like open editors. */
+  registerFieldKeeper(key: string, read: (() => FieldSnapshot) | undefined): void {
+    if (read) this.fieldKeepers.set(key, read); else this.fieldKeepers.delete(key);
+  }
+
+  /**
+   * Every open editor and every open bible field holds its unsaved text on this device. Returns how many had some.
+   * The calls start at once: they read what is on screen before anything else changes. A field's text is held as
+   * "unsent" when the session ends, and as "conflict" when the history changed (its base belongs to the old history, so
+   * it is never sent as it is: the author chooses).
+   */
+  private async holdOpenText(why: "session" | "history" = "session"): Promise<number> {
     const done = [...this.keepers.values()].map((keep) => keep().catch(() => false));
+    for (const read of this.fieldKeepers.values()) {
+      const snap = read();
+      if (!snap) continue;
+      const key = `${snap.entryId}/${snap.field}`;
+      const history = why === "history";
+      done.push(this.putDraft({
+        key, entryId: snap.entryId, field: snap.field, input: snap.input, base: snap.base, state: history ? "conflict" : "unsent", epoch: this.epoch, // read now: still the old history's epoch
+        ...(history ? { reason: HISTORY_REASON } : {}), savedAt: stamp(),
+      }).then(() => { if (history) this.setField(key, { state: "conflict", message: HISTORY_MESSAGE }); return true; }, () => false));
+    }
     return (await Promise.all(done)).filter(Boolean).length;
+  }
+
+  /** Whether any text typed into this entry is kept on this device and not yet in the library. */
+  hasDraftsFor(entryId: string): boolean {
+    for (const d of this.drafts.values()) if (d.entryId === entryId) return true;
+    return false;
   }
 
   /** The session ended: unsaved text goes into held first, then the studio is told what is kept. */
@@ -679,6 +754,231 @@ export class SyncClient {
     await this.pull().catch(() => {});
     return { ok: true };
   }
+
+  // ===== story bible (M1-10, slice 1): entries, through ordinary create, set and unset ops =====
+
+  /** One push of record ops, with the same handling of session, epoch and answer as a scene save. */
+  private async sendRecordOps(ops: Op[]): Promise<{ kind: "ok"; results: OpResult[] } | { kind: "offline" } | { kind: "changed" } | { kind: "retry" } | { kind: "refused" }> {
+    if (this.state.phase !== "ready" || !this.active) return { kind: "offline" };
+    if (this.epochPending) return { kind: "changed" };
+    let ans: PushAnswer;
+    try {
+      ans = await this.io.pushOps(this.epoch, getDeviceId(), ops);
+    } catch (e) {
+      if (e instanceof SessionError) await this.endSession();
+      return { kind: "offline" };
+    }
+    if (ans.kind === "resync") {
+      if (ans.epoch !== this.epoch) { this.adoptEpoch(ans.epoch); await this.pull().catch(() => {}); return { kind: "changed" }; }
+      return { kind: "retry" }; // the same history: the server did not have the version this was made against
+    }
+    if (ans.kind !== "ok") return { kind: "refused" };
+    return { kind: "ok", results: ans.results };
+  }
+
+  /**
+   * Gives the library its built-in templates and fields if they are missing, through create ops. This client decides
+   * when: the first time the story bible is opened (the spec does not say). One run at a time; calling it again when
+   * everything is there sends nothing.
+   */
+  seedBible(): Promise<void> {
+    if (this.seeding) return this.seeding;
+    // An epoch change during a run makes it a run for the old history: it runs again for the new one.
+    const run = async (): Promise<void> => {
+      for (let round = 0; round < 5; round++) {
+        const gen = this.epochGen;
+        await this.doSeed();
+        if (gen === this.epochGen || !this.active) return;
+      }
+    };
+    const p = run().finally(() => { if (this.seeding === p) this.seeding = undefined; });
+    this.seeding = p;
+    return p;
+  }
+
+  private async doSeed(): Promise<void> {
+    // After a changed epoch the model is read again first: seeding against a half-loaded model would send creates for records that exist.
+    while (this.pulling || this.routingRun) { await Promise.all([this.pulling, this.routingRun].map((p) => p?.catch(() => {}))); }
+    if (this.state.phase !== "ready") return;
+    if (bibleReady(this.model)) { if (this.state.bible !== "ready") this.set({ bible: "ready", bibleMessage: undefined }); return; }
+    this.set({ bible: "setting-up", bibleMessage: undefined });
+    const ops = seedOps(this.model, newId) as Op[];
+    const out = await this.sendRecordOps(ops);
+    if (out.kind !== "ok") {
+      const message = out.kind === "offline" ? "Could not reach the server to set up the story bible."
+        : out.kind === "changed" ? "The server's library changed. Try again."
+        : out.kind === "retry" ? RETRY_MESSAGE
+        : "The story bible could not be set up. The server did not accept the request. Try again.";
+      this.set({ bible: "failed", bibleMessage: message });
+      return;
+    }
+    // A record that already exists was made by another tab or device a moment ago: that is what was wanted.
+    const bad = out.results.find((r) => (r.status === "rejected" && r.code !== "RECORD_EXISTS") || r.status === "conflict");
+    await this.pull().catch(() => {});
+    if (bad) { this.set({ bible: "failed", bibleMessage: `The story bible could not be set up. ${bad.message ?? ""}`.trim() }); return; }
+    this.set(bibleReady(this.model) ? { bible: "ready", bibleMessage: undefined } : { bible: "failed", bibleMessage: "The story bible could not be set up. Try again." });
+  }
+
+  private setField(key: string, status: FieldStatus | undefined): void {
+    const fields = new Map(this.state.fields);
+    if (status) fields.set(key, status); else fields.delete(key);
+    this.set({ fields });
+  }
+  clearFieldStatus(key: string): void { if (this.state.fields.has(key)) this.setField(key, undefined); }
+  /**
+   * The draft of a field. One written under another epoch than the current one belongs to an older history: it is shown
+   * as a conflict (the author chooses) and never sent as unsent text.
+   */
+  draftFor(key: string): FieldDraft | undefined {
+    const d = this.drafts.get(key);
+    if (!d || !this.epochKnown || d.epoch === this.epoch) return d;
+    return { ...d, state: "conflict", reason: HISTORY_REASON };
+  }
+  /** The count of epoch changes seen so far. A field's base is valid only under the count it was read under. */
+  get generation(): number { return this.epochGen; }
+  /** The generation a field shown from this draft may save under: never the current one when the draft is from an older history. */
+  generationFor(d: FieldDraft | undefined): number { return d && this.epochKnown && d.epoch !== this.epoch ? -1 : this.epochGen; }
+  /** The base for a set or unset of an entry's field: the newest change on it that this device has seen. */
+  baseOfField(entryId: string, field: string): number { return fieldBase(this.model, "entry", entryId, field); }
+
+  private async putDraft(d: FieldDraft): Promise<void> {
+    d = { ...d, epoch: d.epoch ?? this.epoch };
+    this.drafts.set(d.key, d);
+    try { await this.db?.putDraft(d); } catch { this.set({ keepsCopies: false }); }
+  }
+  async discardDraft(key: string): Promise<void> {
+    this.drafts.delete(key);
+    this.clearFieldStatus(key);
+    try { await this.db?.deleteDraft(key); } catch { /* a stale draft is shown again and can be discarded again */ }
+  }
+
+  /** Text the author typed that cannot be sent as it is: it stays on this device and the message is shown. Nothing is sent. */
+  async holdField(p: { entryId: string; field: string; input: unknown; base: number; gen?: number }, message: string): Promise<FieldOutcome> {
+    const key = `${p.entryId}/${p.field}`;
+    await this.putDraft({ key, entryId: p.entryId, field: p.field, input: p.input, base: p.base, state: "refused", reason: message, savedAt: stamp(), ...(p.gen !== undefined && p.gen !== this.epochGen ? { epoch: "" } : {}) });
+    this.setField(key, { state: "invalid", message });
+    return { kind: "invalid", message };
+  }
+
+  /** Creates an entry of a built-in type, shared by the book's scope. The id and op id come from the caller so that a retry is the same op. */
+  async createEntry(p: { id: string; opId: string; type: EntryType; name: string; toBeNamed: boolean; bookId: string }): Promise<CreateOutcome> {
+    const made = newEntryValue(this.model, p);
+    if (!made.ok) return { ok: false, message: made.error };
+    const value = made.value;
+    const out = await this.sendRecordOps([{ opId: p.opId, op: "create", recordKind: "entry", recordId: p.id, value }]);
+    if (out.kind === "offline") return { ok: false, message: "Could not reach the server. What you typed is still here. Try again.", lost: true };
+    if (out.kind === "changed") return { ok: false, message: "The server's library changed. What you typed is still here. Try again." };
+    if (out.kind === "retry") return { ok: false, message: `${RETRY_MESSAGE} What you typed is still here.` };
+    if (out.kind === "refused") return { ok: false, message: "The server could not accept this. What you typed is still here." };
+    const r = out.results[0]!;
+    const first = r.status === "duplicate" ? r.firstStatus : r.status;
+    if (first === "applied") { await this.pull().catch(() => {}); return { ok: true, id: p.id }; }
+    return { ok: false, message: `${entryWhy(r)} What you typed is still here.` };
+  }
+
+  /**
+   * Saves one field of an entry: `field` is the sync field name ("name", "summary", "values/<fieldId>", ...) and `value`
+   * is its new value, or undefined to remove it. The typed `input` is kept on this device first and removed only after
+   * the server has applied the change. "saved" means the server answered.
+   */
+  saveEntryField(q: { entryId: string; field: string; value: unknown; input: unknown; base: number; gen?: number }): Promise<FieldOutcome> {
+    const key = `${q.entryId}/${q.field}`;
+    // The generation the base was read under; without one, the caller is taken to have read it just now.
+    const p = { ...q, gen: q.gen ?? this.epochGen };
+    // Saves of one field are made one after another, and each runs with the newest input (never the value it was asked
+    // with), so two answers cannot arrive in the wrong order and an older value cannot overwrite a newer one.
+    this.fieldLatest.set(key, p);
+    const queued = this.fieldPending.get(key) ?? 0;
+    this.fieldPending.set(key, queued + 1);
+    // A newer input waits for the one in flight: it is kept on this device now, not only when its turn comes.
+    const early = queued > 0
+      ? this.putDraft({ key, entryId: p.entryId, field: p.field, input: p.input, base: p.base, state: "unsent", savedAt: stamp() }) : Promise.resolve();
+    const job = async (): Promise<FieldOutcome> => {
+      await early;
+      try { return await this.runFieldSave(key, this.fieldLatest.get(key)!); }
+      finally {
+        const left = (this.fieldPending.get(key) ?? 1) - 1;
+        if (left <= 0) { this.fieldPending.delete(key); this.fieldLatest.delete(key); } else this.fieldPending.set(key, left);
+      }
+    };
+    const run = (this.fieldChains.get(key) ?? Promise.resolve()).then(job, job);
+    const tail = run.catch(() => {});
+    this.fieldChains.set(key, tail);
+    void tail.then(() => { if (this.fieldChains.get(key) === tail) this.fieldChains.delete(key); });
+    return run;
+  }
+
+  private async runFieldSave(key: string, q: { entryId: string; field: string; value: unknown; input: unknown; base: number; gen: number }): Promise<FieldOutcome> {
+    const p = { ...q, base: Math.max(q.base, this.fieldOwnSeq.get(key) ?? 0) }; // after an earlier save of this field, the base is that save
+    const newest = (): boolean => this.fieldLatest.get(key) === q; // false once a newer input was asked for
+    const entry = this.model.records.get("entry")?.get(p.entryId);
+    const keep = async (state: FieldDraft["state"], reason?: string, opId?: string, epoch?: string): Promise<void> => {
+      if (!newest()) return; // a newer input owns the copy on this device
+      await this.putDraft({ key, entryId: p.entryId, field: p.field, input: p.input, base: p.base, state, ...(epoch !== undefined ? { epoch } : {}), ...(reason ? { reason } : {}), ...(opId ? { opId } : {}), savedAt: stamp() });
+    };
+    const fail = (kind: FieldOutcome["kind"], state: FieldStatus["state"], message: string): FieldOutcome => {
+      if (newest()) this.setField(key, { state, message }); // for an older input, the newer one's turn shows its own state
+      return { kind, message };
+    };
+    const stale = async (): Promise<FieldOutcome | undefined> => {
+      if (q.gen === this.epochGen) return undefined;
+      // The base was read under an older history: it is never sent. The author chooses ("Keep my text" takes a fresh base).
+      await keep("conflict", HISTORY_REASON, undefined, ""); // "" : under no epoch the library has now
+      return fail("conflict", "conflict", HISTORY_MESSAGE);
+    };
+    const old = await stale();
+    if (old) return old;
+    if (!entry || entry.deletedAt) {
+      await keep("refused", "This entry is not in the library any more.");
+      return fail("refused", "refused", "This entry is not in the library any more. What you typed is kept on this device.");
+    }
+    const bad = checkEntryField(this.model, entry, p.field, p.value);
+    if (bad) { await keep("refused", bad); return fail("invalid", "invalid", bad); } // never sent
+    const current = /^values\/(.+)$/.test(p.field) ? (entry.values as Record<string, unknown> | undefined)?.[p.field.slice(7)] : entry[p.field];
+    if (sameDoc(current, p.value)) { if (newest()) await this.discardDraft(key); return { kind: "nothing" }; } // the saved value is already this one
+    const have = this.drafts.get(key);
+    const same = have?.opId && JSON.stringify(have.input) === JSON.stringify(p.input) && have.base === p.base;
+    const opId = same ? have!.opId! : newId();
+    await keep("unsent", undefined, opId); // on this device first
+    const old2 = await stale(); // the epoch may have changed while the copy was being written
+    if (old2) return old2;
+    this.setField(key, { state: "saving" });
+    const op: Op = p.value === undefined
+      ? { opId, op: "unset", recordKind: "entry", recordId: p.entryId, field: p.field, baseSeq: p.base }
+      : { opId, op: "set", recordKind: "entry", recordId: p.entryId, field: p.field, baseSeq: p.base, value: p.value };
+    const out = await this.sendRecordOps([op]);
+    if (out.kind === "offline" || out.kind === "refused") return fail("unsaved", "unsaved", "Not saved yet. Your text is kept on this device.");
+    if (out.kind === "retry") return fail("unsaved", "unsaved", `${RETRY_MESSAGE} Your text is kept on this device.`);
+    if (out.kind === "changed") {
+      await keep("conflict", "The server's library was restored or replaced.", opId);
+      return fail("conflict", "conflict", "The server's library changed while you were typing. Your text is kept on this device. Choose which text to keep.");
+    }
+    const r = out.results[0]!;
+    const first = r.status === "duplicate" ? r.firstStatus : r.status;
+    if (first === "applied") {
+      if (newest()) await this.discardDraft(key); // a draft of a newer input stays
+      await this.pull().catch(() => {});
+      if (q.gen === this.epochGen) this.fieldOwnSeq.set(key, r.seq ?? this.baseOfField(p.entryId, p.field)); // not after an epoch change: that seq is of the old history
+      if (newest()) this.setField(key, { state: "saved" }); // Saved only for the newest input
+      return { kind: "saved" };
+    }
+    if (first === "conflict") {
+      await keep("conflict", "Changed on another device.", opId);
+      await this.pull().catch(() => {});
+      // The losing text is on this device now (rule 9), so the open conflict can be closed; the author chooses next.
+      if (r.conflictId) await this.sendRecordOps([{ opId: newId(), op: "resolve", conflictId: r.conflictId }]);
+      return fail("conflict", "conflict", "This was changed on another device while you were typing. Your text is kept on this device. Choose which text to keep.");
+    }
+    const message = `${entryWhy(r)} Your text is still here and kept on this device.`;
+    await keep("refused", message);
+    return fail("refused", "refused", message);
+  }
 }
+
+/** The server's own plain message for a refused op on an entry, with entry wording for the record codes. */
+const entryWhy = (r: OpResult): string =>
+  r.code === "RECORD_UNKNOWN" ? "This entry is not in the library any more."
+  : r.code === "RECORD_DELETED" ? "This entry is in the trash."
+  : r.message ? r.message : "The server refused this.";
 
 export type { Conflict };

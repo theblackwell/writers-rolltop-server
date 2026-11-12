@@ -11,6 +11,8 @@ import { SyncClient } from "./sync/client.ts";
 import type { SessionEndInfo } from "./sync/client.ts";
 import { pollInterval } from "./sync/poll.ts";
 import { liveBooks, outline, sceneIsLive } from "./sync/model.ts";
+import { BibleCentre, BibleList } from "./BibleViews.tsx";
+import type { BibleSection, BibleView } from "./BibleViews.tsx";
 import {
   PLACEHOLDER_BIBLE, PLACEHOLDER_BOOKS, PLACEHOLDER_FIRST_TAB, PLACEHOLDER_QUICK_NOTES, SECTIONS, TOP_BAR,
 } from "./placeholder.ts";
@@ -58,6 +60,8 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
   const items = live && currentBook ? outline(client.model, currentBook.id) : [];
   const [top, setTop] = useState<TopItem>("Write");
   const [section, setSection] = useState<Section>("Manuscript");
+  const [bibleView, setBibleView] = useState<BibleView>(undefined);
+  const bibleSection = live && (section === "Characters" || section === "Worldbuilding") ? section as BibleSection : undefined;
   const [book, setBook] = useState<string>(PLACEHOLDER_BOOKS[0]);
   const [bookOpen, setBookOpen] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: PLACEHOLDER_FIRST_TAB }]);
@@ -68,6 +72,9 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
   const [rightOpen, setRightOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const bookMenuId = useId();
+  // The built-in templates are made the first time the story bible is opened, only if the library lacks them.
+  // It runs again when the history changes (a restored or replaced library), because the templates are read again then.
+  useEffect(() => { if (bibleSection) void client.seedBible(); }, [client, bibleSection, live, cstate.epoch]);
   const bookButton = useRef<HTMLButtonElement>(null);
 
   const active = tabs.find((t) => t.id === activeTab);
@@ -153,8 +160,8 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
       {cstate.phase !== "loading" && (
         <section className="sample-notice" aria-label="Sample content notice">
           {live ? (
-            <p><strong>Sample content.</strong> Quick Notes, Book Bible and every section except Manuscript are not connected to your library yet.
-              The manuscript on the left is your real library.</p>
+            <p><strong>Sample content.</strong> Quick Notes, the Book Bible links, Notes, Scenes and Revisions are not connected to your library yet.
+              The manuscript, Characters and Worldbuilding on the left are your real library.</p>
           ) : (
             <p><strong>Sample content.</strong> This is not connected to your library, and nothing here is saved.</p>
           )}
@@ -201,7 +208,7 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
             {SECTIONS.map((s) => (
               <li key={s}>
                 <button type="button" className="sections__item" aria-current={section === s ? "true" : undefined}
-                  onClick={() => { setSection(s); setTop("Write"); }}>
+                  onClick={() => { setSection(s); setBibleView(undefined); setTop("Write"); }}>
                   {SECTION_ICONS[s]}<span>{s}</span>
                 </button>
               </li>
@@ -224,6 +231,10 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
                   </ul>
                 )}
               </>
+            ) : bibleSection ? (
+              <BibleList client={client} cstate={cstate} section={bibleSection} bookId={currentBook?.id} view={bibleView}
+                onOpen={(id) => { setBibleView({ kind: "entry", id }); setLeftOpen(false); }}
+                onNew={(type) => { setBibleView({ kind: "new", type }); setLeftOpen(false); }} />
             ) : <p className="hint">{section} is not connected to your library yet.</p>
           )}
         </nav>
@@ -255,7 +266,13 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
             </section>
           ) : live ? (
             <>
-              <div className="tabs" role="group" aria-label="Open documents">
+              {cstate.storageMessage && <p role="alert" className="error">{cstate.storageMessage}</p>}
+              {bibleSection && (
+                <BibleCentre client={client} cstate={cstate} section={bibleSection} bookId={currentBook?.id} view={bibleView}
+                  onCreated={(id) => setBibleView({ kind: "entry", id })} onCancel={() => setBibleView(undefined)} />
+              )}
+              {/* The editor stays mounted while the bible is open, so a scene being written is saved as usual. */}
+              <div className="tabs" role="group" aria-label="Open documents" hidden={bibleSection !== undefined}>
                 {liveScenes.map((id) => (
                   <div key={id} className="tab" data-active={id === activeScene}>
                     <button type="button" className="tab__title" aria-current={id === activeScene ? "true" : undefined}
@@ -266,7 +283,7 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
                   </div>
                 ))}
               </div>
-              <section className="card page" aria-labelledby="page-title">
+              <section className="card page" aria-labelledby="page-title" hidden={bibleSection !== undefined}>
                 {activeScene && liveScenes.includes(activeScene) ? (
                   <SceneEditor key={activeScene} client={client} cstate={cstate} sceneId={activeScene} title={sceneTitle(activeScene)}
                     expanded={expanded} onExpand={() => setExpanded((v) => !v)} register={register} />

@@ -17,9 +17,15 @@ export interface Model {
   sawLibraryCreate: boolean;
   /** The seq of the last change applied. */
   cursor: number;
+  /** The seq of the change that last made or changed a record ("kind/id") or one of its fields ("kind/id#field"). Used as baseSeq. */
+  seqs: Map<string, number>;
 }
 
-export const emptyModel = (): Model => ({ records: new Map(), docs: new Map(), sawLibraryCreate: false, cursor: 0 });
+export const emptyModel = (): Model => ({ records: new Map(), docs: new Map(), sawLibraryCreate: false, cursor: 0, seqs: new Map() });
+
+/** The baseSeq for a set or unset of one field: the newest change this model has seen on that field, or on the record's creation. */
+export const fieldBase = (m: Model, kind: string, id: string, field: string): number =>
+  Math.max(m.seqs.get(`${kind}/${id}#${field}`) ?? 0, m.seqs.get(`${kind}/${id}`) ?? 0);
 
 export class FeedError extends Error {}
 
@@ -42,11 +48,13 @@ export function applyChange(m: Model, c: SyncChange): void {
   switch (c.change) {
     case "create":
       if (isObj(c.value)) kind.set(c.recordId, { ...c.value, id: c.recordId });
+      m.seqs.set(`${c.recordKind}/${c.recordId}`, c.seq);
       if (c.recordKind === "library") m.sawLibraryCreate = true;
       break;
     case "set": case "unset": {
       const r = kind.get(c.recordId);
       if (!r || !c.field) break;
+      m.seqs.set(`${c.recordKind}/${c.recordId}#${c.field}`, c.seq);
       const path = c.field.split("/"); // "values/<fieldId>" and "overrides/<bookId>" reach into an object
       let at: Record<string, unknown> = r;
       for (const p of path.slice(0, -1)) {

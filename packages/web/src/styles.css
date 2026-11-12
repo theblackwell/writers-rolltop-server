@@ -294,3 +294,32 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .recovery__choices .hint { flex: 1 1 240px; }
 @media (max-width: 699px) { .recovery__versions { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-contrast: more) { .recovery { border-color: #000; } .recovery__text { border-color: #000; } }
+
+/* ---------- the story bible (M1-10) ---------- */
+[hidden] { display: none !important; }
+.biblelist { display: flex; flex-direction: column; gap: 8px; }
+.biblelist__title { font-size: 18px; font-weight: 600; color: var(--ink-soft); }
+.biblelist__new { align-self: flex-start; }
+.biblelist__item { width: 100%; min-height: 44px; display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; overflow-wrap: anywhere; }
+.biblelist__item[aria-current="true"] { background: var(--wine); color: var(--cream); }
+.biblelist__name { font-size: 18px; font-weight: 600; }
+.biblelist__meta, .biblelist__summary { font-size: 15px; }
+.biblelist__item[aria-current="true"] .biblelist__meta, .biblelist__item[aria-current="true"] .biblelist__summary { color: var(--cream); }
+.biblelist__meta { color: var(--ink-soft); }
+.entry__form { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; max-width: 640px; }
+.entry__type { color: var(--ink-soft); font-weight: 600; }
+.entry__sub { font-size: 22px; font-weight: 600; color: var(--wine); border-top: 1px solid var(--line); padding-top: 10px; }
+.entry__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.entry__readonly { padding: 8px 12px; background: rgb(255 250 240 / .6); border: 1px dashed var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.field input:not([type="checkbox"]), .field textarea, .field select { min-height: 48px; padding: 8px 12px; border: 2px solid var(--line); border-radius: 8px; background: #fffaf0; color: var(--ink); width: 100%; font: inherit; }
+.field textarea { resize: vertical; }
+.field--group { border: 0; padding: 0; min-width: 0; }
+.field--group legend, .field__label { font-weight: 600; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.check input[type="checkbox"] { width: 24px; height: 24px; min-height: 0; flex: none; accent-color: var(--wine); }
+.check label { flex: 1; padding: 8px 0; }
+.field__status { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.field__line { min-height: 0; color: var(--ok); font-weight: 600; }
+.field__line:empty { display: none; }
+.field__line--warn { color: var(--danger); }
+@media (prefers-contrast: more) { .field input, .field textarea, .field select { border-color: #000; } .entry__readonly { border-color: #000; } }

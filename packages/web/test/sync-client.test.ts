@@ -55,6 +55,7 @@ function stubDb(opts: { beforePutRecovery?: Promise<void> } = {}): StubDb {
     allRecovery: async () => [...db.recoveryRows],
     putRecovery: async (r) => { await opts.beforePutRecovery; db.recoveryRows = [...db.recoveryRows.filter((x) => !(x.sceneId === r.sceneId && x.conflictId === r.conflictId)), r]; },
     deleteRecovery: async (s, c) => { db.recoveryRows = db.recoveryRows.filter((x) => !(x.sceneId === s && x.conflictId === c)); },
+    allDrafts: async () => [], putDraft: async () => {}, deleteDraft: async () => {},
     close: () => { db.closed = true; },
   };
   return db;

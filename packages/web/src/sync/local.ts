@@ -2,6 +2,7 @@
 // IndexedDB database with two stores:
 //   held      one entry per scene: the author's newest text that the server has not yet confirmed (key: sceneId)
 //   recovery  one entry per copy waiting for the author's decision (key: [sceneId, conflictId])
+//   drafts    one entry per bible field whose typed text the server has not confirmed (key: entryId/field)
 // The database is named after the library id, so one library's copies never mix with another's.
 import { newId } from "../editor/rolltop-editor.ts";
 import type { CanonicalDocument } from "@writers-rolltop/document-adapter";
@@ -59,6 +60,26 @@ export interface RecoveryItem {
   attempt?: Attempt;
 }
 
+/**
+ * What the author typed into one field of a bible entry and the server has not confirmed (key: "<entryId>/<field>").
+ * `input` is what the field showed (text, or a list of option ids); `base` is the baseSeq it was typed against.
+ */
+export interface FieldDraft {
+  key: string;
+  entryId: string;
+  field: string;
+  input: unknown;
+  base: number;
+  /** The epoch of the history `base` belongs to. A draft from another epoch is a conflict, never sent as unsent text. */
+  epoch?: string;
+  /** Why it is still here: not sent, refused by the server, or changed on another device meanwhile. */
+  state: "unsent" | "refused" | "conflict";
+  /** The op id of the last send, so a retry after a lost answer is the same op (protocol rule 4). */
+  opId?: string;
+  reason?: string;
+  savedAt: string;
+}
+
 export interface LibraryDb {
   allHeld(): Promise<Held[]>;
   putHeld(h: Held): Promise<void>;
@@ -66,6 +87,9 @@ export interface LibraryDb {
   allRecovery(): Promise<RecoveryItem[]>;
   putRecovery(r: RecoveryItem): Promise<void>;
   deleteRecovery(sceneId: string, conflictId: string): Promise<void>;
+  allDrafts(): Promise<FieldDraft[]>;
+  putDraft(d: FieldDraft): Promise<void>;
+  deleteDraft(key: string): Promise<void>;
   close(): void;
 }
 
@@ -74,14 +98,36 @@ const done = (t: IDBTransaction): Promise<void> => new Promise((ok, no) => { t.o
 
 export const dbName = (libraryId: string): string => `rolltop-library-${libraryId}`;
 
-export async function openLibraryDb(libraryId: string): Promise<LibraryDb> {
-  const req = indexedDB.open(dbName(libraryId), 1);
+/** The database could not be opened in time: another tab of this library still has the older version open. */
+export class DbBlockedError extends Error {}
+export const DB_BLOCKED_MESSAGE = "Close the other tab that has this library open, then reload.";
+export const DB_WAIT_MS = 5000;
+
+/**
+ * Opens the library's database. An upgrade waits for every other tab to close its connection, so the wait is bounded:
+ * a blocked upgrade, or no answer within `waitMs`, rejects with DbBlockedError. A database that opens after that is closed again.
+ */
+export async function openLibraryDb(libraryId: string, waitMs = DB_WAIT_MS): Promise<LibraryDb> {
+  const req = indexedDB.open(dbName(libraryId), 2);
   req.onupgradeneeded = () => {
     const db = req.result;
-    db.createObjectStore("held", { keyPath: "sceneId" });
-    db.createObjectStore("recovery", { keyPath: ["sceneId", "conflictId"] });
+    // Version 1 made held and recovery; version 2 adds drafts of bible fields. An older database keeps what it has.
+    if (!db.objectStoreNames.contains("held")) db.createObjectStore("held", { keyPath: "sceneId" });
+    if (!db.objectStoreNames.contains("recovery")) db.createObjectStore("recovery", { keyPath: ["sceneId", "conflictId"] });
+    if (!db.objectStoreNames.contains("drafts")) db.createObjectStore("drafts", { keyPath: "key" });
   };
-  const db = await wrap(req);
+  let gaveUp = false;
+  const db = await new Promise<IDBDatabase>((ok, no) => {
+    const timer = setTimeout(() => { gaveUp = true; no(new DbBlockedError("The database did not open in time.")); }, waitMs);
+    req.onsuccess = () => {
+      clearTimeout(timer);
+      if (gaveUp) req.result.close(); // it opened after this call gave up: nobody will use it
+      else ok(req.result);
+    };
+    req.onerror = () => { clearTimeout(timer); no(req.error); };
+    req.onblocked = () => { clearTimeout(timer); gaveUp = true; no(new DbBlockedError("Another tab holds an older version of the database open.")); };
+  });
+  db.onversionchange = () => db.close(); // never hold up another tab's upgrade
   const run = async (store: string, f: (s: IDBObjectStore) => IDBRequest | void): Promise<void> => {
     const t = db.transaction(store, "readwrite");
     f(t.objectStore(store));
@@ -95,6 +141,9 @@ export async function openLibraryDb(libraryId: string): Promise<LibraryDb> {
     allRecovery: () => all<RecoveryItem>("recovery"),
     putRecovery: (r) => run("recovery", (s) => s.put(r)),
     deleteRecovery: (sceneId, conflictId) => run("recovery", (s) => s.delete([sceneId, conflictId])),
+    allDrafts: () => all<FieldDraft>("drafts"),
+    putDraft: (d) => run("drafts", (s) => s.put(d)),
+    deleteDraft: (key) => run("drafts", (s) => s.delete(key)),
     close: () => db.close(),
   };
 }
