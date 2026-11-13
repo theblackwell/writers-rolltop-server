@@ -133,15 +133,6 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .sections__item[aria-current="true"] { background: var(--wine); color: var(--cream); }
 
 .centre { min-width: 0; display: flex; flex-direction: column; outline: none; }
-.tabs { display: flex; align-items: flex-end; gap: 6px; padding: 0 10px; flex-wrap: wrap; }
-.tab {
-  display: flex; align-items: center; min-height: 44px; padding-left: 14px;
-  background: linear-gradient(180deg, #e8c98d, #d9b36f); border: 1px solid var(--parch-edge); border-bottom: 0; border-radius: 12px 12px 0 0;
-}
-.tab[data-active="true"] { background: var(--tex-parch); }
-.tab__title { min-height: 44px; border: 0; background: transparent; padding: 0 6px; font-size: 20px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab__close { min-width: 44px; min-height: 44px; display: grid; place-items: center; border: 0; background: transparent; border-radius: 10px; }
-.tab--add { min-width: 48px; justify-content: center; padding: 0; cursor: pointer; color: var(--ink); }
 
 .page { flex: 1; display: flex; flex-direction: column; min-height: 420px; background: var(--tex-page); border-radius: 14px; }
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
@@ -212,13 +203,12 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .side--right { order: 3; }
   .page { min-height: 360px; }
   .page__body { padding: 18px 16px; }
-  .tab__title { max-width: 46vw; }
   .frame--expanded .panel-toggles { display: none; }
 }
 
 /* ---------- motion: only gentle colour changes, and none under Reduced Motion ---------- */
 @media (prefers-reduced-motion: no-preference) {
-  button, .tab { transition: background-color .15s ease, border-color .15s ease; }
+  button { transition: background-color .15s ease, border-color .15s ease; }
   button:not(:disabled):not([aria-current]):not([aria-disabled="true"]):hover { background-color: rgb(110 31 44 / .12); }
   .btn--primary:hover:not(:disabled) { background-color: #86283a; }
 }
@@ -238,8 +228,6 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .frame { box-shadow: inset 0 0 0 3px #000; }
   .plaque { background: #e8bd6a; box-shadow: none; border-color: #000; }
   .card { box-shadow: none; border: 2px solid #3a1f17; }
-  .tab { background: #ecd29a; }
-  .tab[data-active="true"] { background: #fbefd2; }
   .topbar ul { box-shadow: none; border: 2px solid var(--brass); }
   .topbar__item[aria-current="page"] { box-shadow: none; border-color: #fff; }
   .field input { border-color: #000; }
@@ -323,3 +311,17 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .field__line:empty { display: none; }
 .field__line--warn { color: var(--danger); }
 @media (prefers-contrast: more) { .field input, .field textarea, .field select { border-color: #000; } .entry__readonly { border-color: #000; } }
+
+/* M1-10 slice 3: participants of an event, and the state changes of an entry */
+.participant { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; }
+.participant__name { font-weight: 600; overflow-wrap: anywhere; }
+.field--group.statechange, .field--group.addchange { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.statechange legend, .addchange legend { padding: 0 6px; overflow-wrap: anywhere; }
+@media (prefers-contrast: more) { .participant, .field--group.statechange, .field--group.addchange { border-color: #000; } }
+
+/* M1-10 slice 4: continuity warnings. The words carry the meaning; the border only helps the eye. */
+.continuity { display: flex; flex-direction: column; gap: 10px; }
+.continuity__item { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px; border: 1px solid var(--line); border-left: 6px solid var(--wine); border-radius: 8px; }
+.continuity__heading { font-size: 17px; font-weight: 700; }
+.continuity__text { font-size: 16px; overflow-wrap: anywhere; }
+@media (prefers-contrast: more) { .continuity__item { border-color: #000; } }

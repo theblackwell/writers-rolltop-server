@@ -9,7 +9,7 @@ import type { Model, SyncChange } from "../src/sync/model.ts";
 import type { Op, OpResult, PushAnswer } from "../src/sync/http.ts";
 import type { FieldDraft, LibraryDb } from "../src/sync/local.ts";
 import {
-  bibleReady, builtInTemplate, checkEntryField, encodeInput, encodeText, entriesOfType, fieldsOf, inputOf, newEntryValue, seedOps, validateValue,
+  bibleReady, builtInTemplate, checkEntryField, checkEventField, checkRecordField, checkStateChangeField, encodeEventInput, eventInputOf, eventsOf, newEventValue, newStateChangeValue, nextMoveAttempt, attemptAfterFailedMove, EARLIER_MOVE_FIRST, EARLIER_MOVE_MAY_HAVE_WORKED, participantItem, nodesInScope, encodeRecordInput, newFactValue, newQuestionValue, recordInputOf, encodeInput, encodeText, entriesOfType, fieldsOf, inputOf, newEntryValue, seedOps, validateValue,
 } from "../src/sync/bible.ts";
 import type { FieldDef } from "../src/sync/bible.ts";
 import { BUILTIN_FIELDS, BUILTIN_TEMPLATES } from "../src/sync/bible-builtins.ts";
@@ -134,7 +134,7 @@ test("a library that already has a built-in template of a type, under another id
 
 // ---------- a fake server for the client ----------
 
-interface Fake { io: Partial<ClientIo>; pushes: Op[][]; changes: SyncChange[]; reply: Array<(ops: Op[]) => OpResult[] | undefined>; head: number; before: ((ops: Op[]) => Promise<void>) | undefined }
+interface Fake { io: Partial<ClientIo>; pushes: Op[][]; changes: SyncChange[]; reply: Array<(ops: Op[]) => OpResult[] | undefined>; head: number; before: ((ops: Op[]) => Promise<void>) | undefined; lose?: (ops: Op[]) => boolean }
 /** Applies creates, sets and unsets like the server would (without validation), unless a reply function answers first. */
 function fake(): Fake {
   const f: Fake = { pushes: [], changes: [], reply: [], io: {}, head: 0, before: undefined };
@@ -154,6 +154,7 @@ function fake(): Fake {
         f.changes.push(c);
         return { opId: o.opId, status: "applied", seq: seqNo };
       });
+      if (f.lose?.(ops)) throw new Error("answer lost"); // applied on the server, but the answer never arrives
       return { kind: "ok", epoch: "E1", head: f.head, results };
     },
   };
@@ -669,4 +670,667 @@ test("an epoch change during seeding makes one more seeding run for the new epoc
   await seeding;
   assert.equal(runs, 2, "the second run is for the new epoch");
   c.stop();
+});
+
+// ---------- facts and questions (slice 2) ----------
+
+/** A model with a book, a chapter and a scene, a second book, and a character and a place in the first book. */
+function storyModel(): Model {
+  seq = 0;
+  const m = emptyModel();
+  const mk = (kind: string, value: Record<string, unknown>) => applyChange(m, change({ change: "create", recordKind: kind, recordId: String(value.id), value }));
+  mk("library", { id: U(1), title: "L" });
+  mk("book", { id: U(2), title: "Book", orderKey: "m" });
+  mk("book", { id: U(3), title: "Other", orderKey: "n" });
+  mk("manuscriptNode", { id: U(10), bookId: U(2), kind: "chapter", title: "C", orderKey: "m" });
+  mk("manuscriptNode", { id: U(11), bookId: U(2), parentId: U(10), kind: "scene", title: "S", orderKey: "m" });
+  mk("manuscriptNode", { id: U(12), bookId: U(3), kind: "scene", title: "Elsewhere", orderKey: "m" });
+  mk("manuscriptNode", { id: U(13), bookId: U(2), kind: "part", title: "P", orderKey: "z" });
+  const scope = { kind: "book", id: U(2) };
+  mk("entry", { id: U(20), entryType: "character", name: "Ada", scope, aliases: [], values: {}, overrides: [], attachments: [] });
+  mk("entry", { id: U(21), entryType: "location", name: "Hall", scope, aliases: [], values: {}, overrides: [], attachments: [] });
+  return m;
+}
+
+test("a new fact or question is a whole archive record for the book's scope, with an order key that sorts after the others", () => {
+  const m = storyModel();
+  const a = newFactValue(m, { id: U(40), text: "  The bridge is closed.  ", bookId: U(2) });
+  assert.ok(a.ok);
+  assert.deepEqual({ ...a.value, orderKey: undefined, createdAt: undefined, updatedAt: undefined },
+    { id: U(40), scope: { kind: "book", id: U(2) }, text: "The bridge is closed.", truth: "undecided", entryIds: [], knowledge: [], orderKey: undefined, createdAt: undefined, updatedAt: undefined });
+  assert.match(String(a.value.orderKey), /^[0-9a-z]*[1-9a-z]$/);
+  applyChange(m, change({ change: "create", recordKind: "fact", recordId: U(40), value: { ...a.value, orderKey: "zzzzzzzzzzzz" } })); // a key from a clock far ahead
+  const b = newFactValue(m, { id: U(41), text: "Next", bookId: U(2) });
+  assert.ok(b.ok && String(b.value.orderKey) > "zzzzzzzzzzzz" && !String(b.value.orderKey).endsWith("0"));
+  const q = newQuestionValue(m, { id: U(42), text: "Who?", bookId: U(2) });
+  assert.ok(q.ok);
+  assert.deepEqual([q.value.status, q.value.entryIds, "topic" in q.value, "decision" in q.value], ["open", [], false, false]);
+  assert.equal(newFactValue(m, { id: U(43), text: "   ", bookId: U(2) }).ok, false);
+  assert.equal(newQuestionValue(m, { id: U(43), text: "x".repeat(20001), bookId: U(2) }).ok, false);
+  assert.equal(newQuestionValue(m, { id: U(43), text: "a\u0000b", bookId: U(2) }).ok, false);
+});
+
+test("the checks for a fact's and a question's fields follow the archive rules", () => {
+  const m = storyModel();
+  const fact = { id: U(40), scope: { kind: "book", id: U(2) } };
+  const check = (kind: "fact" | "question", field: string, value: unknown) => checkRecordField(m, kind, fact, field, value);
+  assert.match(check("fact", "text", "")!, /needed/);
+  assert.match(check("fact", "text", "x".repeat(20001))!, /at most 20,000/);
+  assert.equal(check("fact", "text", "x".repeat(20000)), undefined);
+  assert.match(check("fact", "truth", "maybe")!, /true, false/);
+  assert.equal(check("fact", "truth", "undecided"), undefined);
+  assert.match(check("fact", "status", "open")!, /cannot be changed/, "a fact has no status");
+  assert.match(check("question", "truth", "true")!, /cannot be changed/, "a question has no truth");
+  assert.match(check("question", "status", "closed")!, /open or decided/);
+  assert.equal(check("question", "topic", undefined), undefined);
+  assert.match(check("question", "topic", "")!, /needed/);
+  assert.match(check("question", "topic", "t".repeat(65))!, /at most 64/);
+  assert.equal(check("question", "topic", "t".repeat(64)), undefined);
+  assert.equal(check("question", "decision", "x".repeat(20000)), undefined);
+  assert.match(check("question", "decision", "x".repeat(20001))!, /at most 20,000/);
+  // scene: a chapter or a scene in a book of the scope
+  assert.equal(check("fact", "nodeId", U(11)), undefined);
+  assert.equal(check("fact", "nodeId", U(10)), undefined);
+  assert.equal(check("fact", "nodeId", undefined), undefined);
+  assert.match(check("fact", "nodeId", U(12))!, /outside/);
+  assert.match(check("fact", "nodeId", U(13))!, /chapter or a scene/);
+  assert.match(check("fact", "nodeId", U(99))!, /not in the library/);
+  // entries: unique, known
+  assert.equal(check("fact", "entryIds", [U(20), U(21)]), undefined);
+  assert.equal(check("fact", "entryIds", []), undefined);
+  assert.match(check("fact", "entryIds", [U(20), U(20)])!, /twice/);
+  assert.match(check("fact", "entryIds", [U(99)])!, /not in the library/);
+  assert.match(check("fact", "entryIds", "x")!, /list/);
+  // knowledge: the reader or a character, once each
+  assert.equal(check("fact", "knowledge", [{ knower: "reader" }, { knower: U(20), nodeId: U(11) }]), undefined);
+  assert.match(check("fact", "knowledge", [{ knower: U(21) }])!, /character/);
+  assert.match(check("fact", "knowledge", [{ knower: "reader" }, { knower: "reader" }])!, /twice/);
+  assert.match(check("fact", "knowledge", [{ knower: "reader", extra: 1 }])!, /list/);
+  assert.match(check("fact", "knowledge", [{ knower: U(20), nodeId: U(12) }])!, /outside/);
+  assert.match(check("question", "knowledge", [])!, /cannot be changed/);
+});
+
+test("what the controls show and send for entries and who knows a fact: whole arrays, and a knower keeps the scene they learn it in", () => {
+  const rec = { id: U(40), text: "T", truth: "false", entryIds: [U(20)], knowledge: [{ knower: "reader" }, { knower: U(20), nodeId: U(11) }] };
+  assert.deepEqual(recordInputOf("entryIds", rec), [U(20)]);
+  assert.deepEqual(recordInputOf("knowledge", rec), ["reader", U(20)]);
+  assert.equal(recordInputOf("truth", rec), "false");
+  assert.equal(recordInputOf("topic", rec), "");
+  assert.deepEqual(encodeRecordInput("entryIds", [U(21), U(20)], rec.entryIds), { ok: true, value: [U(21), U(20)] });
+  assert.deepEqual(encodeRecordInput("entryIds", [], rec.entryIds), { ok: true, value: [] }, "an empty list is a set, not an unset");
+  assert.deepEqual(encodeRecordInput("knowledge", ["reader", U(20)], rec.knowledge), { ok: true, value: [{ knower: "reader" }, { knower: U(20), nodeId: U(11) }] });
+  assert.deepEqual(encodeRecordInput("knowledge", [U(20)], rec.knowledge), { ok: true, value: [{ knower: U(20), nodeId: U(11) }] });
+  assert.deepEqual(encodeRecordInput("topic", "  ", undefined), { ok: true, value: undefined });
+  assert.deepEqual(encodeRecordInput("topic", " Overlord ", undefined), { ok: true, value: "Overlord" });
+  assert.deepEqual(encodeRecordInput("text", " x ", undefined), { ok: true, value: "x" });
+});
+
+test("a fact is created and saved through the client as record kind fact; an unset and an array set go out as such; a bad value is not sent", async () => {
+  const f = fake();
+  const { c, db, serve } = ready(f);
+  serve("entry", { id: U(20), entryType: "character", name: "Ada", scope: { kind: "book", id: U(2) }, aliases: [], values: {}, overrides: [], attachments: [] });
+  const out = await c.createStoryRecord({ kind: "fact", id: U(40), opId: U(41), text: "The bridge is closed.", bookId: U(2) });
+  assert.deepEqual(out, { ok: true, id: U(40) });
+  assert.deepEqual([f.pushes[0]![0]!.op, f.pushes[0]![0]!.recordKind, f.pushes[0]![0]!.opId], ["create", "fact", U(41)]);
+  assert.equal(c.model.records.get("fact")!.get(U(40))!.truth, "undecided");
+  const arr = await c.saveEntryField({ kind: "fact", entryId: U(40), field: "entryIds", value: [U(20)], input: [U(20)], base: c.baseOfField(U(40), "entryIds", "fact") });
+  assert.deepEqual(arr, { kind: "saved" });
+  const set = f.pushes[1]![0]!;
+  assert.deepEqual({ op: set.op, recordKind: set.recordKind, field: set.field, value: set.value }, { op: "set", recordKind: "fact", field: "entryIds", value: [U(20)] });
+  assert.deepEqual(c.model.records.get("fact")!.get(U(40))!.entryIds, [U(20)]);
+  assert.deepEqual(await c.saveEntryField({ kind: "fact", entryId: U(40), field: "nodeId", value: undefined, input: "", base: c.baseOfField(U(40), "nodeId", "fact") }), { kind: "nothing" }, "nothing to remove");
+  const before = f.pushes.length;
+  const bad = await c.saveEntryField({ kind: "fact", entryId: U(40), field: "truth", value: "maybe", input: "maybe", base: 0 });
+  assert.equal(bad.kind, "invalid");
+  assert.equal(f.pushes.length, before, "nothing is sent");
+  assert.equal(db.drafts.get(`${U(40)}/truth`)?.state, "refused");
+  // A refused value from the server keeps the plain message with the fact's own noun
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "RECORD_DELETED", message: "x" }]);
+  const gone = await c.saveEntryField({ kind: "fact", entryId: U(40), field: "truth", value: "true", input: "true", base: c.baseOfField(U(40), "truth", "fact") });
+  assert.equal(gone.kind, "refused");
+  assert.match(gone.message ?? "", /This fact is in the trash/);
+  c.stop();
+});
+
+test("a knowledge entry that points at a trashed scene is still accepted, but a trashed scene is not offered", () => {
+  const m = storyModel();
+  applyChange(m, change({ change: "create", recordKind: "manuscriptNode", recordId: U(14), value: { id: U(14), bookId: U(2), parentId: U(10), kind: "scene", title: "Gone", orderKey: "n", deletedAt: "2026-01-01T00:00:00.000Z" } }));
+  const fact = { id: U(40), scope: { kind: "book", id: U(2) } };
+  const next = [{ knower: "reader", nodeId: U(14) }, { knower: U(20) }];
+  assert.equal(checkRecordField(m, "fact", fact, "knowledge", next), undefined);
+  assert.equal(checkRecordField(m, "fact", fact, "nodeId", U(14)), undefined);
+  assert.ok(!nodesInScope(m, fact.scope).some((x) => x.id === U(14)), "not offered as a new choice");
+  assert.match(checkRecordField(m, "fact", fact, "knowledge", [{ knower: "reader", nodeId: U(12) }])!, /outside/);
+});
+
+// ---------- events and state changes (slice 3) ----------
+
+test("a new event is a whole archive record: title, book scope, a key after the others, empty scenes and participants, and nothing else", () => {
+  const m = storyModel();
+  assert.equal(newEventValue(m, { id: U(50), title: "  ", bookId: U(2) }).ok, false);
+  assert.match((newEventValue(m, { id: U(50), title: "a\u0000b", bookId: U(2) }) as { error: string }).error, /cannot be stored/);
+  const a = newEventValue(m, { id: U(50), title: " The storm ", bookId: U(2) });
+  assert.ok(a.ok);
+  assert.deepEqual(Object.keys(a.value).sort(), ["createdAt", "id", "orderKey", "participants", "sceneIds", "scope", "title", "updatedAt"]);
+  assert.equal(a.value.title, "The storm");
+  assert.deepEqual(a.value.scope, { kind: "book", id: U(2) });
+  assert.match(String(a.value.orderKey), /^[0-9a-z]*[1-9a-z]$/);
+  applyChange(m, change({ change: "create", recordKind: "event", recordId: U(50), value: a.value }));
+  const b = newEventValue(m, { id: U(51), title: "Next", bookId: U(2) });
+  assert.ok(b.ok && String(b.value.orderKey) > String(a.value.orderKey), "after the largest key");
+});
+
+test("events are listed by order key, then by id (not by the date's number); a removed event is not listed", () => {
+  const m = storyModel();
+  const mk = (id: string, orderKey: string, when?: unknown, extra: Record<string, unknown> = {}) =>
+    applyChange(m, change({ change: "create", recordKind: "event", recordId: id, value: { id, scope: { kind: "book", id: U(2) }, title: id.slice(-2), orderKey, sceneIds: [], participants: [], ...(when ? { when } : {}), ...extra } }));
+  mk(U(50), "b", { label: "x", ordinal: 9 }); mk(U(51), "b", { label: "y", ordinal: 2 }); mk(U(52), "a"); mk(U(53), "b"); mk(U(54), "c", undefined, { deletedAt: "2026-01-01T00:00:00Z" });
+  mk(U(55), "a", undefined, { scope: { kind: "book", id: U(3) } });
+  assert.deepEqual(eventsOf(m, U(2)).map((e) => e.id), [U(52), U(50), U(51), U(53)]);
+});
+
+test("the date of an event: label, number and calendar are one value; the label is needed; the number is a whole number", () => {
+  assert.deepEqual(encodeEventInput("when", ["", "", ""]), { ok: true, value: undefined });
+  assert.deepEqual(encodeEventInput("when", [" Third Moon ", " 388 ", " Lantern "]), { ok: true, value: { label: "Third Moon", calendar: "Lantern", ordinal: 388 } });
+  assert.deepEqual(encodeEventInput("when", ["Dawn", "", ""]), { ok: true, value: { label: "Dawn" } });
+  assert.deepEqual(encodeEventInput("when", ["Dawn", "-3", ""]), { ok: true, value: { label: "Dawn", ordinal: -3 } });
+  assert.match((encodeEventInput("when", ["", "5", ""]) as { message: string }).message, /label is needed/);
+  assert.match((encodeEventInput("when", ["Dawn", "1.5", ""]) as { message: string }).message, /whole number/);
+  assert.match((encodeEventInput("when", ["Dawn", "9007199254740993", ""]) as { message: string }).message, /whole number/);
+  assert.deepEqual(eventInputOf("when", { id: "x", when: { label: "A", ordinal: 4, calendar: "C" } }), ["A", "4", "C"]);
+  assert.deepEqual(eventInputOf("when", { id: "x" }), ["", "", ""]);
+});
+
+test("event fields are checked before they are sent: scenes only, no repeats, an event entry only, no repeated participants", () => {
+  const m = storyModel();
+  applyChange(m, change({ change: "create", recordKind: "entry", recordId: U(22), value: { id: U(22), entryType: "event", name: "Storm", scope: { kind: "book", id: U(2) } } }));
+  const ev = { id: U(50), scope: { kind: "book", id: U(2) } };
+  assert.equal(checkEventField(m, ev, "title", "Storm"), undefined);
+  assert.match(checkEventField(m, ev, "title", "  ")!, /needed/);
+  assert.equal(checkEventField(m, ev, "summary", undefined), undefined);
+  assert.equal(checkEventField(m, ev, "sceneIds", [U(11)]), undefined);
+  assert.match(checkEventField(m, ev, "sceneIds", [U(10)])!, /Choose a scene/, "a chapter is not a scene");
+  assert.match(checkEventField(m, ev, "sceneIds", [U(11), U(11)])!, /twice/);
+  assert.match(checkEventField(m, ev, "sceneIds", [U(12)])!, /outside/);
+  assert.match(checkEventField(m, ev, "sceneIds", [U(99)])!, /not in the library/);
+  assert.equal(checkEventField(m, ev, "entryId", U(22)), undefined);
+  assert.match(checkEventField(m, ev, "entryId", U(20))!, /type event/);
+  assert.equal(checkEventField(m, ev, "entryId", undefined), undefined);
+  assert.equal(checkEventField(m, ev, "participants", [{ entryId: U(20), role: "witness" }, { entryId: U(21) }]), undefined);
+  assert.match(checkEventField(m, ev, "participants", [{ entryId: U(20) }, { entryId: U(20), role: "x" }])!, /twice/);
+  assert.match(checkEventField(m, ev, "participants", [{ entryId: U(99) }])!, /not in the library/);
+  assert.match(checkEventField(m, ev, "when", { label: "" })!, /label/);
+  assert.match(checkEventField(m, ev, "orderKey", "z")!, /cannot be changed/);
+  assert.match(checkEventField(m, ev, "dismissedWarnings", [])!, /cannot be changed/);
+  assert.deepEqual(encodeEventInput("participants", [participantItem(U(20), " witness "), participantItem(U(21), "")]), { ok: true, value: [{ entryId: U(20), role: "witness" }, { entryId: U(21) }] });
+});
+
+/** storyModel plus a template with an integer and a boolean field, an entry that uses it, one that has no template, and an event. */
+function stateModel(): Model {
+  const m = storyModel();
+  const mk = (kind: string, value: Record<string, unknown>) => applyChange(m, change({ change: "create", recordKind: kind, recordId: String(value.id), value }));
+  mk("template", { id: U(70), name: "Character", entryType: "character", builtIn: true, orderKey: "m" });
+  mk("field", { id: U(71), templateId: U(70), key: "age", label: "Age", fieldType: "integer", orderKey: "m", multiple: false, required: false });
+  mk("field", { id: U(72), templateId: U(70), key: "alive", label: "Alive", fieldType: "boolean", orderKey: "n", multiple: false, required: false });
+  mk("field", { id: U(73), templateId: U(70), key: "portrait", label: "Portrait", fieldType: "attachment", orderKey: "o", multiple: false, required: false });
+  mk("entry", { id: U(23), entryType: "character", name: "Bo", templateId: U(70), scope: { kind: "book", id: U(2) }, aliases: [], values: {}, overrides: [], attachments: [] });
+  mk("event", { id: U(50), scope: { kind: "book", id: U(2) }, title: "Storm", orderKey: "m", sceneIds: [], participants: [] });
+  return m;
+}
+
+test("a new state change needs a template field, a value of its type, and exactly one of an event or a scene in the entry's scope", () => {
+  const m = stateModel();
+  const base = { id: U(80), entryId: U(23), fieldId: U(71), input: "24" as string | string[], note: "", target: { eventId: U(50) } as { eventId: string } | { nodeId: string } | undefined };
+  const ok = newStateChangeValue(m, base);
+  assert.ok(ok.ok);
+  assert.deepEqual({ ...ok.value, createdAt: undefined, updatedAt: undefined }, { id: U(80), entryId: U(23), fieldId: U(71), value: 24, eventId: U(50), createdAt: undefined, updatedAt: undefined });
+  const onScene = newStateChangeValue(m, { ...base, target: { nodeId: U(11) }, note: " later " });
+  assert.ok(onScene.ok && onScene.value.nodeId === U(11) && !("eventId" in onScene.value) && onScene.value.note === "later");
+  const bad = (p: Partial<typeof base>) => (newStateChangeValue(m, { ...base, ...p }) as { error?: string }).error ?? "";
+  assert.match(bad({ input: "abc" }), /whole number/);
+  assert.match(bad({ input: "" }), /value is needed/);
+  assert.match(bad({ fieldId: U(99) }), /field of this entry/);
+  assert.match(bad({ fieldId: U(73) }), /cannot be changed here/, "an attachment field has no control yet");
+  assert.match(bad({ target: undefined }), /Choose the event or scene/);
+  assert.match(bad({ target: { nodeId: U(12) } }), /outside/);
+  assert.match(bad({ target: { nodeId: U(13) } }), /Choose a chapter or a scene/);
+  assert.match(bad({ target: { eventId: U(99) } }), /event is not in the library/);
+  assert.match(bad({ entryId: U(20) }), /no template/, "an entry without a template cannot have state changes");
+  assert.match(bad({ note: "a\u0000" }), /cannot be stored/);
+});
+
+test("a state change's value and note are checked against the entry's template field", () => {
+  const m = stateModel();
+  applyChange(m, change({ change: "create", recordKind: "stateChange", recordId: U(80), value: { id: U(80), entryId: U(23), fieldId: U(72), eventId: U(50), value: true } }));
+  const c = m.records.get("stateChange")!.get(U(80))!;
+  assert.equal(checkStateChangeField(m, c, "value", false), undefined);
+  assert.match(checkStateChangeField(m, c, "value", "yes")!, /yes or no/);
+  assert.match(checkStateChangeField(m, c, "value", undefined)!, /value is needed/);
+  assert.equal(checkStateChangeField(m, c, "note", undefined), undefined);
+  assert.equal(checkStateChangeField(m, c, "note", "later"), undefined);
+  assert.match(checkStateChangeField(m, c, "note", 5)!, /cannot be stored/);
+  assert.match(checkStateChangeField(m, c, "eventId", U(50))!, /cannot be changed/);
+});
+
+test("creating an event or a state change sends one create op; a lost answer keeps the same op id for the retry", async () => {
+  const f = fake();
+  const r = ready(f); const { c } = r;
+  const out = await c.createEvent({ id: U(50), opId: U(51), title: "Storm", bookId: U(2) });
+  assert.deepEqual(out, { ok: true, id: U(50) });
+  assert.equal(f.pushes[0]![0]!.recordKind, "event"); assert.equal(f.pushes[0]![0]!.op, "create");
+  assert.equal("dismissedWarnings" in (f.pushes[0]![0]!.value as object), false);
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "INTEGRITY_VIOLATION", message: "This does not fit." }]);
+  const refused = await c.createEvent({ id: U(52), opId: U(53), title: "Again", bookId: U(2) });
+  assert.equal(refused.ok, false);
+  assert.match(refused.ok ? "" : refused.message, /This does not fit\..*still here/);
+  assert.equal((await c.createEvent({ id: U(54), opId: U(55), title: " ", bookId: U(2) })).ok, false);
+  assert.equal(f.pushes.length, 2, "an empty title is not sent");
+  c.stop();
+});
+
+test("removing and restoring send tombstone (with the newest seq this device has seen) and restore; an answer that says it is already so is fine", async () => {
+  const f = fake();
+  const r = ready(f); const { c } = r;
+  r.serve("event", { id: U(50), scope: { kind: "book", id: U(2) }, title: "Storm", orderKey: "m", sceneIds: [], participants: [] });
+  const head = c.model.cursor;
+  assert.deepEqual(await c.tombstoneRecord("event", U(50)), { ok: true });
+  assert.deepEqual({ ...f.pushes[0]![0]!, opId: undefined }, { opId: undefined, op: "tombstone", recordKind: "event", recordId: U(50), baseSeq: head });
+  assert.ok(c.model.records.get("event")!.get(U(50))!.deletedAt, "the feed was read again");
+  assert.deepEqual(await c.restoreRecord("event", U(50)), { ok: true });
+  assert.deepEqual({ ...f.pushes[1]![0]!, opId: undefined }, { opId: undefined, op: "restore", recordKind: "event", recordId: U(50) });
+  assert.equal(c.model.records.get("event")!.get(U(50))!.deletedAt, undefined);
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "RECORD_DELETED" }]);
+  assert.deepEqual(await c.tombstoneRecord("event", U(50)), { ok: true });
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "conflict", conflictId: U(90), current: { seq: 99 } }]);
+  const clash = await c.tombstoneRecord("event", U(50));
+  assert.equal(clash.ok, false);
+  assert.match(clash.ok ? "" : clash.message, /changed on another device/);
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "RECORD_UNKNOWN" }]);
+  assert.match((await c.restoreRecord("event", U(50)) as { message: string }).message, /not in the library any more/);
+  c.stop();
+});
+
+test("moving a state change makes the new record first and removes the old one only after that was applied", async () => {
+  const f = fake();
+  const r = ready(f); const { c } = r;
+  for (const [kind, v] of [
+    ["template", { id: U(70), name: "Character", entryType: "character", builtIn: true, orderKey: "m" }],
+    ["field", { id: U(71), templateId: U(70), key: "age", label: "Age", fieldType: "integer", orderKey: "m", multiple: false, required: false }],
+    ["entry", { id: U(23), entryType: "character", name: "Bo", templateId: U(70), scope: { kind: "book", id: U(2) }, aliases: [], values: {}, overrides: [], attachments: [] }],
+    ["event", { id: U(50), scope: { kind: "book", id: U(2) }, title: "Storm", orderKey: "m", sceneIds: [], participants: [] }],
+    ["manuscriptNode", { id: U(11), bookId: U(2), kind: "scene", title: "S", orderKey: "m" }],
+    ["stateChange", { id: U(80), entryId: U(23), fieldId: U(71), eventId: U(50), value: 24, note: "after the storm", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }],
+  ] as const) r.serve(kind, v as Record<string, unknown>);
+  // refused: the old record stays and no tombstone is sent
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "INTEGRITY_VIOLATION", message: "No." }]);
+  const refused = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(refused.ok, false);
+  assert.equal(f.pushes.length, 1);
+  assert.equal(f.pushes[0]!.length, 1);
+  assert.equal(c.model.records.get("stateChange")!.get(U(80))!.deletedAt, undefined);
+  // applied: create (same value and note, a scene instead of the event), then the tombstone
+  const ok = await c.moveStateChange({ id: U(83), opId: U(84), oldId: U(80), target: { nodeId: U(11) } });
+  assert.deepEqual(ok, { ok: true });
+  assert.equal(f.pushes.length, 3);
+  const made = f.pushes[1]![0]!; const tomb = f.pushes[2]![0]!;
+  assert.equal(made.op, "create"); assert.equal(f.pushes[1]!.length, 1);
+  const v = made.value as Record<string, unknown>;
+  assert.deepEqual({ ...v, createdAt: undefined, updatedAt: undefined }, { id: U(83), entryId: U(23), fieldId: U(71), value: 24, nodeId: U(11), note: "after the storm", createdAt: undefined, updatedAt: undefined });
+  assert.equal("eventId" in v, false);
+  assert.deepEqual({ ...tomb, opId: undefined, baseSeq: undefined }, { opId: undefined, op: "tombstone", recordKind: "stateChange", recordId: U(80), baseSeq: undefined });
+  assert.ok(c.model.records.get("stateChange")!.get(U(80))!.deletedAt);
+  // a target outside the scope is refused before anything is sent
+  const outside = await c.moveStateChange({ id: U(85), opId: U(86), oldId: U(83), target: { nodeId: U(99) } });
+  assert.equal(outside.ok, false);
+  assert.equal(f.pushes.length, 3);
+  c.stop();
+});
+
+function moveSetup() {
+  const f = fake();
+  const r = ready(f);
+  for (const [kind, v] of [
+    ["template", { id: U(70), name: "Character", entryType: "character", builtIn: true, orderKey: "m" }],
+    ["field", { id: U(71), templateId: U(70), key: "age", label: "Age", fieldType: "integer", orderKey: "m", multiple: false, required: false }],
+    ["entry", { id: U(23), entryType: "character", name: "Bo", templateId: U(70), scope: { kind: "book", id: U(2) }, aliases: [], values: {}, overrides: [], attachments: [] }],
+    ["event", { id: U(50), scope: { kind: "book", id: U(2) }, title: "Storm", orderKey: "m", sceneIds: [], participants: [] }],
+    ["manuscriptNode", { id: U(11), bookId: U(2), kind: "scene", title: "S", orderKey: "m" }],
+    ["stateChange", { id: U(80), entryId: U(23), fieldId: U(71), eventId: U(50), value: 24, note: "n", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }],
+  ] as const) r.serve(kind, v as Record<string, unknown>);
+  return { f, c: r.c };
+}
+const live = (c: SyncClient) => [...c.model.records.get("stateChange")!.values()].filter((x) => !x.deletedAt);
+
+test("a move whose answer was lost keeps its ids: the retry makes no second copy", async () => {
+  const { f, c } = moveSetup();
+  let lose = true;
+  f.lose = () => { const was = lose; lose = false; return was; };
+  const first = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(first.ok, false);
+  assert.equal(!first.ok && first.lost, true);
+  const again = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.deepEqual(again, { ok: true });
+  assert.equal(f.pushes[0]![0]!.recordId, U(81)); assert.equal(f.pushes[1]![0]!.recordId, U(81));
+  assert.equal(f.pushes[0]![0]!.opId, f.pushes[1]![0]!.opId, "the same op id");
+  assert.deepEqual(live(c).map((x) => x.id), [U(81)], "one copy, the old one removed");
+  c.stop();
+});
+
+test("a move whose create was applied but whose tombstone failed retries only the tombstone", async () => {
+  const { f, c } = moveSetup();
+  let down = true;
+  f.before = async (ops) => { if (ops[0]!.op === "tombstone" && down) throw new Error("offline"); };
+  const first = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(first.ok, false);
+  assert.equal(!first.ok && first.created, true);
+  assert.match(first.ok ? "" : first.message, /shows twice/);
+  down = false;
+  const before = f.pushes.length;
+  const again = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) }, created: true });
+  assert.deepEqual(again, { ok: true });
+  assert.equal(f.pushes.length, before + 1);
+  assert.equal(f.pushes[before]![0]!.op, "tombstone");
+  assert.deepEqual(live(c).map((x) => x.id), [U(81)]);
+  c.stop();
+});
+
+test("after a create was applied and the tombstone failed, a different target is refused and the same one retries", async () => {
+  const { f, c } = moveSetup();
+  f.before = async (ops) => { if (ops[0]!.op === "tombstone") throw new Error("offline"); };
+  let n = 100;
+  const mint = () => U(n++);
+  let attempt = nextMoveAttempt(undefined, "A", mint);
+  assert.equal(attempt.ok, true);
+  if (!attempt.ok) return;
+  const first = await c.moveStateChange({ ...attempt.attempt, oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(!first.ok && first.created, true);
+  const held = { ...attempt.attempt, created: true };
+  const pushes = f.pushes.length;
+  const other = nextMoveAttempt(held, "B", mint);
+  assert.deepEqual(other, { ok: false, message: "Finish the earlier move first: remove one of the two copies, or choose the same place again." });
+  assert.equal(EARLIER_MOVE_FIRST, !other.ok ? other.message : "");
+  assert.equal(f.pushes.length, pushes, "nothing was sent for the refused target");
+  assert.deepEqual(f.pushes.map((p) => p[0]!.op), ["create", "tombstone"], "only the earlier pushes");
+  assert.equal(n, 102, "no new ids were minted");
+  const same = nextMoveAttempt(held, "A", mint);
+  assert.deepEqual(same, { ok: true, attempt: held });
+  c.stop();
+});
+
+test("the new copy was removed after the tombstone failed: the old one is not removed, and the attempt is cleared", async () => {
+  const { f, c } = moveSetup();
+  let down = true;
+  f.before = async (ops) => { if (ops[0]!.op === "tombstone" && down) throw new Error("offline"); };
+  const first = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(!first.ok && first.created, true);
+  down = false;
+  assert.deepEqual(await c.tombstoneRecord("stateChange", U(81)), { ok: true }, "the author removes the new copy from its own row");
+  const pushes = f.pushes.length;
+  const again = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) }, created: true });
+  assert.equal(again.ok, false);
+  assert.match(again.ok ? "" : again.message, /new copy was removed/);
+  assert.equal(!again.ok && again.created, undefined, "the view clears its attempt");
+  assert.equal(f.pushes.length, pushes, "the old record was not tombstoned");
+  assert.deepEqual(live(c).map((x) => x.id), [U(80)], "one live copy remains");
+  c.stop();
+});
+
+test("a lost create keeps the attempt: a different target is refused with nothing sent, the same target retries with the same id", async () => {
+  const { f, c } = moveSetup();
+  let lose = true;
+  f.lose = () => { const was = lose; lose = false; return was; };
+  let n = 100;
+  const mint = () => U(n++);
+  const a = nextMoveAttempt(undefined, "A", mint);
+  if (!a.ok) throw new Error("unexpected");
+  const first = await c.moveStateChange({ ...a.attempt, oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(!first.ok && first.lost, true);
+  const held = { ...a.attempt, lost: true };
+  const pushes = f.pushes.length;
+  const other = nextMoveAttempt(held, "B", mint);
+  assert.deepEqual(other, { ok: false, message: EARLIER_MOVE_MAY_HAVE_WORKED });
+  assert.equal(f.pushes.length, pushes, "nothing was sent");
+  assert.equal(n, 102, "no new ids were minted");
+  const same = nextMoveAttempt(held, "A", mint);
+  assert.deepEqual(same, { ok: true, attempt: held });
+  const again = await c.moveStateChange({ id: held.id, opId: held.opId, oldId: U(80), target: { nodeId: U(11) } });
+  assert.deepEqual(again, { ok: true });
+  assert.equal(f.pushes[pushes]![0]!.recordId, f.pushes[0]![0]!.recordId, "the same record id");
+  assert.equal(f.pushes[pushes]![0]!.opId, f.pushes[0]![0]!.opId);
+  c.stop();
+});
+
+test("a refused draft on the old row blocks a move until it is discarded", async () => {
+  const { f, c } = moveSetup();
+  const key = `${U(80)}/note`;
+  await c.holdField({ entryId: U(80), field: "note", input: "x", base: 0 }, "No.");
+  const out = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.deepEqual(out, { ok: false, message: "This change has text that cannot be saved as it is. Correct the text so it can be saved, then move it." });
+  assert.equal(f.pushes.length, 0);
+  await c.discardDraft(key);
+  assert.equal(c.draftFor(key), undefined);
+  assert.equal(c.getState().fields.get(key), undefined);
+  assert.deepEqual(await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } }), { ok: true });
+  c.stop();
+});
+
+test("a conflict draft on the old row blocks a move with the conflict message", async () => {
+  const { f, c } = moveSetup();
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "conflict" }]);
+  const saved = await c.saveEntryField({ kind: "stateChange", entryId: U(80), field: "note", value: "mine", input: "mine", base: c.baseOfField(U(80), "note", "stateChange") });
+  assert.equal(saved.kind, "conflict");
+  const pushes = f.pushes.length;
+  const out = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.deepEqual(out, { ok: false, message: "This change has text that was changed on another device. Choose which text to keep (Keep my text or Use the saved text), then move it." });
+  assert.equal(f.pushes.length, pushes);
+  c.stop();
+});
+
+test("a refused create is neither lost nor created, so the view clears its attempt", async () => {
+  const { f, c } = moveSetup();
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "INTEGRITY_VIOLATION", message: "No." }]);
+  const out = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(out.ok, false);
+  assert.equal(!out.ok && out.lost, undefined);
+  assert.equal(!out.ok && out.created, undefined);
+  c.stop();
+});
+
+test("a move is refused while the old row has text that is not saved yet", async () => {
+  const { f, c } = moveSetup();
+  const g = gate();
+  f.before = async () => { await g.p; };
+  const save = c.saveEntryField({ kind: "stateChange", entryId: U(80), field: "note", value: "late", input: "late", base: c.baseOfField(U(80), "note", "stateChange") });
+  await tick();
+  const out = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.deepEqual(out, { ok: false, message: "This change has text that is not saved yet. Save it first, then move it." });
+  assert.equal(f.pushes.length, 1, "nothing but the note was sent");
+  g.open(); await save;
+  c.stop();
+});
+
+test("a select save followed by a blur save of the same value ends on Saved", async () => {
+  const { f, c } = moveSetup();
+  const g = gate();
+  let n = 0;
+  f.before = async () => { if (++n === 1) await g.p; };
+  const q = { kind: "stateChange" as const, entryId: U(80), field: "value", value: 25, input: "25", base: c.baseOfField(U(80), "value", "stateChange") };
+  const first = c.saveEntryField(q);
+  await tick();
+  const second = c.saveEntryField({ ...q });
+  await tick();
+  assert.equal(c.getState().fields.get(`${U(80)}/value`)?.state, "saving");
+  g.open();
+  await Promise.all([first, second]);
+  assert.equal(f.pushes.length, 1);
+  assert.equal(c.getState().fields.get(`${U(80)}/value`)?.state, "saved");
+  c.stop();
+});
+
+test("a state change's value saves as a set op on its own record and kind, and a refused value is not sent", async () => {
+  const f = fake();
+  const r = ready(f); const { c } = r;
+  for (const [kind, v] of [
+    ["template", { id: U(70), name: "Character", entryType: "character", builtIn: true, orderKey: "m" }],
+    ["field", { id: U(71), templateId: U(70), key: "age", label: "Age", fieldType: "integer", orderKey: "m", multiple: false, required: false }],
+    ["entry", { id: U(23), entryType: "character", name: "Bo", templateId: U(70), scope: { kind: "book", id: U(2) }, aliases: [], values: {}, overrides: [], attachments: [] }],
+    ["event", { id: U(50), scope: { kind: "book", id: U(2) }, title: "Storm", orderKey: "m", sceneIds: [], participants: [] }],
+    ["stateChange", { id: U(80), entryId: U(23), fieldId: U(71), eventId: U(50), value: 24 }],
+  ] as const) r.serve(kind, v as Record<string, unknown>);
+  const ok = await c.saveEntryField({ kind: "stateChange", entryId: U(80), field: "value", value: 25, input: "25", base: c.baseOfField(U(80), "value", "stateChange") });
+  assert.equal(ok.kind, "saved");
+  assert.deepEqual({ ...f.pushes[0]![0]!, opId: undefined, baseSeq: undefined }, { opId: undefined, op: "set", recordKind: "stateChange", recordId: U(80), field: "value", baseSeq: undefined, value: 25 });
+  const before = f.pushes.length;
+  const bad = await c.saveEntryField({ kind: "stateChange", entryId: U(80), field: "value", value: 2.5, input: "2.5", base: c.baseOfField(U(80), "value", "stateChange") });
+  assert.equal(bad.kind, "invalid");
+  assert.equal(f.pushes.length, before);
+  const noText = await c.saveEntryField({ kind: "event", entryId: U(50), field: "title", value: "", input: "", base: c.baseOfField(U(50), "title", "event") });
+  assert.equal(noText.kind, "invalid");
+  assert.equal(f.pushes.length, before);
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "RECORD_DELETED", message: "x" }]);
+  const gone = await c.saveEntryField({ kind: "event", entryId: U(50), field: "title", value: "Gale", input: "Gale", base: c.baseOfField(U(50), "title", "event") });
+  assert.match(gone.message ?? "", /This event is in the trash/);
+  c.stop();
+});
+
+test("two saves of one field in quick succession leave Saved on it: the second finds the value already stored", async () => {
+  const f = fake();
+  const r = ready(f); const { c } = r;
+  r.serve("event", { id: U(50), scope: { kind: "book", id: U(2) }, title: "Storm", orderKey: "m", sceneIds: [], participants: [] });
+  const q = { kind: "event" as const, entryId: U(50), field: "title", value: "Gale", input: "Gale", base: c.baseOfField(U(50), "title", "event") };
+  const [a, b] = await Promise.all([c.saveEntryField(q), c.saveEntryField(q)]);
+  assert.equal(a.kind, "saved");
+  assert.equal(b.kind, "nothing");
+  assert.equal(f.pushes.length, 1);
+  assert.equal(c.getState().fields.get(`${U(50)}/title`)?.state, "saved");
+  c.stop();
+});
+
+test("a retry refused for unsaved text keeps created: a different target is still refused with EARLIER_MOVE_FIRST", async () => {
+  const { f, c } = moveSetup();
+  f.before = async (ops) => { if (ops[0]!.op === "tombstone") throw new Error("offline"); };
+  let n = 100;
+  const mint = () => U(n++);
+  const a = nextMoveAttempt(undefined, "A", mint);
+  if (!a.ok) throw new Error("unexpected");
+  const first = await c.moveStateChange({ ...a.attempt, oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(!first.ok && first.created, true);
+  let held = attemptAfterFailedMove(a.attempt, first.ok ? {} : first)!;
+  assert.equal(held.created, true);
+  const g = gate();
+  f.before = async () => { await g.p; };
+  const save = c.saveEntryField({ kind: "stateChange", entryId: U(80), field: "note", value: "late", input: "late", base: c.baseOfField(U(80), "note", "stateChange") });
+  await tick();
+  const retry = await c.moveStateChange({ id: held.id, opId: held.opId, created: held.created, oldId: U(80), target: { nodeId: U(11) } });
+  assert.match(retry.ok ? "" : retry.message, /not saved yet/);
+  held = attemptAfterFailedMove(held, retry.ok ? {} : retry)!;
+  assert.equal(held.created, true, "still held");
+  assert.equal(held.id, a.attempt.id); assert.equal(held.opId, a.attempt.opId);
+  const other = nextMoveAttempt(held, "B", mint);
+  assert.deepEqual(other, { ok: false, message: EARLIER_MOVE_FIRST });
+  g.open(); await save;
+  c.stop();
+});
+
+test("a retry refused by a stuck draft keeps lost: a different target is still refused with EARLIER_MOVE_MAY_HAVE_WORKED", async () => {
+  const { f, c } = moveSetup();
+  let lose = true;
+  f.lose = () => { const was = lose; lose = false; return was; };
+  let n = 100;
+  const mint = () => U(n++);
+  const a = nextMoveAttempt(undefined, "A", mint);
+  if (!a.ok) throw new Error("unexpected");
+  const first = await c.moveStateChange({ ...a.attempt, oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(!first.ok && first.lost, true);
+  let held = attemptAfterFailedMove(a.attempt, first.ok ? {} : first)!;
+  assert.equal(held.lost, true);
+  await c.holdField({ entryId: U(80), field: "note", input: "x", base: 0 }, "No.");
+  const retry = await c.moveStateChange({ id: held.id, opId: held.opId, created: held.created, oldId: U(80), target: { nodeId: U(11) } });
+  assert.match(retry.ok ? "" : retry.message, /cannot be saved as it is/);
+  held = attemptAfterFailedMove(held, retry.ok ? {} : retry)!;
+  assert.equal(held.lost, true, "still held");
+  assert.equal(held.id, a.attempt.id); assert.equal(held.opId, a.attempt.opId);
+  assert.deepEqual(nextMoveAttempt(held, "B", mint), { ok: false, message: EARLIER_MOVE_MAY_HAVE_WORKED });
+  c.stop();
+});
+
+test("a refused create that is not lost clears the attempt, and a different target is then allowed", async () => {
+  const { f, c } = moveSetup();
+  f.reply.push((ops) => [{ opId: ops[0]!.opId, status: "rejected", code: "INVALID_VALUE", message: "The value does not fit the record." }]);
+  let n = 100;
+  const mint = () => U(n++);
+  const a = nextMoveAttempt(undefined, "A", mint);
+  if (!a.ok) throw new Error("unexpected");
+  const out = await c.moveStateChange({ ...a.attempt, oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(out.ok, false);
+  assert.equal(!out.ok && out.clear, true);
+  assert.equal(attemptAfterFailedMove(a.attempt, out.ok ? {} : out), undefined);
+  assert.equal(nextMoveAttempt(undefined, "B", mint).ok, true);
+  c.stop();
+});
+
+test("the new copy was removed outcome still clears the attempt", async () => {
+  const { f, c } = moveSetup();
+  let down = true;
+  f.before = async (ops) => { if (ops[0]!.op === "tombstone" && down) throw new Error("offline"); };
+  const first = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  down = false;
+  await c.tombstoneRecord("stateChange", U(81));
+  const held = { key: "A", id: U(81), opId: U(82), created: true };
+  const again = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) }, created: true });
+  assert.equal(!again.ok && again.clear, true);
+  assert.equal(attemptAfterFailedMove(held, again.ok ? {} : again), undefined);
+  assert.equal(first.ok, false);
+  c.stop();
+});
+
+test("a create applied with its pull failing, then a failed tombstone: a retry that cannot pull is refused without clear, and a working pull then tombstones the old record only", async () => {
+  const { f, c } = moveSetup();
+  const goodPull = f.io.getChanges!;
+  let pullDown = true;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (c as any).io = { ...f.io, getChanges: async (...a: Parameters<typeof goodPull>) => { if (pullDown) throw new Error("offline"); return goodPull(...a); } };
+  f.before = async (ops) => { if (ops[0]!.op === "tombstone" && pullDown) throw new Error("offline"); };
+  const first = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) } });
+  assert.equal(!first.ok && first.created, true);
+  assert.equal(c.model.records.get("stateChange")?.get(U(81)), undefined, "the local model does not have the new copy");
+  const pushes = f.pushes.length;
+  const retry = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) }, created: true });
+  assert.equal(retry.ok, false);
+  assert.match(retry.ok ? "" : retry.message, /Could not check whether the new copy is there/);
+  assert.equal(!retry.ok && retry.clear, undefined, "not cleared");
+  assert.equal(!retry.ok && retry.created, true, "the attempt is kept");
+  assert.equal(f.pushes.length, pushes, "no tombstone was pushed");
+  pullDown = false;
+  const again = await c.moveStateChange({ id: U(81), opId: U(82), oldId: U(80), target: { nodeId: U(11) }, created: true });
+  assert.deepEqual(again, { ok: true });
+  assert.equal(f.pushes.length, pushes + 1);
+  assert.equal(f.pushes[pushes]![0]!.op, "tombstone");
+  assert.equal(f.pushes[pushes]![0]!.recordId, U(80), "the old record only");
+  assert.deepEqual(live(c).map((x) => x.id), [U(81)]);
+  c.stop();
+});
+
+test("a lost create whose retry gets changed or retry keeps lost: a different target is still refused with EARLIER_MOVE_MAY_HAVE_WORKED", async () => {
+  for (const kind of ["changed", "retry"] as const) {
+    const { f, c } = moveSetup();
+    let lose = true;
+    f.lose = () => { const was = lose; lose = false; return was; };
+    let n = 100;
+    const mint = () => U(n++);
+    const a = nextMoveAttempt(undefined, "A", mint);
+    if (!a.ok) throw new Error("unexpected");
+    const first = await c.moveStateChange({ ...a.attempt, oldId: U(80), target: { nodeId: U(11) } });
+    assert.equal(!first.ok && first.lost, true);
+    let held = attemptAfterFailedMove(a.attempt, first.ok ? {} : first)!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (c as any).sendRecordOps = async () => ({ kind });
+    const retry = await c.moveStateChange({ id: held.id, opId: held.opId, oldId: U(80), target: { nodeId: U(11) } });
+    assert.equal(retry.ok, false);
+    assert.equal(!retry.ok && retry.clear, undefined, `${kind}: not cleared`);
+    held = attemptAfterFailedMove(held, retry.ok ? {} : retry)!;
+    assert.equal(held.lost, true, `${kind}: still lost`);
+    assert.deepEqual(nextMoveAttempt(held, "B", mint), { ok: false, message: EARLIER_MOVE_MAY_HAVE_WORKED });
+    c.stop();
+  }
 });

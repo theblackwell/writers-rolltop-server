@@ -3,14 +3,13 @@
 // reference validator's rules (Apple RolltopKit SnapshotValidator); it reports every problem found.
 //
 // Documents are validated and normalized by the reader (and the writer) before they reach here.
-// The continuity warnings keyed by dismissal key (learnedBeforeEstablished and the like) belong to
-// M1-10 and are not produced here.
+// The continuity warnings keyed by dismissal key are computed in continuity.ts; of them only W_STATE_CONFLICT is an archive warning.
 
 import { IssueList } from "./errors.ts";
 import type { Issue } from "./errors.ts";
 import { checkRecordShape } from "./schema.ts";
 import type { RecordKind } from "./schema.ts";
-import { stableStringify } from "./json.ts";
+import { continuityWarnings } from "./continuity.ts";
 import type { ArchiveData, Rec } from "./model.ts";
 import { printable } from "./paths.ts";
 
@@ -133,8 +132,6 @@ class Run {
   private optionIds = new Map<Rec, Set<string>>();
   /** field -> accepted entry types, absent when the field accepts any. */
   private targetTypes = new Map<Rec, Set<string>>();
-  /** event -> its dismissed warning keys; filled on first use. */
-  private dismissedKeys = new Map<Rec, Set<string>>();
 
   private readonly d: ArchiveData;
   /** Set by validateRecord: only the problems of this record are collected, and the document-presence rule is skipped. */
@@ -655,32 +652,11 @@ class Run {
 
   // ---- warnings ----
 
-  /** W_STATE_CONFLICT: two live state changes for the same event, entry and field with different values. */
+  /** W_STATE_CONFLICT: the rule lives in continuity.ts, shared with the server's warnings route, so the two cannot disagree. */
   private checkStateConflicts(): void {
-    const groups = new Map<string, Rec[]>();
-    for (const c of this.d.stateChanges) {
-      if (c.deletedAt !== undefined || c.eventId === undefined) continue;
-      const ev = this.events.get(c.eventId);
-      if (!ev || ev.deletedAt !== undefined) continue;
-      const key = `${c.eventId}\0${c.entryId}\0${c.fieldId}`;
-      const g = groups.get(key);
-      if (g) g.push(c); else groups.set(key, [c]);
+    for (const w of continuityWarnings(this.d)) {
+      if (w.kind === "stateConflict") this.warn("W_STATE_CONFLICT", `Event ${sh(w.recordId)} sets field ${sh(w.fieldId!)} of entry ${sh(w.entryId!)} to different values`, w.recordId);
     }
-    for (const group of groups.values()) {
-      const first = group[0]!;
-      const firstValue = stableStringify(first.value);
-      if (!group.some((c) => stableStringify(c.value) !== firstValue)) continue;
-      const ev = this.events.get(first.eventId)!;
-      const dismissalKey = `stateConflict:${first.entryId}:${first.fieldId}`;
-      if (this.dismissalKeys(ev).has(dismissalKey)) continue;
-      this.warn("W_STATE_CONFLICT", `Event ${sh(first.eventId)} sets field ${sh(first.fieldId)} of entry ${sh(first.entryId)} to different values`, first.eventId);
-    }
-  }
-
-  private dismissalKeys(ev: Rec): Set<string> {
-    let keys = this.dismissedKeys.get(ev);
-    if (!keys) this.dismissedKeys.set(ev, (keys = new Set((ev.dismissedWarnings ?? []).map((d: Rec) => d.warning))));
-    return keys;
   }
 
   /**

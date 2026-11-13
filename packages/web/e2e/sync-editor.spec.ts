@@ -41,6 +41,7 @@ const SCENES = {
   race: [U(26), "Race scene", "Race text"],
   sess: [U(27), "Session scene", "Session text"],
   hide: [U(28), "Hide small", "Small text"],
+  unmount: [U(30), "Unmount one", "Unmount text"],
   big: [U(29), "Big text", "語".repeat(55_000)],
 } as const;
 const FRONT_MATTER_ID = SCENES.fm[0];
@@ -330,6 +331,28 @@ test("changing to another scene saves the one being left", async ({ browser }) =
   await typeAtEnd(page, t1, " switched");
   await openScene(page, t2); // no blur by hand: the editor goes away
   await expect.poll(async () => textOf((await savedDoc(api, id1)).value)).toBe(`${x1} switched`);
+  await ctx.close();
+});
+
+test("changing scene with its blur swallowed still saves the one being left (the unmount cleanup)", async ({ browser }) => {
+  const [id1, t1, x1] = SCENES.unmount;
+  const [, t2] = SCENES.two;
+  const { ctx, page } = await newDevice(browser);
+  await openScene(page, t1);
+  await typeAtEnd(page, t1, " unmounted");
+  // Chrome fires a blur when the focused editor is removed, so swallow every blur and focusout before the editor can see
+  // it (capture phase on window): the blur save cannot run, and only the unmount cleanup can save the text.
+  await page.evaluate(() => {
+    (window as any).__lost = 0;
+    for (const type of ["blur", "focusout"]) window.addEventListener(type, (e) => { (window as any).__lost++; e.stopImmediatePropagation(); }, true);
+  });
+  await page.evaluate((title) => {
+    const b = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Manuscript outline"] button')].find((x) => x.textContent?.trim() === title);
+    if (!b) throw new Error("no outline button");
+    b.click();
+  }, t2);
+  await expect(editorOf(page, t2)).toBeVisible();
+  await expect.poll(async () => textOf((await savedDoc(api, id1)).value)).toBe(`${x1} unmounted`);
   await ctx.close();
 });
 

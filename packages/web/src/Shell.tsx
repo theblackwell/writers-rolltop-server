@@ -2,8 +2,8 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import type { ReactNode } from "react";
 import { Plaque } from "./Plaque.tsx";
 import {
-  BibleIcon, BookIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, GlobeIcon,
-  HistoryIcon, HomeIcon, LayersIcon, NoteIcon, PeopleIcon, PinIcon, PlusIcon, ShelfIcon, ToolsIcon,
+  BibleIcon, BookIcon, ChevronDownIcon, ChevronRightIcon, GlobeIcon,
+  HistoryIcon, HomeIcon, LayersIcon, NoteIcon, PeopleIcon, PinIcon, ShelfIcon, ToolsIcon,
 } from "./icons.tsx";
 import { SceneEditor } from "./SceneEditor.tsx";
 import { Toolbar } from "./Toolbar.tsx";
@@ -26,8 +26,6 @@ const TOP_ICONS: Record<TopItem, ReactNode> = {
 const SECTION_ICONS: Record<Section, ReactNode> = {
   Manuscript: <NoteIcon />, Notes: <NoteIcon />, Characters: <PeopleIcon />, Worldbuilding: <GlobeIcon />, Scenes: <LayersIcon />, Revisions: <HistoryIcon />,
 };
-
-interface Tab { id: number; title: string }
 
 interface ShellProps {
   onSignOut: () => void | Promise<void>;
@@ -53,7 +51,6 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
   const live = cstate.phase === "ready";
 
   const [bookId, setBookId] = useState<string | undefined>();
-  const [openScenes, setOpenScenes] = useState<string[]>([]);
   const [activeScene, setActiveScene] = useState<string | undefined>();
   const books = live ? liveBooks(client.model) : [];
   const currentBook = books.find((b) => b.id === bookId) ?? books[0];
@@ -64,9 +61,6 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
   const bibleSection = live && (section === "Characters" || section === "Worldbuilding") ? section as BibleSection : undefined;
   const [book, setBook] = useState<string>(PLACEHOLDER_BOOKS[0]);
   const [bookOpen, setBookOpen] = useState(false);
-  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: PLACEHOLDER_FIRST_TAB }]);
-  const [activeTab, setActiveTab] = useState<number | undefined>(1);
-  const nextTabId = useRef(2);
   const [expanded, setExpanded] = useState(false);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
@@ -76,21 +70,6 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
   // It runs again when the history changes (a restored or replaced library), because the templates are read again then.
   useEffect(() => { if (bibleSection) void client.seedBible(); }, [client, bibleSection, live, cstate.epoch]);
   const bookButton = useRef<HTMLButtonElement>(null);
-
-  const active = tabs.find((t) => t.id === activeTab);
-
-  function addTab() {
-    const id = nextTabId.current++;
-    setTabs((t) => [...t, { id, title: `Untitled ${id - 1}` }]);
-    setActiveTab(id);
-    setTop("Write");
-  }
-  function closeTab(id: number) {
-    const i = tabs.findIndex((t) => t.id === id);
-    const rest = tabs.filter((t) => t.id !== id);
-    setTabs(rest);
-    if (activeTab === id) setActiveTab(rest[Math.min(i, rest.length - 1)]?.id);
-  }
 
   // Escape closes the book switcher and returns focus to its button.
   useEffect(() => {
@@ -111,23 +90,16 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
   }
 
   function openScene(id: string) {
-    setOpenScenes((s) => (s.includes(id) ? s : [...s, id]));
     setActiveScene(id);
     setTop("Write");
     setLeftOpen(false);
-  }
-  function closeScene(id: string) {
-    const i = openScenes.indexOf(id);
-    const rest = openScenes.filter((s) => s !== id);
-    setOpenScenes(rest);
-    if (activeScene === id) setActiveScene(rest[Math.min(i, rest.length - 1)]);
   }
   const sceneTitle = (id: string): string => {
     const n = client.model.records.get("manuscriptNode")?.get(id);
     return typeof n?.title === "string" && n.title !== "" ? n.title : "Untitled scene";
   };
-  // A scene that has gone from the library (trashed on another device) closes its tab; its text, if unsaved, is in recovery.
-  const liveScenes = openScenes.filter((id) => sceneIsLive(client.model, id) || client.recoveryFor(id) !== undefined);
+  // A scene that has gone from the library (trashed on another device) leaves the editor; its text, if unsaved, is in recovery.
+  const sceneOpen = activeScene !== undefined && (sceneIsLive(client.model, activeScene) || client.recoveryFor(activeScene) !== undefined);
 
   const bibleJump = () => setTop("Book Bible");
 
@@ -233,7 +205,7 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
               </>
             ) : bibleSection ? (
               <BibleList client={client} cstate={cstate} section={bibleSection} bookId={currentBook?.id} view={bibleView}
-                onOpen={(id) => { setBibleView({ kind: "entry", id }); setLeftOpen(false); }}
+                onOpen={(kind, id) => { setBibleView({ kind, id }); setLeftOpen(false); }}
                 onNew={(type) => { setBibleView({ kind: "new", type }); setLeftOpen(false); }} />
             ) : <p className="hint">{section} is not connected to your library yet.</p>
           )}
@@ -269,22 +241,11 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
               {cstate.storageMessage && <p role="alert" className="error">{cstate.storageMessage}</p>}
               {bibleSection && (
                 <BibleCentre client={client} cstate={cstate} section={bibleSection} bookId={currentBook?.id} view={bibleView}
-                  onCreated={(id) => setBibleView({ kind: "entry", id })} onCancel={() => setBibleView(undefined)} />
+                  onCreated={(kind, id) => setBibleView({ kind, id })} onCancel={() => setBibleView(undefined)} />
               )}
               {/* The editor stays mounted while the bible is open, so a scene being written is saved as usual. */}
-              <div className="tabs" role="group" aria-label="Open documents" hidden={bibleSection !== undefined}>
-                {liveScenes.map((id) => (
-                  <div key={id} className="tab" data-active={id === activeScene}>
-                    <button type="button" className="tab__title" aria-current={id === activeScene ? "true" : undefined}
-                      onClick={() => setActiveScene(id)}>{sceneTitle(id)}</button>
-                    <button type="button" className="tab__close" aria-label={`Close ${sceneTitle(id)}`} onClick={() => closeScene(id)}>
-                      <CloseIcon />
-                    </button>
-                  </div>
-                ))}
-              </div>
               <section className="card page" aria-labelledby="page-title" hidden={bibleSection !== undefined}>
-                {activeScene && liveScenes.includes(activeScene) ? (
+                {activeScene && sceneOpen ? (
                   <SceneEditor key={activeScene} client={client} cstate={cstate} sceneId={activeScene} title={sceneTitle(activeScene)}
                     expanded={expanded} onExpand={() => setExpanded((v) => !v)} register={register} />
                 ) : (
@@ -300,34 +261,15 @@ export function Shell({ onSignOut, signOutError, onSessionEnded }: ShellProps) {
             </>
           ) : (
             <>
-              <div className="tabs" role="group" aria-label="Open documents">
-                {tabs.map((t) => (
-                  <div key={t.id} className="tab" data-active={t.id === activeTab}>
-                    <button type="button" className="tab__title" aria-current={t.id === activeTab ? "true" : undefined}
-                      onClick={() => setActiveTab(t.id)}>{t.title}</button>
-                    <button type="button" className="tab__close" aria-label={`Close ${t.title}`} onClick={() => closeTab(t.id)}>
-                      <CloseIcon />
-                    </button>
-                  </div>
-                ))}
-                <button type="button" className="tab tab--add" aria-label="New document" onClick={addTab}><PlusIcon /></button>
-              </div>
               <section className="card page" aria-labelledby="page-title">
                 <Toolbar live={false} expanded={expanded} onExpand={() => setExpanded((v) => !v)} />
-                {active ? (
-                  <div className="page__body">
-                    <h2 id="page-title" className="page__title">{active.title}</h2>
-                    <div className="orn" aria-hidden="true"><span /><i /><span /></div>
-                    <div className="page__text" role="region" aria-label={`${active.title} text`}>
-                      <p id="editor-note" className="page__note">The editor is not ready yet. Writing opens in a later release.</p>
-                    </div>
+                <div className="page__body">
+                  <h2 id="page-title" className="page__title">{PLACEHOLDER_FIRST_TAB}</h2>
+                  <div className="orn" aria-hidden="true"><span /><i /><span /></div>
+                  <div className="page__text" role="region" aria-label={`${PLACEHOLDER_FIRST_TAB} text`}>
+                    <p id="editor-note" className="page__note">The editor is not ready yet. Writing opens in a later release.</p>
                   </div>
-                ) : (
-                  <div className="page__body">
-                    <h2 id="page-title" className="page__title">No document open</h2>
-                    <p id="editor-note" className="page__note">Choose New document to open one.</p>
-                  </div>
-                )}
+                </div>
               </section>
             </>
           )}

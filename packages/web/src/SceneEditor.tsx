@@ -137,7 +137,7 @@ export function SceneEditor({ client, cstate, sceneId, title, expanded, onExpand
       return true;
     });
     return () => {
-      // Leaving the scene (another tab, a closed tab, sign-out): save what is there.
+      // Leaving the scene (another scene opened, sign-out): save what is there.
       clearTimeout(draftTimer.current);
       void saveRef.current();
       register(sceneId, undefined);

@@ -10,6 +10,8 @@ export { readArchive, summarize, SUPPORTED_FORMAT_VERSION } from "./reader.ts";
 export type { ArchiveContents, ArchiveInput, AttachmentFile, ReadOptions } from "./reader.ts";
 export { validateArchiveData, validateRecord } from "./validator.ts";
 export type { RecordContext, ValidationReport } from "./validator.ts";
+export { continuityWarnings } from "./continuity.ts";
+export type { ContinuityKind, ContinuityWarning } from "./continuity.ts";
 export { RECORD_KINDS } from "./schema.ts";
 export type { RecordKind } from "./schema.ts";
 export { writeArchive } from "./writer.ts";

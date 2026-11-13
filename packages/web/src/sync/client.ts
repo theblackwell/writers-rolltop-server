@@ -12,8 +12,8 @@ import { applyChange, emptyModel, fieldBase, hasAnyRecord, sceneDocument, sceneI
 import type { Model, Rec } from "./model.ts";
 import { DB_BLOCKED_MESSAGE, DB_WAIT_MS, DbBlockedError, getDeviceId, openLibraryDb } from "./local.ts";
 import type { Attempt, FieldDraft, Held, LibraryDb, RecoveryItem } from "./local.ts";
-import { bibleReady, checkEntryField, newEntryValue, seedOps } from "./bible.ts";
-import type { EntryType } from "./bible.ts";
+import { bibleReady, checkEntryField, checkEventField, checkRecordField, checkStateChangeField, newEntryValue, newEventValue, newFactValue, movedStateChangeValue, newQuestionValue, newStateChangeValue, seedOps } from "./bible.ts";
+import type { EntryType, Input, RecordKind, Target } from "./bible.ts";
 
 export type Phase = "loading" | "ready" | "empty" | "no-baseline" | "unreachable";
 export type SceneStatus = "idle" | "saving" | "saved" | "unsaved" | "review";
@@ -45,7 +45,7 @@ export interface ClientState {
 export interface FieldStatus { state: "saving" | "saved" | "unsaved" | "refused" | "conflict" | "invalid"; message?: string }
 export type FieldOutcome = { kind: "saved" | "nothing" | "unsaved" | "invalid" | "refused" | "conflict"; message?: string };
 /** `lost`: the server may have applied the create and its answer was lost (offline): a retry must use the same op id. */
-export type CreateOutcome = { ok: true; id: string } | { ok: false; message: string; lost?: boolean };
+export type CreateOutcome = { ok: true; id: string } | { ok: false; message: string; lost?: boolean; definitive?: boolean };
 /** What one open bible field holds, read when the epoch changes or the session ends. Undefined when the field has nothing unsent. */
 export type FieldSnapshot = { entryId: string; field: string; input: unknown; base: number } | undefined;
 export const HISTORY_REASON = "The server's library was restored or replaced.";
@@ -54,6 +54,8 @@ export const HISTORY_MESSAGE = "The server's library changed while you were typi
 
 export type SaveOutcome = { kind: "saved"; revision: number } | { kind: "unsaved" } | { kind: "recovery" } | { kind: "nothing" };
 export type ResolveOutcome = { ok: true } | { ok: false; message: string };
+/** A move: `lost` is a create whose answer never came (retry with the same ids); `created` is a create that was applied (retry removes only the old record). */
+export type MoveOutcome = { ok: true } | { ok: false; message: string; lost?: boolean; created?: boolean; clear?: boolean };
 /** What the studio tells the author when the session ends: whether text that was not saved is kept on this device. */
 export interface SessionEndInfo { kept: boolean; lost: boolean }
 /** Holds the dirty text of one open scene on this device (without sending it). Resolves true if there was some. */
@@ -839,7 +841,7 @@ export class SyncClient {
   /** The generation a field shown from this draft may save under: never the current one when the draft is from an older history. */
   generationFor(d: FieldDraft | undefined): number { return d && this.epochKnown && d.epoch !== this.epoch ? -1 : this.epochGen; }
   /** The base for a set or unset of an entry's field: the newest change on it that this device has seen. */
-  baseOfField(entryId: string, field: string): number { return fieldBase(this.model, "entry", entryId, field); }
+  baseOfField(entryId: string, field: string, kind: RecordKind = "entry"): number { return fieldBase(this.model, kind, entryId, field); }
 
   private async putDraft(d: FieldDraft): Promise<void> {
     d = { ...d, epoch: d.epoch ?? this.epoch };
@@ -876,12 +878,28 @@ export class SyncClient {
     return { ok: false, message: `${entryWhy(r)} What you typed is still here.` };
   }
 
+  /** Creates a fact or a question for the book's scope (slice 2). Same id and op id rules as createEntry. */
+  async createStoryRecord(p: { kind: "fact" | "question"; id: string; opId: string; text: string; bookId: string }): Promise<CreateOutcome> {
+    const made = p.kind === "fact" ? newFactValue(this.model, p) : newQuestionValue(this.model, p);
+    if (!made.ok) return { ok: false, message: made.error };
+    const noun = NOUN[p.kind];
+    const out = await this.sendRecordOps([{ opId: p.opId, op: "create", recordKind: p.kind, recordId: p.id, value: made.value }]);
+    if (out.kind === "offline") return { ok: false, message: "Could not reach the server. What you typed is still here. Try again.", lost: true };
+    if (out.kind === "changed") return { ok: false, message: "The server's library changed. What you typed is still here. Try again." };
+    if (out.kind === "retry") return { ok: false, message: `${RETRY_MESSAGE} What you typed is still here.` };
+    if (out.kind === "refused") return { ok: false, message: "The server could not accept this. What you typed is still here." };
+    const r = out.results[0]!;
+    const first = r.status === "duplicate" ? r.firstStatus : r.status;
+    if (first === "applied") { await this.pull().catch(() => {}); return { ok: true, id: p.id }; }
+    return { ok: false, message: `${entryWhy(r, noun)} What you typed is still here.` };
+  }
+
   /**
    * Saves one field of an entry: `field` is the sync field name ("name", "summary", "values/<fieldId>", ...) and `value`
    * is its new value, or undefined to remove it. The typed `input` is kept on this device first and removed only after
    * the server has applied the change. "saved" means the server answered.
    */
-  saveEntryField(q: { entryId: string; field: string; value: unknown; input: unknown; base: number; gen?: number }): Promise<FieldOutcome> {
+  saveEntryField(q: { entryId: string; field: string; value: unknown; input: unknown; base: number; gen?: number; kind?: RecordKind }): Promise<FieldOutcome> {
     const key = `${q.entryId}/${q.field}`;
     // The generation the base was read under; without one, the caller is taken to have read it just now.
     const p = { ...q, gen: q.gen ?? this.epochGen };
@@ -908,10 +926,15 @@ export class SyncClient {
     return run;
   }
 
-  private async runFieldSave(key: string, q: { entryId: string; field: string; value: unknown; input: unknown; base: number; gen: number }): Promise<FieldOutcome> {
+  private async runFieldSave(key: string, q: { entryId: string; field: string; value: unknown; input: unknown; base: number; gen: number; kind?: RecordKind }): Promise<FieldOutcome> {
     const p = { ...q, base: Math.max(q.base, this.fieldOwnSeq.get(key) ?? 0) }; // after an earlier save of this field, the base is that save
-    const newest = (): boolean => this.fieldLatest.get(key) === q; // false once a newer input was asked for
-    const entry = this.model.records.get("entry")?.get(p.entryId);
+    const newest = (): boolean => { // false once a newer, different input was asked for
+      const latest = this.fieldLatest.get(key);
+      return latest === q || (latest !== undefined && latest.gen === q.gen && sameDoc(latest.input, q.input));
+    };
+    const kind: RecordKind = q.kind ?? "entry";
+    const noun = NOUN[kind];
+    const entry = this.model.records.get(kind)?.get(p.entryId);
     const keep = async (state: FieldDraft["state"], reason?: string, opId?: string, epoch?: string): Promise<void> => {
       if (!newest()) return; // a newer input owns the copy on this device
       await this.putDraft({ key, entryId: p.entryId, field: p.field, input: p.input, base: p.base, state, ...(epoch !== undefined ? { epoch } : {}), ...(reason ? { reason } : {}), ...(opId ? { opId } : {}), savedAt: stamp() });
@@ -929,13 +952,20 @@ export class SyncClient {
     const old = await stale();
     if (old) return old;
     if (!entry || entry.deletedAt) {
-      await keep("refused", "This entry is not in the library any more.");
-      return fail("refused", "refused", "This entry is not in the library any more. What you typed is kept on this device.");
+      await keep("refused", `This ${noun} is not in the library any more.`);
+      return fail("refused", "refused", `This ${noun} is not in the library any more. What you typed is kept on this device.`);
     }
-    const bad = checkEntryField(this.model, entry, p.field, p.value);
+    const bad = kind === "entry" ? checkEntryField(this.model, entry, p.field, p.value)
+      : kind === "event" ? checkEventField(this.model, entry, p.field, p.value)
+      : kind === "stateChange" ? checkStateChangeField(this.model, entry, p.field, p.value)
+      : checkRecordField(this.model, kind, entry, p.field, p.value);
     if (bad) { await keep("refused", bad); return fail("invalid", "invalid", bad); } // never sent
-    const current = /^values\/(.+)$/.test(p.field) ? (entry.values as Record<string, unknown> | undefined)?.[p.field.slice(7)] : entry[p.field];
-    if (sameDoc(current, p.value)) { if (newest()) await this.discardDraft(key); return { kind: "nothing" }; } // the saved value is already this one
+    const current = kind === "entry" && /^values\/(.+)$/.test(p.field) ? (entry.values as Record<string, unknown> | undefined)?.[p.field.slice(7)] : entry[p.field];
+    if (sameDoc(current, p.value)) {
+      // The saved value is already this one (an earlier save of the same input just applied): "Saved" stays on the field.
+      if (newest()) { const shown = this.state.fields.get(key); await this.discardDraft(key); if (shown?.state === "saved") this.setField(key, shown); }
+      return { kind: "nothing" };
+    }
     const have = this.drafts.get(key);
     const same = have?.opId && JSON.stringify(have.input) === JSON.stringify(p.input) && have.base === p.base;
     const opId = same ? have!.opId! : newId();
@@ -944,8 +974,8 @@ export class SyncClient {
     if (old2) return old2;
     this.setField(key, { state: "saving" });
     const op: Op = p.value === undefined
-      ? { opId, op: "unset", recordKind: "entry", recordId: p.entryId, field: p.field, baseSeq: p.base }
-      : { opId, op: "set", recordKind: "entry", recordId: p.entryId, field: p.field, baseSeq: p.base, value: p.value };
+      ? { opId, op: "unset", recordKind: kind, recordId: p.entryId, field: p.field, baseSeq: p.base }
+      : { opId, op: "set", recordKind: kind, recordId: p.entryId, field: p.field, baseSeq: p.base, value: p.value };
     const out = await this.sendRecordOps([op]);
     if (out.kind === "offline" || out.kind === "refused") return fail("unsaved", "unsaved", "Not saved yet. Your text is kept on this device.");
     if (out.kind === "retry") return fail("unsaved", "unsaved", `${RETRY_MESSAGE} Your text is kept on this device.`);
@@ -958,7 +988,7 @@ export class SyncClient {
     if (first === "applied") {
       if (newest()) await this.discardDraft(key); // a draft of a newer input stays
       await this.pull().catch(() => {});
-      if (q.gen === this.epochGen) this.fieldOwnSeq.set(key, r.seq ?? this.baseOfField(p.entryId, p.field)); // not after an epoch change: that seq is of the old history
+      if (q.gen === this.epochGen) this.fieldOwnSeq.set(key, r.seq ?? this.baseOfField(p.entryId, p.field, kind)); // not after an epoch change: that seq is of the old history
       if (newest()) this.setField(key, { state: "saved" }); // Saved only for the newest input
       return { kind: "saved" };
     }
@@ -969,16 +999,120 @@ export class SyncClient {
       if (r.conflictId) await this.sendRecordOps([{ opId: newId(), op: "resolve", conflictId: r.conflictId }]);
       return fail("conflict", "conflict", "This was changed on another device while you were typing. Your text is kept on this device. Choose which text to keep.");
     }
-    const message = `${entryWhy(r)} Your text is still here and kept on this device.`;
+    const message = `${entryWhy(r, noun)} Your text is still here and kept on this device.`;
     await keep("refused", message);
     return fail("refused", "refused", message);
+  }
+  // ----- events and state changes (slice 3) -----
+
+  /** Sends one create op and gives the author's outcome. The same id and op id make a retry after a lost answer safe. */
+  private async createRecord(kind: RecordKind, p: { id: string; opId: string }, value: Record<string, unknown>): Promise<CreateOutcome> {
+    const out = await this.sendRecordOps([{ opId: p.opId, op: "create", recordKind: kind, recordId: p.id, value }]);
+    if (out.kind === "offline") return { ok: false, message: "Could not reach the server. What you typed is still here. Try again.", lost: true };
+    if (out.kind === "changed") return { ok: false, message: "The server's library changed. What you typed is still here. Try again." };
+    if (out.kind === "retry") return { ok: false, message: `${RETRY_MESSAGE} What you typed is still here.` };
+    if (out.kind === "refused") return { ok: false, message: "The server could not accept this. What you typed is still here." };
+    const r = out.results[0]!;
+    const first = r.status === "duplicate" ? r.firstStatus : r.status;
+    if (first === "applied") { await this.pull().catch(() => {}); return { ok: true, id: p.id }; }
+    return { ok: false, message: `${entryWhy(r, NOUN[kind])} What you typed is still here.`, definitive: true }; // a server result that says it was not made
+  }
+
+  /** Creates an event in the book's scope (the title only; the rest is edited after). */
+  async createEvent(p: { id: string; opId: string; title: string; bookId: string }): Promise<CreateOutcome> {
+    const made = newEventValue(this.model, p);
+    if (!made.ok) return { ok: false, message: made.error };
+    return this.createRecord("event", p, made.value);
+  }
+
+  /** Creates a state change on an entry's template field, attached to an event or a scene. */
+  async createStateChange(p: { id: string; opId: string; entryId: string; fieldId: string; input: Input; note: string; target: Target | undefined }): Promise<CreateOutcome> {
+    const made = newStateChangeValue(this.model, p);
+    if (!made.ok) return { ok: false, message: made.error };
+    return this.createRecord("stateChange", p, made.value);
+  }
+
+  /**
+   * Moves a state change to another event or scene. The spec has no combined op and the server applies ops one at a time,
+   * so: the new record is made first, and only when the server has applied that is the old one tombstoned. If the second
+   * step fails the change exists twice, which is said plainly; nothing is lost.
+   */
+  async moveStateChange(p: { id: string; opId: string; oldId: string; target: Target; created?: boolean }): Promise<MoveOutcome> {
+    const old = this.model.records.get("stateChange")?.get(p.oldId);
+    if (p.created && old?.deletedAt) return { ok: true }; // an earlier try removed it, and only the answer was lost
+    if (!old || old.deletedAt) return { ok: false, message: "This state change is not in the library any more." };
+    // Text typed on the old row that is not saved yet would be stranded when the old record goes to the trash.
+    const pending = [...this.fieldPending.keys()].some((k) => k.startsWith(`${p.oldId}/`));
+    const stuck = [...this.drafts.values()].find((d) => d.entryId === p.oldId && d.state !== "unsent");
+    if (stuck) {
+      return { ok: false, message: stuck.state === "conflict"
+        ? "This change has text that was changed on another device. Choose which text to keep (Keep my text or Use the saved text), then move it."
+        : "This change has text that cannot be saved as it is. Correct the text so it can be saved, then move it." };
+    }
+    if (p.created) {
+      // A copy missing from the local model is unknown, not removed: the pull after the create may have failed. Check the server's feed first.
+      let pulled = true;
+      await this.pull().catch(() => { pulled = false; });
+      const fresh = this.model.records.get("stateChange")?.get(p.id);
+      if (!pulled) return { ok: false, created: true, message: "Could not check whether the new copy is there. Try again when the connection is back." };
+      if (!fresh || fresh.deletedAt) {
+        // The new copy is confirmed gone: removing the old one now would leave no copy. The view clears its attempt.
+        return { ok: false, message: "The new copy was removed, so the move was not finished. The old one is still here. Choose the place again to move it.", clear: true };
+      }
+    }
+    if (this.hasDraftsFor(p.oldId) || pending) return { ok: false, message: "This change has text that is not saved yet. Save it first, then move it." };
+    if (!p.created) {
+      const moved = movedStateChangeValue(this.model, old, p.id, p.target);
+      if (!moved.ok) return { ok: false, message: moved.error };
+      const out = await this.createRecord("stateChange", p, moved.value);
+      if (!out.ok) return { ok: false, message: out.message.replace(" What you typed is still here.", ""), ...(out.lost ? { lost: true } : out.definitive ? { clear: true } : {}) }; // clear only when a server result says it was not made; changed or retry sent nothing, or may have sent it
+    }
+    const gone = await this.tombstoneRecord("stateChange", p.oldId);
+    if (!gone.ok) return { ok: false, created: true, message: `The change was moved, but the old copy could not be removed: ${gone.message} It now shows twice; remove one.` };
+    return { ok: true };
+  }
+
+  /** Puts a record in the trash (an event or a state change). baseSeq is the newest change this device has seen. */
+  async tombstoneRecord(kind: "event" | "stateChange", id: string): Promise<ResolveOutcome> {
+    return this.trashOp(kind, id, "tombstone");
+  }
+  async restoreRecord(kind: "event" | "stateChange", id: string): Promise<ResolveOutcome> {
+    return this.trashOp(kind, id, "restore");
+  }
+
+  private async trashOp(kind: "event" | "stateChange", id: string, op: "tombstone" | "restore"): Promise<ResolveOutcome> {
+    const noun = NOUN[kind];
+    const rec = this.model.records.get(kind)?.get(id);
+    if (!rec) return { ok: false, message: `This ${noun} is not in the library any more.` };
+    const body: Op = op === "tombstone"
+      ? { opId: newId(), op, recordKind: kind, recordId: id, baseSeq: this.model.cursor }
+      : { opId: newId(), op, recordKind: kind, recordId: id };
+    const out = await this.sendRecordOps([body]);
+    if (out.kind === "offline") return { ok: false, message: "Could not reach the server. Try again." };
+    if (out.kind === "changed") return { ok: false, message: "The server's library changed. Try again." };
+    if (out.kind === "retry") return { ok: false, message: RETRY_MESSAGE };
+    if (out.kind === "refused") return { ok: false, message: "The server could not accept this. Try again." };
+    const r = out.results[0]!;
+    const first = r.status === "duplicate" ? r.firstStatus : r.status;
+    // Already in the state asked for (another device did it): that is what was wanted.
+    if (first === "applied" || r.code === (op === "tombstone" ? "RECORD_DELETED" : "RECORD_NOT_DELETED")) { await this.pull().catch(() => {}); return { ok: true }; }
+    if (first === "conflict") {
+      await this.pull().catch(() => {});
+      return { ok: false, message: `This ${noun} was changed on another device. Look at it again, then try again.` };
+    }
+    return { ok: false, message: `${entryWhy(r, noun)}` };
   }
 }
 
 /** The server's own plain message for a refused op on an entry, with entry wording for the record codes. */
-const entryWhy = (r: OpResult): string =>
-  r.code === "RECORD_UNKNOWN" ? "This entry is not in the library any more."
-  : r.code === "RECORD_DELETED" ? "This entry is in the trash."
-  : r.message ? r.message : "The server refused this.";
+const NOUN: Record<RecordKind, string> = { entry: "entry", fact: "fact", question: "question", event: "event", stateChange: "state change" };
+const entryWhy = (r: OpResult, noun = "entry"): string =>
+  r.code === "RECORD_UNKNOWN" ? `This ${noun} is not in the library any more.`
+  : r.code === "RECORD_DELETED" ? `This ${noun} is in the trash.`
+  : r.message ? r.message
+  : r.code === "INVALID_VALUE" ? "The server could not accept this value."
+  : r.code === "INTEGRITY_VIOLATION" ? "This does not fit the rest of the library, so the server did not accept it."
+  : r.code === "REFERENCE_UNRESOLVED" ? "Something this points to is not in the library."
+  : "The server refused this.";
 
 export type { Conflict };

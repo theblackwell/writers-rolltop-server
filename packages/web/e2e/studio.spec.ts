@@ -87,7 +87,8 @@ test("the shell has the reference layout, names and landmarks; no header menus",
     await expect(left.getByRole("button", { name, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("main")).toBeVisible();
-  await expect(page.getByRole("group", { name: "Open documents" }).getByRole("button", { name: "Chapter 3", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chapter 3", exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Open documents" })).toHaveCount(0);
   const toolbar = page.getByRole("toolbar", { name: "Formatting" });
   for (const name of ["Undo", "Redo", "Bold", "Italic", "Underline", "Bulleted list", "Numbered list", "Expand editor"]) {
     await expect(toolbar.getByRole("button", { name })).toBeVisible();
@@ -98,16 +99,12 @@ test("the shell has the reference layout, names and landmarks; no header menus",
   await expect(aside.getByRole("button", { name: "Characters" })).toBeVisible();
 });
 
-test("keyboard: tabs, book switcher, top bar and Expand work without a mouse", async ({ page }) => {
+test("keyboard: book switcher, top bar and Expand work without a mouse", async ({ page }) => {
   await page.setViewportSize(SIZES.desktop);
   await signIn(page);
-  // New document and close it with the keyboard.
-  await page.getByRole("button", { name: "New document" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Untitled 1", exact: true })).toHaveAttribute("aria-current", "true");
-  await page.getByRole("button", { name: "Close Untitled 1" }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Untitled 1", exact: true })).toHaveCount(0);
+  // There is no tab strip: one document is on screen and nothing offers to add or close documents.
+  await expect(page.getByRole("button", { name: "New document" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Close / })).toHaveCount(0);
   // Book switcher: open, choose with keyboard, Escape closes and returns focus.
   const sw = page.getByRole("button", { name: /Change book/ });
   await sw.focus();

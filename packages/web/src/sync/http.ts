@@ -106,3 +106,32 @@ export async function libraryExists(): Promise<"yes" | "no" | "unknown"> {
     ctl.abort();
   }
 }
+
+/** One continuity warning as GET /api/continuity/warnings sends it (archive "continuity" module). Names are looked up from the ids. */
+export type ContinuityKind =
+  | "learnedBeforeEstablished" | "establishedInTrash" | "learnedInTrash" | "aboutMissingEntry"
+  | "knowerMissing" | "undecidedButKnown" | "questionOverdue" | "stateConflict";
+export interface ContinuityWarning {
+  key: string; kind: ContinuityKind; recordKind: "fact" | "question" | "event"; recordId: string;
+  entryId?: string; fieldId?: string; knower?: string; factNodeId?: string; learnNodeId?: string; nodeId?: string;
+  bookId?: string; exceptBookIds?: string[];
+}
+const KINDS: readonly string[] = ["learnedBeforeEstablished", "establishedInTrash", "learnedInTrash", "aboutMissingEntry", "knowerMissing", "undecidedButKnown", "questionOverdue", "stateConflict"];
+const RECORD_KINDS: readonly string[] = ["fact", "question", "event"];
+
+/** Keeps only warnings of the shape the server documents; anything else is dropped rather than guessed at. */
+export function parseWarnings(body: unknown): ContinuityWarning[] {
+  const list = typeof body === "object" && body !== null ? (body as { warnings?: unknown }).warnings : undefined;
+  if (!Array.isArray(list)) return [];
+  return list.filter((w): w is ContinuityWarning => typeof w === "object" && w !== null && typeof w.key === "string" && typeof w.recordId === "string"
+    && KINDS.includes(w.kind) && RECORD_KINDS.includes(w.recordKind)
+    && (w.bookId === undefined || typeof w.bookId === "string")
+    && (w.exceptBookIds === undefined || (Array.isArray(w.exceptBookIds) && w.exceptBookIds.every((b: unknown) => typeof b === "string"))));
+}
+
+/** The warnings now, worked out by the server on each request. Throws NetworkError (no answer, or an error status) and SessionError. */
+export async function getContinuityWarnings(signal?: AbortSignal): Promise<ContinuityWarning[]> {
+  const res = await send("/api/continuity/warnings", signal ? { signal } : {});
+  if (!res.ok) throw new NetworkError(`The server answered ${res.status}.`);
+  try { return parseWarnings(await res.json()); } catch { throw new NetworkError("The server's answer could not be read."); }
+}

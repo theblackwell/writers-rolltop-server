@@ -9,6 +9,7 @@ import { StoreError } from "@writers-rolltop/store";
 import type { Store } from "@writers-rolltop/store";
 import { ApiError, publicBody, sanitizeForLog } from "./api-errors.ts";
 import { runImport } from "./import-runner.ts";
+import { registerContinuityRoutes } from "./continuity-routes.ts";
 import { registerSyncRoutes, SYNC_PREFIX } from "./sync-routes.ts";
 import { AUTH_PREFIX, installAuthGuard, registerAuthRoutes } from "./auth.ts";
 import type { Auth } from "./auth.ts";
@@ -117,6 +118,7 @@ export function buildApp(options: AppOptions = {}) {
     installAuthGuard(app, lib.auth);
     registerAuthRoutes(app, lib.auth);
     registerSyncRoutes(app, lib.store);
+    registerContinuityRoutes(app, lib.store);
     // Both routes do heavy work, so one runs at a time.
     /** The request that holds the import slot. Only the holder ever gives it back. */
     let importHolder: object | undefined;

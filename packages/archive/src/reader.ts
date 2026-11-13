@@ -16,6 +16,7 @@ import type { ArchiveData, ArchiveSummary, Rec } from "./model.ts";
 import { attachmentParts, attachmentPath, CHECKSUMS, isAllowedFile, isAttachmentPath, MANIFEST, manuscriptNodeId, DOC_MESSAGE_MAX, printable, REQUIRED_FILES, syntaxProblem } from "./paths.ts";
 import { checkShape } from "./schema.ts";
 import { validateArchiveData } from "./validator.ts";
+import { countWords } from "./words.ts";
 import { bufferSource, checkNoOverlap, fileSource, readCentralDirectory, readEntry } from "./zip.ts";
 import type { ByteSource, ZipDirectory, ZipEntry } from "./zip.ts";
 
@@ -337,19 +338,6 @@ export function validationError(errors: Issue[], truncated = false): ArchiveErro
   const code = ERROR_PRIORITY.find((c) => codes.has(c)) ?? "INTEGRITY_VIOLATION";
   const first = errors.filter((e) => e.code === code).slice(0, 3).map((e) => e.message).join("; ");
   return new ArchiveError(code, `${errors.length}${truncated ? "+" : ""} problem(s). ${first}`, { issues: errors, issuesTruncated: truncated });
-}
-
-const segmenter = new Intl.Segmenter("en", { granularity: "word" });
-function countWords(doc: CanonicalDocument): number {
-  let text = "";
-  for (const b of doc.blocks) {
-    if (b.type === "sceneBreak") continue;
-    for (const i of b.content) text += i.type === "text" ? i.text : "\n";
-    text += "\n";
-  }
-  let n = 0;
-  for (const s of segmenter.segment(text)) if (s.isWordLike) n++;
-  return n;
 }
 
 export function summarize(data: ArchiveData): ArchiveSummary {
